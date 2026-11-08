@@ -1,0 +1,35 @@
+{
+  "main": "javascript/runner.js",
+  "oapAppSettings": {
+    "maxDiskUsage": 26214400,
+    "cpuLimit": 30,
+    "memoryThresholdKB": 131072,
+    "priority": "PRIO_MEDIUM",
+    "visibility": "FOREGROUND",
+    "latencyClass": "FOREGROUND",
+    "loggingId": "JCLB",
+    "userLoginRequired": false,
+    "backgroundPriority": 150,
+    "someipManifest": "manifest.json"
+  },
+  "dependencies": {
+    "oap-sdk": "24.10.2"
+  },
+  "engines": {
+    "node": ">=8.7.0"
+  },
+  "name": "javi_carlauncher",
+  "version": "0.1.0",
+  "description": "Prueba de CarLauncher con una segunda app OAP",
+  "mguHmi": [
+    "ID8"
+  ],
+  "files": [
+    "rhmiData",
+    "package.json",
+    "npm-shrinkwrap.json",
+    "permissions.json",
+    "javascript",
+    "manifest.json"
+  ]
+}

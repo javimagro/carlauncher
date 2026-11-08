@@ -1,0 +1,103 @@
+{
+  "id": "javi-carlab",
+  "kind": "tool",
+  "version": "0.1.0",
+  "title": "CarLauncher Lab",
+  "description": "Dibuja el marco de la prueba ID8 y abre las dos apps a traves del HMI.",
+  "mguHmi": [
+    "ID8"
+  ],
+  "optional": true,
+  "uninstallable": true,
+  "requires": {
+    "mgu-render": "0.6.10",
+    "iteriodev-overlays": "0.4.0"
+  },
+  "files": [
+    {
+      "path": "hmi.js",
+      "from": "hmi.js",
+      "mode": "0644"
+    },
+    {
+      "path": "launcher-view.js",
+      "from": "launcher-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "layout.js",
+      "from": "layout.js",
+      "mode": "0644"
+    },
+    {
+      "path": "radio.js",
+      "from": "radio.js",
+      "mode": "0644"
+    },
+    {
+      "path": "service.js",
+      "from": "service.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/font_regular.js",
+      "from": "vendor/font_regular.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/font_semibold.js",
+      "from": "vendor/font_semibold.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/i18n.js",
+      "from": "vendor/i18n.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/kit_canvas.js",
+      "from": "vendor/kit_canvas.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/kit_fonts.js",
+      "from": "vendor/kit_fonts.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/kit_record.js",
+      "from": "vendor/kit_record.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/LICENSE-Inter.txt",
+      "from": "vendor/LICENSE-Inter.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/LICENSE-kit.txt",
+      "from": "vendor/LICENSE-kit.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/LICENSE-mgu-store.txt",
+      "from": "vendor/LICENSE-mgu-store.txt",
+      "mode": "0644"
+    }
+  ],
+  "units": [
+    {
+      "name": "javi-carlab.service",
+      "from": "javi-carlab.service"
+    }
+  ],
+  "enable": [
+    {
+      "unit": "javi-carlab.service",
+      "target": "multi-user.target"
+    }
+  ],
+  "recmgr": [
+    "javi-carlab"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.3.0",
+  "application": {
+    "uuid": "d68f47d7-008f-5ae5-8101-24319540dba9",
+    "type": "OnlineApp",
+    "name": "javi_carlauncher",
+    "vendor": "javimagro",
+    "version": "0.1.0",
+    "defaultLanguage": "en_GB",
+    "uiDescriptions": [
+      {
+        "applicationFilePath": "./uiDescriptions/ID8/application.xml",
+        "uiDescriptionFilePath": "./uiDescriptions/ID8/uiDescription.json",
+        "hmi": [
+          "ID8"
+        ]
+      }
+    ],
+    "stringBundleUuid": "cfdffb84-bd9a-5fbb-9b7c-df3b59f5537f",
+    "resourceBundleUuid": "bd6c24e4-a5e0-520f-83e9-faca045faf1a",
+    "variantGroups": [
+      {
+        "stringsPath": "./variantGroups/Common/texts",
+        "resourcesPath": "./variantGroups/Common/images",
+        "hmi": [
+          "ID8"
+        ],
+        "brands": [
+          "BMW"
+        ]
+      }
+    ],
+    "entryPoints": [
+      {
+        "name": "javi_carlauncher",
+        "uuid": "5a1796d0-e043-5bff-a3b2-a1a9b6b399ad",
+        "textId": "SID_CARLAB_TITLE",
+        "icon": "carlab.png",
+        "insertionStateId": 20974,
+        "insertionFocusId": 2,
+        "insertionMode": "INSERT_BELOW",
+        "insertionOrder": 0,
+        "insertionPriority": 0,
+        "previewType": "NONE",
+        "bookmarkable": true,
+        "private": null,
+        "appearance": "DEFAULT",
+        "isGroupHeader": false,
+        "insertionGroup": 0
+      }
+    ]
+  }
+}

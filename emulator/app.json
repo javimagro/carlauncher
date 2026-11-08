@@ -1,0 +1,17 @@
+{
+  "id": "javi_carlauncher_preview",
+  "title": "Carlauncher",
+  "description": "Prueba gráfica local del carlauncher",
+  "version": "0.1.0",
+  "vendor": "javi",
+  "loggingId": "JCLP",
+  "iconGlyph": "gauge",
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "Carlauncher",
+      "bar": false
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CarLauncher · Prueba de panel derecho</title>
+  <style>
+    body { margin: 24px auto; max-width: 1600px; padding: 0 16px; color: #e7eff7; background: #101820; font: 16px system-ui, sans-serif; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    #stage { display: grid; aspect-ratio: 1600 / 520; background: #080b0e; outline-offset: 4px; touch-action: none; }
+    canvas { grid-area: 1 / 1; width: 100%; height: 100%; min-width: 0; pointer-events: none; }
+    #panel { z-index: 0; }
+    #launcher { z-index: 1; }
+    #status { color: #a9c9e4; }
+  </style>
+</head>
+<body>
+  <h1>CarLauncher · Prueba de panel derecho</h1>
+  <div id="stage" tabindex="0" aria-label="Pantalla de CarLauncher">
+    <canvas id="panel" width="1600" height="520"></canvas>
+    <canvas id="launcher" width="1600" height="520"></canvas>
+  </div>
+  <p>Pulsa <strong>Radio</strong> en la barra izquierda. Toca una emisora o gira con la rueda del ratón o las flechas y confirma con <kbd>Intro</kbd>.</p>
+  <p id="status" role="status">Conectando con los procesos locales…</p>
+  <script type="module" src="/preview.js"></script>
+</body>
+</html>

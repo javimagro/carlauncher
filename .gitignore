@@ -1,0 +1,9 @@
+/dist/
+/node_modules/
+/CONTEXTO-LOCAL.md
+*.tgz
+*.mgu
+*.log
+*.pem
+*.key
+.env

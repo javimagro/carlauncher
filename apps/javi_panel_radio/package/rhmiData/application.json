@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.3.0",
+  "application": {
+    "uuid": "4e71dd28-3dd0-5595-9165-bb8d4752c10f",
+    "type": "OnlineApp",
+    "name": "javi_panel_radio",
+    "vendor": "javimagro",
+    "version": "0.1.0",
+    "defaultLanguage": "en_GB",
+    "uiDescriptions": [
+      {
+        "applicationFilePath": "./uiDescriptions/ID8/application.xml",
+        "uiDescriptionFilePath": "./uiDescriptions/ID8/uiDescription.json",
+        "hmi": [
+          "ID8"
+        ]
+      }
+    ],
+    "stringBundleUuid": "149bf8cb-c752-598b-af08-96d42a1e5c77",
+    "resourceBundleUuid": "8cd7bff1-36bc-59dd-b7a3-9009ff91b0b3",
+    "variantGroups": [
+      {
+        "stringsPath": "./variantGroups/Common/texts",
+        "resourcesPath": "./variantGroups/Common/images",
+        "hmi": [
+          "ID8"
+        ],
+        "brands": [
+          "BMW"
+        ]
+      }
+    ],
+    "entryPoints": [
+      {
+        "name": "javi_panel_radio",
+        "uuid": "1cc80f43-a421-58b5-973f-dfd44c4dd84e",
+        "textId": "SID_CARLAB_TITLE",
+        "icon": "carlab.png",
+        "insertionStateId": 20974,
+        "insertionFocusId": 2,
+        "insertionMode": "INSERT_BELOW",
+        "insertionOrder": 0,
+        "insertionPriority": 0,
+        "previewType": "NONE",
+        "bookmarkable": true,
+        "private": null,
+        "appearance": "DEFAULT",
+        "isGroupHeader": false,
+        "insertionGroup": 0
+      }
+    ]
+  }
+}

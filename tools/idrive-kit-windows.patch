@@ -1,0 +1,41 @@
+diff --git a/kit/runtime/renderd.js b/kit/runtime/renderd.js
+index e9872fd..836f49b 100644
+--- a/kit/runtime/renderd.js
++++ b/kit/runtime/renderd.js
+@@ -26,7 +26,11 @@ const rec = require('./record');
+ // link): an older renderer still installed beside mgu-render never gets the apps
+ const SOCKETS = process.env.MGU_RENDERD_SOCKET ? [process.env.MGU_RENDERD_SOCKET] : ['/run/mgu-renderd/renderd.sock', '/run/mgu-render/render.sock'];
+ const SOCKET = SOCKETS[0];
+-const isSocket = (p) => { try { return fs.statSync(p).isSocket(); } catch (e) { return false; } };
++const isSocket = (p) => {
++    if (process.platform === 'win32' && p === process.env.MGU_RENDERD_SOCKET &&
++        p.startsWith('\\\\.\\pipe\\')) return true;
++    try { return fs.statSync(p).isSocket(); } catch (e) { return false; }
++};
+ const M = { HELLO: 1, PLACE: 2, SHOW: 3, ATLAS: 4, RAMP: 5, LAYER: 6, FRAME: 7, DROP_LAYER: 8, IMAGE: 9, GRAB: 10 };
+ const E = { READY: 101, TICK: 102, ERROR: 103, STATS: 104, CCU: 105 };
+ // touch (mgu-render, IterioDev's mgu-renderd): message 9 is CLAIM there; 105 and 106 come back as TOUCH and CLOSED
+diff --git a/kit/tools/emu.js b/kit/tools/emu.js
+index 89c6f39..ae57828 100644
+--- a/kit/tools/emu.js
++++ b/kit/tools/emu.js
+@@ -69,7 +69,9 @@ const appTitles = () => listApps().reduce((o, id) => { try { o[id] = JSON.parse(
+ let appId = args[0];
+ if (!appId || listApps().indexOf(appId) < 0) { console.error('usage: node kit/tools/emu.js <app> [--port 8077] [--bg file.png] [--no-touch]\napps: ' + listApps().join(' ')); process.exit(2); }
+ // (a short path: Unix socket paths are limited to ~104 bytes)
+-const SOCK = path.join(os.tmpdir(), 'mgu-emu-' + process.pid + '.sock');
++const SOCK = process.platform === 'win32'
++    ? '\\\\.\\pipe\\mgu-emu-' + process.pid
++    : path.join(os.tmpdir(), 'mgu-emu-' + process.pid + '.sock');
+ const MAX_MSG = 24 << 20;                       // a bigger message ends the connection (PROTOCOL.md "Framing")
+ const PAGE_BEHIND = 8 << 20, PAGE_GONE = 64 << 20;   // bytes queued to a page: frames wait for it / it is closed
+ 
+@@ -618,7 +620,7 @@ function build() {
+     App.waiting = null;
+     setStatus('building');
+     let outText = '';
+-    const p = App.building = spawn('python3', [path.join(ROOT, 'kit', 'tools', 'build.py'), id], { cwd: ROOT });
++    const p = App.building = spawn(process.platform === 'win32' ? 'python' : 'python3', [path.join(ROOT, 'kit', 'tools', 'build.py'), '--preview-only', id], { cwd: ROOT });
+     p.stdout.on('data', (d) => { outText += d; });
+     p.stderr.on('data', (d) => { outText += d; });
+     p.on('error', (e) => { outText += String(e); });

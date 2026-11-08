@@ -1,0 +1,13 @@
+[Unit]
+Description=CarLauncher Lab iDrive 8 split-panel experiment
+After=vsomeipd.service mgu-render.socket
+
+[Service]
+ExecStart=/usr/bin/node /var/opt/javi-carlab/current/service.js
+Restart=on-failure
+RestartSec=5s
+LimitCORE=0
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

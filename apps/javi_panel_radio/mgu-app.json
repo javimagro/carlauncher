@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "javi_panel_radio",
+  "title": "Radio de prueba",
+  "version": "0.1.0",
+  "tree": "package",
+  "mguHmi": [
+    "ID8"
+  ],
+  "modules": [
+    "app.js",
+    "oap.js"
+  ],
+  "sdk": [
+    "oap-sdk/src/core/OnlineApp.js"
+  ]
+}
