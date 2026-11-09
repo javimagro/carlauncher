@@ -19,7 +19,7 @@
     "node": ">=8.7.0"
   },
   "name": "javi_carlauncher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Prueba de CarLauncher con una segunda app OAP",
   "mguHmi": [
     "ID8"

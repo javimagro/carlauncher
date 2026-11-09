@@ -2,7 +2,7 @@
 
 ## Fuente experimental para MGU Store
 
-La versión `v0.1.0` publica dos apps OAP separadas para ID8 y una herramienta auxiliar. **CarLauncher** abre la pantalla de prueba. **Radio de prueba** es una segunda app que se abre en primer plano de iDrive y dibuja su propia superficie solo en el panel derecho. **CarLauncher Lab** mantiene el mapa y las barras en una capa independiente, solicita el cambio de pantalla al HMI y se oculta al salir de la prueba. La radio usa los botones RHMI para recibir el giro y la pulsación del mando. Las emisoras, la ruta y las lecturas son ficticias.
+La fuente publica dos apps OAP separadas para ID8 y una herramienta auxiliar. **CarLauncher** abre la pantalla de prueba. **Radio de prueba** es una segunda app que se abre en primer plano de iDrive y dibuja su propia superficie solo en el panel derecho. **CarLauncher Lab** mantiene el mapa y las barras en una capa independiente, solicita el cambio de pantalla al HMI y se oculta al salir de la prueba. La radio usa los botones RHMI para recibir el giro y la pulsación del mando. Las emisoras, la ruta y las lecturas son ficticias.
 
 El paquete está pensado para la salida ID8 de 2880 × 960. CarLauncher Lab depende de `mgu-render` 0.6.10 o superior y del `hmictl` de Overlays 0.4.0 o superior, publicado por IterioDev. La Store debe tener disponible la fuente `IterioDev/car-apps`, canal **Tags**, además de la fuente del renderizador. Overlays es una herramienta independiente y puede activar su propia barra de accesos. El marco de CarLauncher usa la capa ordinaria de `mgu-render`, que cede ante las superficies de cámara reconocidas por el renderizador. [Overlays de IterioDev](https://github.com/IterioDev/car-apps#overlays-tool-iteriodev-overlays-idrive-8-only) · [mgu-render](https://github.com/robertnisipeanu/mgu-store/blob/main/native/mgu-render/README.md)
 
@@ -12,6 +12,16 @@ El paquete está pensado para la salida ID8 de 2880 × 960. CarLauncher Lab depe
 4. Para retirar la prueba, elimina **CarLauncher** y **Radio de prueba** desde **Instaladas**. Después elimina **CarLauncher Lab** desde **Herramientas**. Las retiradas de apps de ID8 también se aplican en el siguiente reinicio.
 
 El empaquetador de MGU Store generó ambos paquetes OAP con un donante simulado y el artefacto de la herramienta. También se comprobó con un HMI simulado la apertura, el retorno, la transparencia del marco y el enrutamiento de toque, foco y pulsación. La carga del SDK de BMW, las dos superficies en Winston y la rueda física quedan pendientes de la prueba en iDrive 8. Los módulos de dibujo reutilizados de MGU Store y los atlas Inter conservan sus licencias en [vendor](native/javi-carlab/vendor).
+
+### Experimento con Android Auto a la izquierda
+
+La etiqueta `v0.1.1` actualiza CarLauncher y CarLauncher Lab. En una instalación existente del canal **Tags**, pulsa **Ajustes → Comprobar ahora** y luego **Instaladas → CarLauncher → Actualizar**. La Store instala la versión requerida de CarLauncher Lab con la app.
+
+Al abrir CarLauncher, la variante experimental puede pedir al HMI que abra Android Auto de serie y ajustar su capa existente al panel izquierdo. El marco deja transparente el rectángulo de la proyección, conserva las barras y mantiene una vista propia a la derecha. Durante esta prueba Android Auto tiene el primer plano y recibe el toque y la rueda a través de iDrive. El reparto de la rueda con la radio independiente queda por verificar.
+
+El arranque automático requiere un perfil de la unidad en `/var/opt/javi-carlab/aa.json`. Se obtienen primero dos lecturas del contexto y la escena de Winston, con Android Auto abierto y cerrado. `tools/Capturar-Capas-AA.ps1` realiza esas consultas por una conexión SSH ya autorizada y disponible. Solo se activa el perfil tras confirmar `state`, `applet`, `layer`, `surface` y `process` y comprobar que la capa pertenece únicamente a la proyección. El perfil usa `enabled: true` para activar la prueba.
+
+El experimento guarda el rectángulo original antes de mover la capa, comprueba que Winston aplicó el destino y restaura la geometría al abandonar el contexto. Si iDrive vuelve a posicionar la capa, el marco se retira y la prueba termina. El siguiente paso en la unidad es comprobar que la imagen se mantiene, que el toque coincide con sus controles y que Atrás restaura el tamaño original. La variante se validó con una escena simulada y queda pendiente de calibración en la MGU.
 
 ## Primer hito
 

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "javi_carlauncher",
   "title": "CarLauncher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "tree": "package",
   "mguHmi": [
     "ID8"

@@ -6,6 +6,7 @@ const layout = require('./layout.js');
 const { width, height, rightPanel, drawLauncher } = require('./launcher-view.js');
 const record = require('./vendor/kit_record.js');
 const { RenderClient } = require('/var/opt/mgu-render/current/mgu_render_client.js');
+const { create: createProjection, loadProfile } = require('./aa.js');
 
 const launcherId = 'javi_carlauncher';
 const radioId = 'javi_panel_radio';
@@ -21,6 +22,19 @@ let error = '';
 let dirty = true;
 let lastFrame = 0;
 let usable = false;
+let placement;
+let projection;
+let attemptedAA = false;
+let lastProjectionCheck = 0;
+let projectionWasShown = false;
+let cancelProjection = false;
+let aaProfile;
+try { aaProfile = loadProfile(); } catch (err) { console.warn('CarLauncher AA: ' + err.message); }
+const aa = aaProfile ? createProjection(aaProfile) : null;
+const claims = [
+    { x: 0, y: 0, w: rightPanel.x, h: height },
+    { x: rightPanel.x, y: rightPanel.y + rightPanel.h, w: width - rightPanel.x, h: height - rightPanel.y - rightPanel.h }
+];
 
 const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl', (err) => {
     console.error(err.message);
@@ -63,17 +77,67 @@ async function openRadio(id) {
     return false;
 }
 
+function show(next) {
+    if (next === visible) return;
+    visible = next;
+    dirty = true;
+    gpu.claim(next === 'aa' ? [] : claims);
+    gpu.show(usable && !!visible);
+}
+
+async function openAA(home) {
+    attemptedAA = true;
+    try {
+        await request('open ' + aaProfile.state + ' ' + aaProfile.applet);
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const context = current(await request('ctx'));
+            if (aa.matches(context)) {
+                const target = await aa.place(placement.projection);
+                if (target) {
+                    const [x, y, w, h] = target;
+                    const area = placement.launcher;
+                    projection = { x: (x - area.x) / area.scale, y: (y - area.y) / area.scale, w: w / area.scale, h: h / area.scale };
+                    projectionWasShown = false;
+                    cancelProjection = false;
+                    lastProjectionCheck = Date.now();
+                    show('aa');
+                    return;
+                }
+            } else if (context && (context.applet !== home.applet || context.state !== home.state)) break;
+            await new Promise((resolve) => setTimeout(resolve, 220));
+        }
+        throw new Error('No se confirmó el contexto y la capa de Android Auto');
+    } catch (err) {
+        if (aa.active()) {
+            show('');
+            await aa.restore();
+        }
+        error = 'AA: ' + err.message;
+        dirty = true;
+        console.warn(error);
+    }
+}
+
 async function poll() {
     try {
         const ids = installed();
         const context = current(await request('ctx'));
-        const next = matches(context, ids[launcherId]) ? 'launcher' : origin && matches(context, ids[radioId]) ? 'radio' : '';
-        if (!next) origin = null;
-        if (next !== visible) {
-            visible = next;
-            dirty = true;
-            gpu.show(usable && !!visible);
+        const launcher = matches(context, ids[launcherId]);
+        if (aa && aa.active()) {
+            if (aa.matches(context) && !cancelProjection) {
+                if (Date.now() - lastProjectionCheck < 1000) return;
+                lastProjectionCheck = Date.now();
+                if (await aa.placed()) return;
+            }
+            show('');
+            await aa.restore();
+            projection = null;
         }
+        const next = launcher ? 'launcher' : origin && matches(context, ids[radioId]) ? 'radio' : '';
+        if (!next) origin = null;
+        if (context && !next && (!aa || !aa.matches(context))) attemptedAA = false;
+        show(next);
+        if (aa && usable && launcher && !attemptedAA) { await openAA(context); return; }
         if (!action || !visible) return;
         action = false;
         error = '';
@@ -94,9 +158,8 @@ async function poll() {
         dirty = true;
     } catch (err) {
         console.warn(err.message);
-        visible = '';
+        show('');
         origin = null;
-        gpu.show(false);
     } finally {
         action = false;
         setTimeout(poll, 400);
@@ -110,13 +173,11 @@ gpu.on('ready', (screen, info) => {
         console.warn('CarLauncher requiere la salida ID8 de 2880 x 960 y el modo layer');
         return;
     }
-    const area = layout(info.appArea).launcher;
+    placement = layout(info.appArea);
+    const area = placement.launcher;
     cv.textScale = area.scale;
     gpu.place(area);
-    gpu.claim([
-        { x: 0, y: 0, w: rightPanel.x, h: height },
-        { x: rightPanel.x, y: rightPanel.y + rightPanel.h, w: width - rightPanel.x, h: height - rightPanel.y - rightPanel.h }
-    ]);
+    gpu.claim(visible === 'aa' ? [] : claims);
     gpu.show(!!visible);
     dirty = true;
 });
@@ -128,13 +189,19 @@ gpu.on('touch', (phase, x, y) => {
     down = false;
 });
 gpu.on('closed', () => { down = false; });
+gpu.on('state', (state) => {
+    if (visible !== 'aa') return;
+    if (state.onScreen) projectionWasShown = true;
+    else if (projectionWasShown) cancelProjection = true;
+});
+gpu.on('close', () => { if (visible === 'aa') cancelProjection = true; });
 
 setInterval(() => {
     if (!usable || !visible || (!dirty && Date.now() - lastFrame < 1000)) return;
     cv.reset();
-    drawLauncher(cv, { external: visible === 'radio' });
+    drawLauncher(cv, { external: visible === 'radio', projection: visible === 'aa' ? projection : null });
     cv.roundRect(shortcut.x, shortcut.y, shortcut.w, shortcut.h, 12, '#205577');
-    cv.text(visible === 'radio' ? 'Cerrar' : 'Radio', 48, 51, 16, '#f0f5fa', { align: 'center' });
+    cv.text(visible === 'aa' ? 'AA' : visible === 'radio' ? 'Cerrar' : 'Radio', 48, 51, 16, '#f0f5fa', { align: 'center' });
     if (visible === 'launcher') cv.text(error || 'Toca Radio para abrir la segunda app', 912, 337, 24, '#afc0cf');
     gpu.frame(cv);
     lastFrame = Date.now();

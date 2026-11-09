@@ -7,7 +7,7 @@
       "path": "apps/javi_carlauncher",
       "build": "unit",
       "mguHmi": ["ID8"],
-      "requires": { "javi-carlab": "0.1.0", "javi_panel_radio": "0.1.0" }
+      "requires": { "javi-carlab": "0.1.1", "javi_panel_radio": "0.1.0" }
     },
     {
       "id": "javi_panel_radio",
