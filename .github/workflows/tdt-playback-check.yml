@@ -1,0 +1,27 @@
+name: Check packaged TDT playback
+
+on:
+  push:
+    branches: [codex/tdt-runtime-build]
+    paths:
+      - .github/workflows/tdt-playback-check.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  playback:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 43106634337
+          name: tdt-runtime-linux-x64
+          path: tdt-runtime-build
+      - run: |
+          chmod +x tdt-runtime-build/ffmpeg
+          command -v ffmpeg || sudo apt-get install -y ffmpeg
+          sh tools/tdt-runtime/check-playback.sh tdt-runtime-build/ffmpeg
