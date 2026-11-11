@@ -205,7 +205,7 @@ function timeAgo(date, now) {
 function news(cv, x, y, w, h, data, index, art, now) {
     const items = data.news || [];
     const item = items[index];
-    if (!item) return empty(cv, x, y, w, h, data.newsStatus, 'Cargando noticias…', 'Noticias no disponibles');
+    if (!item) return empty(cv, x, y, w, h, data.newsStatus, 'Cargando noticias…', 'Noticias no disponibles', data.newsDetail);
     cv.rampRect(x + 13, y + 47, w - 26, h - 61, 16,
         [[23, 42, 58, 230], [11, 23, 34, 224], [3, 7, 11, 217]]);
     const left = x + 30;
@@ -230,8 +230,9 @@ function news(cv, x, y, w, h, data, index, art, now) {
         left, summaryStart + row * 19, 15, summaryWidth(row), '#e6edf3'));
 }
 
-function empty(cv, x, y, w, h, status, loading, offline) {
+function empty(cv, x, y, w, h, status, loading, offline, detail) {
     cv.text(status === 'offline' ? offline : loading, x + w / 2, y + h / 2, 17, primary, centered);
+    if (status === 'offline' && detail) fit(cv, detail, x + w / 2, y + h / 2 + 24, 13, w - 36, secondary, centered);
 }
 
 function drawCard(cv, card, x, selected, data, state, art, now) {
@@ -257,7 +258,8 @@ function drawCard(cv, card, x, selected, data, state, art, now) {
     if (card.id === 'trip') trip(cv, x, y, w, h);
     if (card.id === 'radio') radio(cv, x, y, w, h, art);
     if (card.id === 'weather') {
-        if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…', 'El tiempo no está disponible');
+        if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
+            'El tiempo no está disponible', data.weatherDetail);
         else if (state.weatherPage === 'rain') weatherRain(cv, x, y, w, h, data.weather, state.weatherDay, art);
         else weatherSummary(cv, x, y, w, h, data.weather, art);
     }

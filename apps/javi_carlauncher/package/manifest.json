@@ -64,6 +64,10 @@
     "de.bmw.infotainment.hmi.resourcemanagement2.ResourceBundle2": "*",
     "de.bmw.infotainment.hmi.resourcemanagement2.StringBundle2": "*",
     "de.bmw.infotainment.hmi.usecasemanagement.UseCaseContext": "*",
+    "de.bmw.infotainment.controlelements.FrontCCU": {
+      "instances": ["1"],
+      "attributes": { "statusRotaryEncoderState": "rs" }
+    },
     "de.bmw.infotainment.telematic.oap.PrivateEntryPoint2": {
       "instances": [
         "${userId}"

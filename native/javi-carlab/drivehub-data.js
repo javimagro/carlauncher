@@ -145,17 +145,20 @@ function parseFeed(xml, source) {
 
 async function loadNews(get = download) {
     const results = await Promise.all(feeds.map(async ([source, url]) => {
-        try { return parseFeed((await get(url, 2 * 1024 * 1024)).toString('utf8'), source); }
-        catch (_) { return []; }
+        try { return { articles: parseFeed((await get(url, 2 * 1024 * 1024)).toString('utf8'), source) }; }
+        catch (error) { return { articles: [], error }; }
     }));
     const seen = new Set();
-    const articles = [].concat(...results).sort((a, b) => b.date - a.date).filter((article) => {
+    const articles = [].concat(...results.map((result) => result.articles)).sort((a, b) => b.date - a.date).filter((article) => {
         const key = article.title.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '');
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
     }).slice(0, 20);
-    if (!articles.length) throw new Error('Fuentes de noticias no disponibles');
+    if (!articles.length) {
+        const failure = results.find((result) => result.error && result.error.code);
+        throw failure ? failure.error : new Error('Fuentes de noticias no disponibles');
+    }
     return articles;
 }
 
@@ -210,6 +213,17 @@ function readJson(file) {
     catch (_) { return null; }
 }
 
+function networkDetail(code) {
+    if (code === 'UPLINK_OFFLINE') return 'Conexión de la Store no disponible';
+    if (code === 'UPLINK_APP') return 'Acceso a internet de BMWLauncher pendiente';
+    if (/^(?:UPLINK_DNS|ENOTFOUND|ENODATA|ESERVFAIL|EREFUSED|EAI_AGAIN|ETIMEOUT)$/.test(code)) return 'Fallo de DNS';
+    if (/^(?:ERR_TLS_|CERT_|UNABLE_TO_|SELF_SIGNED_|DEPTH_ZERO_)/.test(code)) return 'Fallo al verificar la conexión segura';
+    if (/^HTTP_\d{3}$/.test(code)) return 'El servidor devolvió ' + code.slice(5);
+    if (/^(?:ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ECONNRESET|ECONNREFUSED)$/.test(code)) return 'Sin respuesta del servidor';
+    if (code === 'UPLINK_WORKER' || code === 'EACCES' || code === 'ENOENT') return 'Conexión de BMWLauncher no disponible';
+    return 'Fuente temporalmente no disponible';
+}
+
 function createData({ cacheFile, configFile, fixture, get = download }, changed) {
     const config = readJson(configFile);
     const location = config && config.location;
@@ -253,12 +267,16 @@ function createData({ cacheFile, configFile, fixture, get = download }, changed)
             cache[name] = { at: Date.now(), value };
             data[name] = value;
             data[name + 'Status'] = 'ready';
+            data[name + 'Detail'] = '';
             next[name] = Date.now() + interval;
             save();
             changed(name);
-        }).catch(() => {
+        }).catch((err) => {
             if (closed) return;
+            const code = String(err.code || '');
             data[name + 'Status'] = 'offline';
+            data[name + 'Detail'] = networkDetail(code);
+            console.warn('BMWLauncher: ' + name + ' ' + (/^[A-Z0-9_]{2,45}$/.test(code) ? code : 'SOURCE'));
             next[name] = Date.now() + retryInterval;
             changed(name);
         });
@@ -291,4 +309,4 @@ function createData({ cacheFile, configFile, fixture, get = download }, changed)
     };
 }
 
-module.exports = { createData, loadArtwork, loadNews, parseFeed, parseWeather, weatherUrl };
+module.exports = { createData, loadArtwork, loadNews, parseFeed, parseWeather, weatherUrl, networkDetail };

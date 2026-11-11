@@ -57,7 +57,7 @@ module.exports = function createSession(gpu, options) {
         present();
     });
     gpu.on('touch', (phase, x, y) => { if (shown) panel.touch(phase, x, y); });
-    gpu.on('ccu', (event) => { if (shown) panel.controller(event); });
+    gpu.on('ccu', (event) => { if (shown && canGrab) panel.controller(event); });
     gpu.on('closed', () => panel.resetInput());
     gpu.on('close', () => { area = undefined; panel.resetInput(); });
     gpu.on('state', (state) => { if (!state.onScreen) panel.resetInput(); });
@@ -70,6 +70,7 @@ module.exports = function createSession(gpu, options) {
     }, 33);
 
     return {
+        controller(event) { if (shown && !canGrab) panel.controller(event); },
         show(on) {
             if (shown === on) return;
             shown = on;

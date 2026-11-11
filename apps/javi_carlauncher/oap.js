@@ -1,11 +1,14 @@
 'use strict';
 
 const OnlineApp = require('oap-sdk/src/core/OnlineApp.js');
+const someipBuilders = require('oap-sdk/src/someip/someipBuilders');
+const { observe } = require('./controller.js');
 
 function truth(value) { return value === true || value === 1 || value === '1'; }
 
 module.exports = function run(screen) {
     const app = new OnlineApp();
+    let controller;
     let entry;
     let ready = false;
     let visible = false;
@@ -14,6 +17,7 @@ module.exports = function run(screen) {
     function show(value) {
         if (visible === value) return;
         visible = value;
+        if (controller) controller.show(visible);
         if (screen) screen.show(visible);
         if (!ready) return;
         const reports = visible ? [app.registerActive(), app.registerHmiVisible()] : [app.unregisterHmiVisible(), app.registerInactive()];
@@ -49,11 +53,14 @@ module.exports = function run(screen) {
             }
             await app.initialized();
             ready = true;
+            controller = observe(someipBuilders);
+            controller.show(visible);
             if (visible) await app.registerHmiVisible();
             await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
     });
     app.on('shutdown', () => {
+        if (controller) controller.close();
         if (screen) screen.close();
         Promise.resolve(app.destroyBundles()).then(() => process.exit(0), () => process.exit(0));
     });

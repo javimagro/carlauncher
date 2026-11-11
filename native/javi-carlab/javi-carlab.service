@@ -4,7 +4,7 @@ After=vsomeipd.service mgu-render.socket
 
 [Service]
 RuntimeDirectory=javi-carlab
-RuntimeDirectoryMode=0700
+RuntimeDirectoryMode=0711
 RuntimeDirectoryPreserve=restart
 ExecStart=/usr/bin/node /var/opt/javi-carlab/current/service.js
 Restart=on-failure

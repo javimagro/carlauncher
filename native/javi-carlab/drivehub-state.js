@@ -20,7 +20,7 @@ for (const card of cards) {
 const anchors = [0, cards[1].x, cards[3].x];
 const cardPages = [0, 0, 1, 2];
 const pageCards = [0, 1, 3];
-const directions = { 1: 'up', 2: 'up', 4: 'right', 5: 'right', 7: 'down', 8: 'down', 10: 'left', 11: 'left' };
+const directions = { 1: 'up', 2: 'up', 7: 'down', 8: 'down' };
 const dailyChart = { x: 36, y: 281, w: wide - 57, h: 153 };
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const contains = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
@@ -141,19 +141,20 @@ function createDriveHub(invalidate, now = Date.now) {
         },
         controller(event) {
             if (event.press === 15 && event.tilt === 15) return;
-            if (knob !== undefined) {
-                const delta = ((event.knob - knob + 32768) & 0xffff) - 32768;
-                if (delta && Math.abs(delta) <= 64) moveCard(delta);
-            }
-            knob = event.knob;
             const down = event.press === 1 || event.press === 2;
+            const direction = directions[event.tilt];
+            if (knob === undefined) {
+                knob = event.knob;
+                pressed = down;
+                tilt = direction;
+                return;
+            }
+            const delta = ((event.knob - knob + 32768) & 0xffff) - 32768;
+            if (delta && Math.abs(delta) <= 64) moveCard(delta);
+            knob = event.knob;
             if (down && !pressed) interact(state.selected, 1);
             pressed = down;
-            const direction = directions[event.tilt];
-            if (direction && direction !== tilt) {
-                if (direction === 'up' || direction === 'down') interact(state.selected, direction === 'up' ? -1 : 1);
-                else moveCard(direction === 'left' ? -1 : 1);
-            }
+            if (direction && direction !== tilt) interact(state.selected, direction === 'up' ? -1 : 1);
             tilt = direction;
         }
     };

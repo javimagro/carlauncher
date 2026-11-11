@@ -10,6 +10,14 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-11 · 0.2.1 · Mando, red y nombre de la herramienta
+
+- **Mando.** En el i4, desplazar el mando a la izquierda salía de la app y girarlo no recorría las tarjetas. La 0.2.0 solo recibía muestras cuando el renderizador anunciaba captura. El componente comunitario `mgu-inputgate` publicado declara ID7. Se añadió la lectura OAP de FrontCCU para la rotación cuando el renderizador no captura y se desactivó la inclinación lateral en BMWLauncher. Las pruebas locales cubren ambas entradas. Queda por confirmar la recepción en el i4 y cómo mantener la página si el HMI procesa la inclinación por su cuenta.
+- **Red.** Tiempo y Noticias fallaban mientras la Store indicaba conexión. Revisando el instalador se reprodujo el caso de una app cuyo permiso de red se declara en una actualización aplicada al reinicio. La sincronización del permiso puede ocurrir antes de que se aplique la cola ID8. El servicio comprueba el paquete instalado, repone su entrada individual de `mgu-uplink` y espera a que la app reciba su conexión. Tiempo y Noticias muestran el motivo si la descarga falla. Se verificó en una instalación simulada. Falta confirmar la causa concreta y la descarga en la unidad.
+- **Iconos.** El usuario recordó dos nombres distintos. El paquete conserva un solo acceso OAP, **BMWLauncher**. La herramienta figuraba como **BMWLauncher · interfaz iDrive** y ahora se llama **Motor gráfico de BMWLauncher**. Si ambos accesos aparecen en el menú nativo de iDrive, queda pendiente identificar el segundo en el registro instalado.
+- **Verificación de 0.2.1.** Pasaron once pruebas locales. Node.js 8.16.2 cargó los módulos y consultó Open-Meteo y los RSS. El OAP se enlazó con donante sintético y se generó el artefacto de la herramienta. Se comprobó que el paquete mantiene un único acceso y el permiso de internet.
+- **Distribución.** La etiqueta `v0.2.1` contiene la app y el motor gráfico para el canal **Tags** de MGU Store. [Pasos de actualización y prueba](README.md#actualizar-desde-mgu-store)
+
 ## 2026-11-11 · 0.2.0 · BMWLauncher y tarjetas de DriveHub
 
 ### Documentación del proyecto

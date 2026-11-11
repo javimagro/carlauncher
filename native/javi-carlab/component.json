@@ -1,8 +1,8 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.0",
-  "title": "BMWLauncher · interfaz iDrive",
+  "version": "0.2.1",
+  "title": "Motor gráfico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
     "ID8"
@@ -107,6 +107,16 @@
     {
       "path": "drivehub-network.js",
       "from": "drivehub-network.js",
+      "mode": "0644"
+    },
+    {
+      "path": "drivehub-uplink.js",
+      "from": "drivehub-uplink.js",
+      "mode": "0644"
+    },
+    {
+      "path": "controller-input.js",
+      "from": "controller-input.js",
       "mode": "0644"
     },
     {

@@ -7,7 +7,7 @@ const { URL } = require('url');
 
 function lookupForUplink() {
     const lease = JSON.parse(fs.readFileSync('/run/mgu-uplink/lease.json', 'utf8'));
-    if (!Array.isArray(lease.dns) || !lease.dns.length) throw new Error('No hay DNS de mgu-uplink');
+    if (!Array.isArray(lease.dns) || !lease.dns.length) throw Object.assign(new Error('DNS'), { code: 'UPLINK_DNS' });
     const resolver = new dns.Resolver();
     resolver.setServers(lease.dns);
     return (host, options, done) => {
@@ -19,7 +19,7 @@ function lookupForUplink() {
                     && !(a === 100 && b >= 64 && b <= 127) && !(a === 169 && b === 254)
                     && !(a === 172 && b >= 16 && b <= 31) && !(a === 192 && b === 168);
             });
-            if (!address) return done(new Error('No hay una dirección pública'));
+            if (!address) return done(Object.assign(new Error('DNS'), { code: 'UPLINK_DNS' }));
             return done(null, address, 4);
         });
     };
@@ -45,7 +45,7 @@ function download(url, limit, lookup, redirects = 3) {
             }
             if (res.statusCode !== 200) {
                 res.resume();
-                reject(new Error('HTTP ' + res.statusCode));
+                reject(Object.assign(new Error('HTTP ' + res.statusCode), { code: 'HTTP_' + res.statusCode }));
                 return;
             }
             const chunks = [];
@@ -59,7 +59,9 @@ function download(url, limit, lookup, redirects = 3) {
             });
             res.on('end', () => resolve(Buffer.concat(chunks)));
         });
-        const deadline = setTimeout(() => request.destroy(new Error('Tiempo de espera agotado')), 8500);
+        const deadline = setTimeout(() => request.destroy(Object.assign(new Error('Tiempo de espera agotado'), {
+            code: 'ETIMEDOUT'
+        })), 8500);
         request.on('close', () => clearTimeout(deadline));
         request.on('error', reject);
     });
@@ -69,7 +71,11 @@ if (require.main === module) {
     const [url, limit] = process.argv.slice(2);
     Promise.resolve().then(() => download(url, Number(limit), lookupForUplink()))
         .then((bytes) => process.stdout.write(bytes))
-        .catch(() => { process.exitCode = 1; });
+        .catch((err) => {
+            const code = String(err.code || '');
+            process.stderr.write((/^[A-Z0-9_]{2,45}$/.test(code) ? code : 'UPLINK_WORKER') + '\n');
+            process.exitCode = 1;
+        });
 }
 
 module.exports = download;

@@ -2,15 +2,15 @@
 
 [Arquitectura de desarrollo](ARQUITECTURA.md) · [Bitácora técnica](BITACORA.md)
 
-## Pantalla principal de BMWLauncher (0.2.0)
+## Pantalla principal de BMWLauncher
 
 El lado izquierdo queda reservado para el mapa. El derecho gana el espacio de la antigua barra de accesos y contiene un carrusel de tarjetas integrado en BMWLauncher. La franja inferior muestra batería y autonomía actual, al llegar a la parada, tras recargar y al llegar al destino. Las lecturas y las tarjetas de Trayecto y Radio sirven de referencia visual con datos de demostración.
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión **0.2.0**. Conserva el identificador de la instalación anterior y actualiza la herramienta gráfica asociada. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión **0.2.1**. La actualización conserva el identificador de la app y trae el **Motor gráfico de BMWLauncher** de la misma versión. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
 
-Con el coche parado, abre **BMWLauncher** y desliza horizontalmente sobre las tarjetas. Después gira la rueda para comprobar que el foco cambia y que el carrusel se desplaza hasta Tiempo y Noticias. En Tiempo, desliza en vertical o pulsa la rueda para alternar entre condiciones y lluvia. El mando físico necesita la puerta FrontCCU del renderizador.
+Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Inclina el mando a la izquierda y comprueba si iDrive mantiene la app abierta. Verifica que **Back** sigue permitiendo salir. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
 
 Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticias consulta los RSS cada 15 minutos mientras la app está abierta. Si falla la conexión, muestran la última respuesta disponible y reintentan pasados dos minutos.
 

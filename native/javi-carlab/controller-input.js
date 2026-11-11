@@ -1,0 +1,56 @@
+'use strict';
+
+const fs = require('fs');
+const net = require('net');
+
+function consume(receive) {
+    let partial = Buffer.alloc(0);
+    return (chunk) => {
+        if (chunk.length > 256) return false;
+        const bytes = partial.length ? Buffer.concat([partial, chunk]) : chunk;
+        let i = 0;
+        for (; i + 4 <= bytes.length; i += 4) {
+            receive({ knob: bytes.readUInt16BE(i), press: bytes[i + 2], tilt: bytes[i + 3] });
+        }
+        partial = bytes.slice(i);
+        return true;
+    };
+}
+
+function listen(endpoint, receive, stopped) {
+    let owner = 0;
+    let peer;
+    let ready = false;
+    try {
+        if (fs.lstatSync(endpoint).isSocket()) fs.unlinkSync(endpoint);
+    } catch (err) { if (err.code !== 'ENOENT') throw err; }
+
+    function restrict() {
+        fs.chmodSync(endpoint, 0o600);
+        fs.chownSync(endpoint, owner, 0);
+    }
+    const server = net.createServer((socket) => {
+        if (peer) peer.destroy();
+        peer = socket;
+        const read = consume(receive);
+        socket.on('data', (chunk) => { if (peer !== socket || !read(chunk)) socket.destroy(); });
+        socket.on('error', () => {});
+        socket.on('close', () => { if (peer === socket) peer = undefined; });
+    });
+    server.on('error', stopped);
+    server.listen(endpoint, () => {
+        ready = true;
+        try { restrict(); } catch (err) { stopped(err); }
+    });
+    return {
+        setOwner(uid) {
+            if (uid === owner) return;
+            owner = uid;
+            if (peer) { peer.destroy(); peer = undefined; }
+            if (ready) restrict();
+        },
+        close() { if (peer) peer.destroy(); server.close(); }
+    };
+}
+
+module.exports = { consume, listen };

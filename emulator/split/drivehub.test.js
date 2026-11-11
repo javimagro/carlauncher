@@ -1,10 +1,18 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const test = require('node:test');
 const { createDriveHub, width, height, cards, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
 const { fitArea } = require('../../native/javi-carlab/layout');
-const { loadArtwork, parseFeed, parseWeather } = require('../../native/javi-carlab/drivehub-data');
+const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = require('../../native/javi-carlab/drivehub-data');
+const { appUid, authorizeApp } = require('../../native/javi-carlab/drivehub-uplink');
+const { consume } = require('../../native/javi-carlab/controller-input');
+const { sample } = require('../../apps/javi_carlauncher/controller');
+const createSession = require('../../native/javi-carlab/drivehub-session');
 const fonts = require('../../native/javi-carlab/vendor/kit_fonts');
 
 function panel() {
@@ -54,9 +62,14 @@ test('FrontCCU wraps its counter and treats long press and repeated tilt as one 
     wheel(1, 0, 7);
     wheel(1, 0, 8);
     assert.equal(drive.state.weatherPage, 'summary');
-    wheel(1, 0, 4);
-    assert.equal(settle(), cards[3].x);
     wheel(1, 0, 10);
+    assert.equal(settle(), cards[1].x);
+    assert.equal(drive.state.selected, 2);
+    wheel(1, 0, 4);
+    assert.equal(drive.state.selected, 2);
+    wheel(2);
+    assert.equal(settle(), cards[3].x);
+    wheel(1);
     assert.equal(settle(), cards[1].x);
 });
 
@@ -124,4 +137,81 @@ test('the app uses the full default panoramic content area on iDrive 8', () => {
     const area = { x: 0, y: 76, w: 2880, h: 764 };
     const fitted = fitArea(area, width, height);
     assert.deepEqual({ x: fitted.x, y: fitted.y, w: fitted.w, h: fitted.h }, area);
+});
+
+test('FrontCCU frames from the OAP preserve the rotation and ignore horizontal deflection', () => {
+    const frames = [];
+    const read = consume((frame) => frames.push(frame));
+    const build = (knob, button, deflection) => sample({
+        frontRotaryEncoderOperation: knob, frontRotaryEncoderPushButton: button, frontRotaryEncoderDeflection: deflection
+    });
+    const bytes = Buffer.concat([build(22, 0, 'WEST_KURZ_GEDRUECKT'),
+        build(23, 'DREHGEBER_KURZ_GEDRUECKT', 'NORD_KURZ_GEDRUECKT')]);
+    assert.equal(build(0xffff, 15, 15), null);
+    assert.ok(read(bytes.slice(0, 3)));
+    assert.ok(read(bytes.slice(3)));
+    assert.deepEqual(frames, [{ knob: 22, press: 0, tilt: 0 }, { knob: 23, press: 1, tilt: 1 }]);
+    assert.equal(read(Buffer.alloc(257)), false);
+});
+
+test('the rendered session uses OAP rotation when the renderer cannot grab the controller', async (t) => {
+    const gpu = new EventEmitter();
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, grab() { assert.fail('unexpected grab'); } });
+    let last;
+    gpu.frame = (recording) => { last = recording.words().slice(); };
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] } });
+    t.after(() => session.close());
+    gpu.emit('ready', {}, { controller: false });
+    session.show(true);
+    const initial = last;
+    const turn = (knob, tilt = 0) => ({ knob, press: 0, tilt });
+    session.controller(turn(100));
+    session.controller(turn(100, 10));
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    assert.equal(last, initial);
+    session.controller(turn(101));
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    assert.notDeepEqual(last, initial);
+    const beforeExit = last;
+    session.show(false);
+    session.controller(turn(102));
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    assert.equal(last, beforeExit);
+});
+
+test('the ID8 app can restore only its declared internet access after a queued update', (t) => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bmwlauncher-uplink-'));
+    t.after(() => {
+        assert.equal(path.dirname(base), path.resolve(os.tmpdir()));
+        assert.match(path.basename(base), /^bmwlauncher-uplink-/);
+        fs.rmSync(base, { recursive: true });
+    });
+    const oap = path.join(base, 'oap');
+    const uplink = path.join(base, 'uplink');
+    const id = 'javi_carlauncher';
+    const registry = path.join(oap, 'oap_12201/security');
+    const packageDir = path.join(oap, 'oap_13330/source');
+    const packageFile = path.join(packageDir, 'package.json');
+    const marker = path.join(uplink, 'apps.d', id);
+    fs.mkdirSync(registry, { recursive: true });
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.mkdirSync(uplink);
+    fs.writeFileSync(path.join(registry, 'uids.txt'), '0=javi_carlauncher\n13331=javi_carlauncher2\n13330 = javi_carlauncher\r\n');
+    const uid = appUid(oap, id);
+    assert.equal(uid, 13330);
+    fs.writeFileSync(packageFile, JSON.stringify({ name: id, mguInternet: false }));
+    assert.equal(authorizeApp({ oap, uplink, id, uid }), false);
+    assert.equal(fs.existsSync(marker), false);
+    fs.writeFileSync(packageFile, JSON.stringify({ name: id, mguInternet: true }));
+    assert.equal(authorizeApp({ oap, uplink, id, uid }), true);
+    assert.equal(authorizeApp({ oap, uplink, id, uid }), true);
+    assert.equal(fs.readFileSync(marker, 'utf8'), id + '\n');
+});
+
+test('news retains a network error code when all sources fail', async () => {
+    const error = Object.assign(new Error('connection denied'), { code: 'UPLINK_APP' });
+    await assert.rejects(loadNews(async () => { throw error; }), { code: 'UPLINK_APP' });
+    assert.equal(networkDetail('UPLINK_APP'), 'Acceso a internet de BMWLauncher pendiente');
+    assert.equal(networkDetail('ENOTFOUND'), 'Fallo de DNS');
+    assert.equal(networkDetail('CERT_HAS_EXPIRED'), 'Fallo al verificar la conexión segura');
 });
