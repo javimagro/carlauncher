@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "javi_carlauncher",
   "title": "BMWLauncher",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "tree": "package",
   "internet": true,
   "mguHmi": [
@@ -11,7 +11,8 @@
   "modules": [
     "app.js",
     "oap.js",
-    "controller.js"
+    "controller.js",
+    "telemetria-mgu.js"
   ],
   "sdk": [
     "oap-sdk/src/core/OnlineApp.js",

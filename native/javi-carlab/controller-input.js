@@ -17,7 +17,7 @@ function consume(receive) {
     };
 }
 
-function listen(endpoint, receive, stopped) {
+function listen(endpoint, receive, stopped, readFrom = consume, disconnected = () => {}) {
     let owner = 0;
     let peer;
     let ready = false;
@@ -32,10 +32,14 @@ function listen(endpoint, receive, stopped) {
     const server = net.createServer((socket) => {
         if (peer) peer.destroy();
         peer = socket;
-        const read = consume(receive);
+        const read = readFrom(receive);
         socket.on('data', (chunk) => { if (peer !== socket || !read(chunk)) socket.destroy(); });
         socket.on('error', () => {});
-        socket.on('close', () => { if (peer === socket) peer = undefined; });
+        socket.on('close', () => {
+            if (peer !== socket) return;
+            peer = undefined;
+            disconnected();
+        });
     });
     server.on('error', stopped);
     server.listen(endpoint, () => {

@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const [socket, store, mode] = process.argv.slice(2);
+const [socket, store, mode, telemetry] = process.argv.slice(2);
 const native = '../../native/javi-carlab/';
 const record = require(native + 'vendor/kit_record.js');
 const createSession = require(native + 'drivehub-session.js');
@@ -43,9 +43,22 @@ const fixture = {
 
 const gpu = new RenderClient('javi_carlauncher_preview', console, { socket, kit: record });
 const session = createSession(gpu, {
+    diagnostics: telemetry === 'telemetry',
     fixture: mode === 'live' ? undefined : fixture,
     area: () => ({ x: 0, y: 0, w: width, h: height, scale: 1 })
 });
 session.show(true);
+if (telemetry === 'telemetry') {
+    const samples = {
+        statusChargeOfBatteryHybrid: { displayChargingConditionHighVoltageStorage: 68 },
+        dataRangeDisplay: {
+            dataRangeDisplayElectric: 254, unitRangeDisplay: 'KILOMETER', fadeoutRangeDisplayElectric: 0
+        },
+        driveSegment: { bcBeTripDistanceKm: 310, bcBeDurationDrive: 2150, bcBeConsElectricVisible: 2700, bcBeSpeedAvgDrive: 2750 },
+        statusPredictiveThermalManagement: { preconditioningActive: true, statusVWM: 1 },
+        isVideoStreaming: { value: false }
+    };
+    session.telemetry(Object.entries(samples).map(([signal, fields]) => ({ signal, status: 'sample', fields })));
+}
 process.on('disconnect', () => session.close());
 gpu.connect();

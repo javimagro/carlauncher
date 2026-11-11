@@ -68,6 +68,66 @@
       "instances": ["1"],
       "attributes": { "statusRotaryEncoderState": "rs" }
     },
+    "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
+      "instances": ["1"],
+      "attributes": {
+        "statusChargeOfBatteryHybrid": "rs",
+        "statusBatteryTemperature": "r",
+        "displayPowerDrive": "s"
+      }
+    },
+    "de.bmw.infotainment.drivingexcitement.PredictiveThermalManagement": {
+      "instances": ["1"],
+      "attributes": {
+        "statusPredictiveThermalManagement": "rs",
+        "statusHighVoltageBattery": "r"
+      }
+    },
+    "de.bmw.infotainment.lsc.LSCDataSink": {
+      "instances": ["1"],
+      "attributes": {
+        "displayConditionHybrid": "s",
+        "dataRangeDisplay": "s"
+      }
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "instances": ["1"],
+      "attributes": {
+        "displayRangeElectricVehicle": "rs",
+        "statusConsumptionAverageElectricVehicle": "r"
+      }
+    },
+    "de.bmw.infotainment.navigation.positioning.Positioning": {
+      "instances": ["Main_Instance"],
+      "attributes": {
+        "rawPositionData": "r"
+      }
+    },
+    "de.bmw.infotainment.telematic.journeyhistory.BcPersonal": {
+      "instances": ["1"],
+      "attributes": {
+        "driveSegment": "r"
+      }
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "instances": ["1"],
+      "attributes": {
+        "statusCarSpeed2": "r",
+        "highVoltageStorageInfoToExternal": "s"
+      }
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "instances": ["1"],
+      "attributes": {
+        "ExteriorTemperature": "s"
+      }
+    },
+    "de.bmw.infotainment.sdi.aap.androidautoprojectedmanager.AndroidAutoProjectedManager": {
+      "instances": ["AndroidAutoProjectedManagerInst1"],
+      "attributes": {
+        "isVideoStreaming": "rs"
+      }
+    },
     "de.bmw.infotainment.telematic.oap.PrivateEntryPoint2": {
       "instances": [
         "${userId}"

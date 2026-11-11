@@ -24,6 +24,7 @@ module.exports = function createSession(gpu, options) {
         dirty = true;
     });
     const data = provider.data;
+    data.diagnostics = options.diagnostics;
     panel.setArticleCount((data.news || []).length);
 
     function present() {
@@ -70,10 +71,15 @@ module.exports = function createSession(gpu, options) {
     }, 33);
 
     return {
+        telemetry(records) {
+            data.telemetry = records;
+            dirty = true;
+        },
         controller(event) { if (shown && !canGrab) panel.controller(event); },
         show(on) {
             if (shown === on) return;
             shown = on;
+            if (!on) data.telemetry = null;
             panel.resetInput();
             present();
         },

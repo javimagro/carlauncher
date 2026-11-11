@@ -10,6 +10,39 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-11 · 0.2.2 · Prueba de telemetría desde MGU Store
+
+- **Pantalla de prueba.** El panel izquierdo muestra lecturas brutas de batería, autonomía, Trayecto, temperaturas, altura y estado de vídeo de Android Auto. Distingue espera, falta de muestra y error. La tarjeta Trayecto indica el estado de precalentamiento cuando llega una lectura válida. La franja de energía conserva los números de demostración para la comparación.
+- **Integración.** El OAP usa permisos por campo de solo lectura y suscripción. Envía muestras a un socket Unix del renderizador restringido al UID de BMWLauncher. Al salir se desconecta y libera las suscripciones. Se conserva el ID de app y el acceso de iDrive.
+- **Verificación.** Pasaron 17 pruebas locales, se revisó la pantalla con datos simulados en Chrome y se validaron los campos contra el catálogo del i4. Se empaquetaron las fuentes y el motor gráfico, se enlazó el OAP con donante sintético y se comprobó la compatibilidad con Node.js 8.16.2.
+- **Prueba en la unidad.** Se distribuye con la etiqueta `v0.2.2` del canal **Tags**. La foto de **Lecturas del coche** y los valores del cuadro permiten comprobar las escalas sin ENET. El estado de vídeo indica qué comunica iDrive. La captura del flujo de Android Auto queda pendiente. [Actualizar y probar](README.md#actualizar-desde-mgu-store)
+- **Reversión.** Si hace falta restaurar el comportamiento de 0.2.1 desde el canal Tags, empaquetar ese código con un número de versión superior en ambos componentes para que la Store lo ofrezca como actualización.
+
+## 2026-11-11 · Android Auto y precalentamiento HV · Análisis local
+
+- **Android Auto.** Se localizó `NmeAndroidAutoDisplay::OnVideoFrame` antes de componer el HMI. El firmware también documenta una ruta de vídeo Cinemo hacia `wayland-1` y un puente H.264 asociado a pantallas alternativas. Queda por identificar el objeto y la superficie que usan la proyección central en directo. [Evidencia y siguiente comprobación](ANDROID-AUTO-MGU21.md)
+- **Encuadre.** La prueba en el simulador colocó una captura de Android Auto solo a la izquierda. La comparación de píxeles confirmó que las tarjetas y la franja de energía eran idénticas. La vista local deja espacio arriba y abajo al mantener el aspecto panorámico de la captura.
+- **Precalentamiento.** La MGU aceptó activar la depuración, pero SSH cortó antes de autenticar. Se cerró la depuración y se comprobó el cierre del puerto. El usuario inició el precalentamiento desde el menú original de BMW y confirmó que apareció una batería pequeña en el cuadro. Queda pendiente correlacionar ese cambio con `statusVWM` en directo.
+
+## 2026-11-11 · Telemetría y Android Auto · Capturas del i4
+
+- **Sesión.** Se habilitó SSH temporalmente con autorización. El catálogo leído en la unidad coincide por SHA-256 con el extraído del SWFL. Al terminar, la MGU confirmó el cierre, el indicador de depuración quedó inactivo y el puerto dejó de responder.
+- **Trayecto.** `BcPersonal.driveSegment` respondió con una estructura de 107 bytes y valores en los campos de distancia, duración, consumo, velocidad media y carga al inicio y al final. Se vieron ofertas de `KombiIF`, `LSCDataSink` y `PredictiveThermalManagement`. Los getters UDP directos recibieron `EPERM`. Queda pendiente comprobar sus valores a través de un OAP autorizado y validar las escalas de Trayecto.
+- **Precalentamiento.** El binario original `Hmi8` usa el bit 0 de `statusVWM` para el icono de actividad y trata 61–63 como valores sin indicador válido. La sonda añade lectura y suscripción de estado térmico. La orden de control `operationMode` queda fuera de la sonda. [Detalle de telemetría](TELEMETRIA-MGU21.md#precalentamiento-hv)
+- **Android Auto.** Con el applet `0x32` en primer plano se capturaron la pantalla central y la superficie `100` de `Hmi8`, ambas a 2880 × 960. Android Auto y las barras de iDrive ya están dibujados en la superficie de `Hmi8`. Winston no mostró una superficie de proyección separada en esta escena. Se borró el archivo temporal de captura de la MGU. El vídeo de proyección y el envío de entrada siguen siendo puntos de integración pendientes.
+- **Copia local.** Se verificaron dos archivos tar con 149 componentes en total y dos PNG en la carpeta privada `MGU21-036.010.004-analisis`, fuera del repositorio. Incluyen el HMI, Winston, el catálogo, las bibliotecas de vehículo y los componentes de vídeo de proyección.
+
+## 2026-11-11 · Telemetría · Primera comprobación ENET en el i4
+
+- **Comprobación.** Con el coche parado, el gateway y la MGU respondieron a consultas de identificación de solo lectura por ENET. La unidad lleva `SWFL 000056EE 036_010_004`, la misma revisión del catálogo analizado en local.
+- **Acceso.** El puerto SSH no respondió en los intentos dirigidos a la dirección que devolvió la MGU. El DTC de depuración activa `B7F8E5` estaba ausente. La sesión se realizó después de recibir autorización para habilitar el acceso temporal.
+
+## 2026-11-11 · Telemetría · Inspección local MGU21
+
+- **Hallazgo.** El catálogo del SWFL `000056EE 036_010_004` expone dos candidatos de carga HV visible, autonomía eléctrica con unidad y validez, consumos medios, un segmento de viaje, altura GNSS y temperaturas. Las bibliotecas proxy ELF del SWFL `000056E7` son x86-64. La disponibilidad real y varias escalas siguen pendientes. Se conservan las referencias y el procedimiento en [Telemetría del i4](TELEMETRIA-MGU21.md).
+- **Diferencia con eDrive.** IterioDev eDrive 1.1.0 usa `DDBC` y una estimación de autonomía. El perfil Gen5/i4 del BMWLauncher Android usa `E5CE` para carga del pack. Esta diferencia da una hipótesis para el dato ausente. La respuesta del i4 se verificará con ENET.
+- **Preparación y pruebas.** La sonda OAP se prepara en una carpeta temporal a partir del SWFL o del catálogo extraído. Pasaron trece pruebas locales, con casos de cierre de suscripciones y exclusión de coordenadas. Se enlazó la variante con un donante sintético y se ejecutó el módulo de captura con Node.js 8.16.2. La captura en la MGU y la conexión a las tarjetas quedan pendientes.
+
 ## 2026-11-11 · 0.2.1 · Mando, red y nombre de la herramienta
 
 - **Mando.** En el i4, desplazar el mando a la izquierda salía de la app y girarlo no recorría las tarjetas. La 0.2.0 solo recibía muestras cuando el renderizador anunciaba captura. El componente comunitario `mgu-inputgate` publicado declara ID7. Se añadió la lectura OAP de FrontCCU para la rotación cuando el renderizador no captura y se desactivó la inclinación lateral en BMWLauncher. Las pruebas locales cubren ambas entradas. Queda por confirmar la recepción en el i4 y cómo mantener la página si el HMI procesa la inclinación por su cuenta.

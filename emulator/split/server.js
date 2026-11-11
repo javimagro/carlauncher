@@ -212,7 +212,9 @@ for (const [filename] of files.values()) fs.accessSync(filename, fs.constants.R_
 web.listen(port, '127.0.0.1', () => {
     daemon.listen(pipe, () => {
         if (home) {
-            const launcher = fork(path.join(__dirname, 'drivehub.js'), [pipe, store, live ? 'live' : 'fixture']);
+            const launcher = fork(path.join(__dirname, 'drivehub.js'), [
+                pipe, store, live ? 'live' : 'fixture', process.argv.includes('--telemetry') ? 'telemetry' : ''
+            ]);
             launcher.on('exit', (code) => process.exit(code || 1));
             console.log(`BMWLauncher en http://${host}/`);
             return;

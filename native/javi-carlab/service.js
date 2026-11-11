@@ -7,6 +7,7 @@ const { fitArea } = require('./layout.js');
 const record = require('./vendor/kit_record.js');
 const createSession = require('./drivehub-session.js');
 const { listen } = require('./controller-input.js');
+const { consume: consumeTelemetry } = require('./telemetry-input.js');
 const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
 const { RenderClient } = require('/var/opt/mgu-render/current/mgu_render_client.js');
@@ -18,6 +19,7 @@ const uplink = '/var/opt/mgu-uplink';
 const uplinkLease = '/run/mgu-uplink/lease.json';
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
+    diagnostics: true,
     configFile: path.join(dataDirectory, 'drivehub.json'),
     cacheFile: path.join(dataDirectory, 'drivehub-cache.json'),
     get: downloadAsApp,
@@ -32,6 +34,9 @@ const session = createSession(gpu, {
 });
 const input = listen('/run/javi-carlab/controller.sock', session.controller,
     (err) => console.warn('BMWLauncher: entrada OAP: ' + err.code));
+const telemetry = listen('/run/javi-carlab/telemetry.sock', session.telemetry,
+    (err) => console.warn('BMWLauncher: telemetría OAP: ' + err.code),
+    consumeTelemetry, () => session.telemetry(null));
 
 function networkError(code) {
     return Object.assign(new Error(code), { code });
@@ -63,6 +68,7 @@ async function downloadAsApp(url, limit) {
 const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl', (err) => {
     console.error(err.message);
     input.close();
+    telemetry.close();
     session.close();
     process.exit(1);
 });
@@ -86,7 +92,13 @@ async function poll() {
         const applet = context && Number(context[2]);
         const visible = Number.isInteger(id) && (applet === id || applet === id + 3000);
         if (visible) {
-            try { input.setOwner(appUid(directory, launcherId)); }
+            try {
+                const uid = appUid(directory, launcherId);
+                if (uid) {
+                    input.setOwner(uid);
+                    telemetry.setOwner(uid);
+                }
+            }
             catch (_) { /* The touch renderer remains available during OAP registration. */ }
         }
         session.show(visible);

@@ -16,6 +16,40 @@ const number = (value, decimals = 0) => Number.isFinite(value)
     ? String(Number(value.toFixed(decimals))).replace('.', ',') : '–';
 const temperature = (value) => number(value) + '°';
 const clock = (value) => value || '–';
+const diagnosticRows = [
+    ['Batería del cuadro', 'statusChargeOfBatteryHybrid', 'displayChargingConditionHighVoltageStorage'],
+    ['Batería LSC', 'displayConditionHybrid', 'displayChargingconditionHighvoltageStorage'],
+    ['Autonomía del cuadro', 'displayRangeElectricVehicle', 'displayRangeElectricVehicle'],
+    ['Autonomía LSC · unidad · validez', 'dataRangeDisplay', 'dataRangeDisplayElectric',
+        'unitRangeDisplay', 'fadeoutRangeDisplayElectric'],
+    ['Consumo medio BC1 · BC2 · unidad', 'statusConsumptionAverageElectricVehicle',
+        'consumptionAverageElectricVehicleBC1', 'consumptionAverageElectricVehicleBC2',
+        'unitOfMeasurementConsumptionElectricVehicleBC'],
+    ['Trayecto · distancia · duración', 'driveSegment', 'bcBeTripDistanceKm', 'bcBeDurationDrive'],
+    ['Trayecto · consumo · velocidad media', 'driveSegment', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive'],
+    ['Altura GPS · válida · fijación', 'rawPositionData', 'position.height.rawLengthMeter', 'position.heightValid', 'fixType'],
+    ['Temperatura batería HV', 'statusBatteryTemperature', 'actualValueTemperatureHighVoltageStorage'],
+    ['Temperatura exterior', 'ExteriorTemperature', 'temperatureExterior'],
+    ['Precalentamiento HV · VWM', 'statusPredictiveThermalManagement', 'preconditioningActive', 'statusVWM'],
+    ['Potencia relativa de tracción', 'displayPowerDrive', 'quotaImmediateElectricEngineDriveRecuperation'],
+    ['Energía disponible · máxima', 'highVoltageStorageInfoToExternal',
+        'energyDischargeHighVoltageStoragePresentDynamic', 'energyDischargeHighVoltageStorageMaximalDynamic'],
+    ['Estado térmico para carga rápida', 'statusHighVoltageBattery', 'thermalStatusHighVoltageBatteryForFastCharging'],
+    ['Android Auto · vídeo', 'isVideoStreaming', 'value'],
+    ['Velocidad del coche', 'statusCarSpeed2', 'speedVehicleCentreOfGravity']
+];
+const diagnosticEnums = {
+    KILOMETER: 'km', MEILEN: 'mi',
+    REICHWEITENINFORMATIONEN_EINBLENDEN: 'visible',
+    VERBRAUCH_IN_KWH__S__100KM: 'kWh/100 km',
+    VERBRAUCH_IN_WH__S__KM: 'Wh/km',
+    NO_THERMAL_LIMITATIONS: 'Sin limitaciones',
+    THERMAL_LIMITATIONS_COLD: 'Batería fría',
+    THERMAL_LIMITATIONS_HOT: 'Batería caliente',
+    CONDITIONAL_THERMAL_LIMITATIONS_COLD: 'Limitación por frío',
+    CONDITIONAL_THERMAL_LIMITATIONS_HOT: 'Limitación por calor',
+    SIGNAL_UNBEFUELLT: 'Sin dato'
+};
 
 function fit(cv, text, x, y, size, max, color, opts) {
     let value = String(text);
@@ -54,7 +88,39 @@ function wallpaper(cv, x, w, y, h, focused, overPhoto) {
     }
 }
 
-function trip(cv, x, y, w, h) {
+function diagnosticValue(value) {
+    if (Number.isFinite(value)) return number(value, 2);
+    if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+    if (typeof value === 'string') return Object.prototype.hasOwnProperty.call(diagnosticEnums, value)
+        ? diagnosticEnums[value] : value;
+    return '–';
+}
+
+function diagnostics(cv, records) {
+    cv.text('LECTURAS DEL COCHE', map.x + 24, map.y + 31, 22, primary, bold);
+    cv.text('Valores de prueba para comparar con el cuadro', map.x + 24, map.y + 55, 14, secondary);
+    diagnosticRows.forEach(([label, signal, ...keys], index) => {
+        const x = map.x + 23 + index % 2 * 457;
+        const y = map.y + 75 + Math.floor(index / 2) * 52;
+        const record = records && records.get(signal);
+        const fields = record && record.fields;
+        let value = !records ? 'Esperando conexión…' : 'Sin muestra';
+        let color = secondary;
+        if (fields && record.status === 'sample') {
+            value = keys.map((key) => diagnosticValue(fields[key])).join('  ·  ');
+            color = primary;
+        } else if (record && record.status === 'error') {
+            const phases = { proxy: 'servicio', getter: 'lectura', subscribe: 'suscripción' };
+            value = 'Error de ' + (phases[record.phase] || 'lectura');
+            color = amber;
+        }
+        cv.roundRect(x, y, 447, 47, 5, '#192734');
+        cv.text(label, x + 10, y + 17, 13, secondary);
+        fit(cv, value, x + 10, y + 38, 17, 427, color);
+    });
+}
+
+function trip(cv, x, y, w, h, preconditioning) {
     const metrics = [
         ['Consumo medio', '25,3 kWh/100 km'], ['Consumo medio total', '21,9 kWh/100 km'],
         ['Distancia recorrida', '50,9 km'], ['Velocidad media', '76 km/h'],
@@ -76,9 +142,11 @@ function trip(cv, x, y, w, h) {
     cv.text('917 m', x + w - 39, y + 299, 21, primary, right);
     cv.gradientRect(left + 8, y + 337, w - 76, 41, [[0, [61, 196, 232, 90]], [1, [61, 196, 232, 0]]]);
     cv.line(left + 8, y + 337, x + w - 39, y + 338, 2, '#52d9f8');
-    for (const [index, label, value] of [[0, 'Exterior', '–'], [1, 'Batería HV', '17 °C']]) {
+    const batteryLabel = typeof preconditioning === 'boolean'
+        ? 'Precalentamiento ' + (preconditioning ? 'activo' : 'inactivo') : 'Batería HV';
+    for (const [index, label, value] of [[0, 'Exterior', '–'], [1, batteryLabel, '17 °C']]) {
         const center = left + col * (index + 0.5) + index * 5;
-        cv.text(label, center, y + h - 60, 13, primary, centered);
+        cv.text(label, center, y + h - 60, 13, index && preconditioning ? amber : primary, centered);
         cv.text(value, center, y + h - 41, 15, primary, centered);
         const colors = ['#64bfe7', '#3ad674', '#ffce43', '#ff515d'];
         cv.rampRect(center - 69, y + h - 26, 138, 8, 4, [
@@ -235,7 +303,7 @@ function empty(cv, x, y, w, h, status, loading, offline, detail) {
     if (status === 'offline' && detail) fit(cv, detail, x + w / 2, y + h / 2 + 24, 13, w - 36, secondary, centered);
 }
 
-function drawCard(cv, card, x, selected, data, state, art, now) {
+function drawCard(cv, card, x, selected, data, state, art, now, preconditioning) {
     const { y, h } = viewport;
     const w = card.w;
     const clipLeft = Math.max(x, viewport.x);
@@ -251,11 +319,13 @@ function drawCard(cv, card, x, selected, data, state, art, now) {
     cv.strokeRoundRect(x + 1, y + 1, w - 2, h - 2, 9, 1.6, selected ? '#7793a8' : '#3e4b56');
     cv.gradientRect(x + 1, y + 12, 2, h - 24, [[0, [122, 169, 203, 36]], [0.56, '#cfe9fa'], [1, [122, 169, 203, 10]]]);
     cv.gradientRect(x + w - 3, y + 12, 2, h - 24, [[0, [122, 169, 203, 36]], [0.56, '#cfe9fa'], [1, [122, 169, 203, 10]]]);
-    const title = card.id === 'weather' ? card.title + ' - ' + (data.weather ? data.weather.name : data.city) : card.title;
+    let title = card.title;
+    if (card.id === 'weather') title += ' - ' + (data.weather ? data.weather.name : data.city);
+    if (card.id === 'trip' && data.diagnostics) title += ' · DEMO';
     fit(cv, title, x + w / 2, y + 25, 19, w - 35, primary, { align: 'center', spacing: 2 });
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
-    if (card.id === 'trip') trip(cv, x, y, w, h);
+    if (card.id === 'trip') trip(cv, x, y, w, h, preconditioning);
     if (card.id === 'radio') radio(cv, x, y, w, h, art);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
@@ -290,9 +360,14 @@ function drawHome(cv, state, scroll, data, art, now) {
     cv.clear(background);
     cv.roundRect(map.x, map.y, map.w, map.h, 10, '#121c25');
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
-    cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
+    const records = data.diagnostics && data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
+    const thermal = records && records.get('statusPredictiveThermalManagement');
+    const active = thermal && thermal.status === 'sample' && thermal.fields
+        ? thermal.fields.preconditioningActive : undefined;
+    if (data.diagnostics) diagnostics(cv, records);
+    else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
-        state.selected === index, data, state, art, now));
+        state.selected === index, data, state, art, now, active));
     energy(cv, data.energy, art);
 }
 

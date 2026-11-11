@@ -3,11 +3,13 @@
 const OnlineApp = require('oap-sdk/src/core/OnlineApp.js');
 const someipBuilders = require('oap-sdk/src/someip/someipBuilders');
 const { observe } = require('./controller.js');
+const { report } = require('./telemetria-mgu.js');
 
 function truth(value) { return value === true || value === 1 || value === '1'; }
 
-module.exports = function run(screen) {
+module.exports = function run() {
     const app = new OnlineApp();
+    const telemetry = report(someipBuilders);
     let controller;
     let entry;
     let ready = false;
@@ -18,8 +20,8 @@ module.exports = function run(screen) {
         if (visible === value) return;
         visible = value;
         if (controller) controller.show(visible);
-        if (screen) screen.show(visible);
         if (!ready) return;
+        telemetry.show(visible);
         const reports = visible ? [app.registerActive(), app.registerHmiVisible()] : [app.unregisterHmiVisible(), app.registerInactive()];
         Promise.all(reports).catch((err) => console.warn(err.message));
     }
@@ -39,7 +41,6 @@ module.exports = function run(screen) {
             if (!rhmi) { await app.initialized(); return; }
             const state = rhmi.getByName('ST_CarLab');
             state.on('visible', (event) => show(truth(event && event.visible)));
-            if (screen) screen.bind(rhmi, truth);
             await state.updateResources();
             const tile = app.getEntryPoints().find((item) => app.appDescription.application.entryPoints.some((d) => d.uuid === item.getDescription().uuid));
             if (!tile) throw new Error('CarLab: iDrive no entregó el acceso de la app');
@@ -55,13 +56,14 @@ module.exports = function run(screen) {
             ready = true;
             controller = observe(someipBuilders);
             controller.show(visible);
+            telemetry.show(visible);
             if (visible) await app.registerHmiVisible();
             await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
     });
     app.on('shutdown', () => {
         if (controller) controller.close();
-        if (screen) screen.close();
+        telemetry.show(false);
         Promise.resolve(app.destroyBundles()).then(() => process.exit(0), () => process.exit(0));
     });
     app.start().catch((err) => console.error('CarLab: ' + err.message));

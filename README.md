@@ -4,11 +4,13 @@
 
 ## Pantalla principal de BMWLauncher
 
-El lado izquierdo queda reservado para el mapa. El derecho gana el espacio de la antigua barra de accesos y contiene un carrusel de tarjetas integrado en BMWLauncher. La franja inferior muestra batería y autonomía actual, al llegar a la parada, tras recargar y al llegar al destino. Las lecturas y las tarjetas de Trayecto y Radio sirven de referencia visual con datos de demostración.
+El lado izquierdo queda reservado para el mapa. En la versión de prueba, ese espacio muestra las lecturas de diagnóstico del coche. El derecho contiene el carrusel de tarjetas integrado en BMWLauncher y la franja de energía. Los números de la franja y los ejemplos de Trayecto y Radio siguen siendo de demostración. El estado de precalentamiento en Trayecto procede de la señal de la MGU cuando hay una lectura válida.
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión **0.2.1**. La actualización conserva el identificador de la app y trae el **Motor gráfico de BMWLauncher** de la misma versión. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión de prueba **0.2.2**. La actualización conserva el acceso de BMWLauncher y trae el **Motor gráfico de BMWLauncher** de la misma versión. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+
+Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas del coche**, compara **Batería del cuadro** y **Autonomía del cuadro** con el cuadro y haz una foto de la pantalla. Los campos muestran valores de diagnóstico, incluidos los códigos que la MGU devuelve cuando falta un dato. Después inicia el precalentamiento en **Vehículo → Carga → Preacondicionar batería**, comprueba que aparece el icono en el cuadro y vuelve a BMWLauncher para mirar **Precalentamiento HV**. Si puedes, abre Android Auto y vuelve a BMWLauncher para mirar **Android Auto · vídeo**. Esa fila indica el estado que comunica iDrive al abrir BMWLauncher.
 
 Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Inclina el mando a la izquierda y comprueba si iDrive mantiene la app abierta. Verifica que **Back** sigue permitiendo salir. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
 
@@ -21,7 +23,7 @@ Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticia
 3. Separar las fuentes de datos de la pantalla. Tiempo utiliza Open-Meteo con tres horas de previsión, precipitación por hora y siete días seleccionables. Noticias usa las portadas RSS de EL PAÍS, Xataka y Motorpasión, con titular, resumen del medio, imagen y contador. El servicio conserva la última respuesta válida. En iDrive las descargas se ejecutan con el UID de BMWLauncher y necesitan `mgu-uplink` conectado.
 4. Comparar con capturas de Carlinkit y probar en Chrome el desplazamiento, foco, lluvia, cambio de día, anterior y siguiente. En el coche queda por comprobar el área real de Winston, el acceso a internet y los eventos del mando físico.
 
-Las coordenadas de Tiempo usan Madrid por defecto. Para cambiar la ubicación en una futura instalación, `/var/opt/javi-carlab/drivehub.json` admite un objeto `location` con `name`, `latitude` y `longitude`. La posición del vehículo, la telemetría y la búsqueda de noticias mediante asistente quedan pendientes.
+Las coordenadas de Tiempo usan Madrid por defecto. Para cambiar la ubicación en una futura instalación, `/var/opt/javi-carlab/drivehub.json` admite un objeto `location` con `name`, `latitude` y `longitude`. La posición del vehículo para Tiempo, la integración de las lecturas verificadas en la franja de energía y la búsqueda de noticias mediante asistente quedan pendientes.
 
 Los fondos e iconos del tiempo, la imagen de reserva de Noticias y el ejemplo de Radio proceden de los recursos locales de DriveHub. Los iconos de energía proceden de los recursos locales de BMWLauncher para Carlinkit. `drivehub-art.rgba.gz` contiene versiones redimensionadas para el renderizador. Se regenera con `python tools/Preparar-ArteDriveHub.py <DriveHub> <BMWLauncher-Android>` y Pillow. Las licencias de Inter, jpeg-js y SAX se incluyen en `native/javi-carlab/vendor`.
 
@@ -33,7 +35,7 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--live` para consultar los servicios reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
+El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo y Noticias reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
 
 ## Versiones anteriores (0.1.x)
 
@@ -59,6 +61,8 @@ Al abrir CarLauncher, la variante experimental puede pedir al HMI que abra Andro
 El arranque automático requiere un perfil de la unidad en `/var/opt/javi-carlab/aa.json`. Se obtienen primero dos lecturas del contexto y la escena de Winston, con Android Auto abierto y cerrado. `tools/Capturar-Capas-AA.ps1` realiza esas consultas por una conexión SSH ya autorizada y disponible. Solo se activa el perfil tras confirmar `state`, `applet`, `layer`, `surface` y `process` y comprobar que la capa pertenece únicamente a la proyección. El perfil usa `enabled: true` para activar la prueba.
 
 El experimento guarda el rectángulo original antes de mover la capa, comprueba que Winston aplicó el destino y restaura la geometría al abandonar el contexto. Si iDrive vuelve a posicionar la capa, el marco se retira y la prueba termina. El siguiente paso en la unidad es comprobar que la imagen se mantiene, que el toque coincide con sus controles y que Atrás restaura el tamaño original. La variante se validó con una escena simulada y queda pendiente de calibración en la MGU.
+
+En el i4 se capturó Android Auto dentro de la superficie `100` de `Hmi8`, junto con las barras nativas. La técnica de mover una capa de proyección propia requiere una superficie independiente. La siguiente prueba debe localizar la salida de vídeo de Android Auto antes de que se componga en `Hmi8`. [Resultado de la captura](BITACORA.md#2026-11-11--telemetría-y-android-auto--capturas-del-i4)
 
 ## Primer hito
 
