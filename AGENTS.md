@@ -1,5 +1,7 @@
 # Aplicaciones nativas iDrive 8
 
+- Antes de cada cambio, lee [ARQUITECTURA.md](ARQUITECTURA.md) y las entradas de [BITACORA.md](BITACORA.md) relacionadas con el área.
+- Actualiza [BITACORA.md](BITACORA.md) al cerrar cambios relevantes e incidencias. Registra qué se hizo, cómo se reprodujo y corrigió el fallo, y qué se verificó. Si cambia una decisión vigente, actualiza también [ARQUITECTURA.md](ARQUITECTURA.md).
 - Trabaja desde este proyecto local de Codex en Windows. El punto de partida y las rutas de los proyectos relacionados están en `README.md`.
 - El primer hito es reproducir la interfaz de BMWLauncher dentro de una app de iDrive 8. Usa BMWLauncher y DriveHub como referencias de solo lectura.
 - Usa datos de demostración para la batería y la ruta hasta validar sus fuentes. La maqueta debe distinguir los paneles propios, los accesos a apps independientes y los posibles contenidos proyectados.

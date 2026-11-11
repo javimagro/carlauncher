@@ -1,5 +1,5 @@
 [Unit]
-Description=CarLauncher Lab iDrive 8 split-panel experiment
+Description=BMWLauncher iDrive 8
 After=vsomeipd.service mgu-render.socket
 
 [Service]
@@ -7,7 +7,6 @@ RuntimeDirectory=javi-carlab
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=restart
 ExecStart=/usr/bin/node /var/opt/javi-carlab/current/service.js
-ExecStopPost=/usr/bin/node /var/opt/javi-carlab/current/aa.js --restore
 Restart=on-failure
 RestartSec=5s
 LimitCORE=0

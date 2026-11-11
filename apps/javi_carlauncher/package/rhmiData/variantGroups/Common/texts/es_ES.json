@@ -1,6 +1,6 @@
 {
-  "SID_CARLAB_TITLE": "CarLauncher",
-  "SID_CARLAB_HELP": "Prueba ID8. El panel requiere la herramienta CarLauncher Lab.",
+  "SID_CARLAB_TITLE": "BMWLauncher",
+  "SID_CARLAB_HELP": "La pantalla principal requiere la herramienta BMWLauncher para iDrive.",
   "SID_CARLAB_STATION0": "Radio 1",
   "SID_CARLAB_STATION1": "Radio 2",
   "SID_CARLAB_STATION2": "Radio 3"

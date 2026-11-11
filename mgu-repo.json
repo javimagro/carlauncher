@@ -6,17 +6,17 @@
       "kind": "app",
       "path": "apps/javi_carlauncher",
       "build": "unit",
-      "mguHmi": ["ID8"],
-      "requires": { "javi-carlab": "0.1.1", "javi_panel_radio": "0.1.0" }
+      "mguHmi": [
+        "ID8"
+      ],
+      "requires": {
+        "javi-carlab": "0.2.0"
+      }
     },
     {
-      "id": "javi_panel_radio",
-      "kind": "app",
-      "path": "apps/javi_panel_radio",
-      "build": "unit",
-      "mguHmi": ["ID8"],
-      "requires": { "javi-carlab": "0.1.0" }
-    },
-    { "id": "javi-carlab", "kind": "tool", "path": "native/javi-carlab" }
+      "id": "javi-carlab",
+      "kind": "tool",
+      "path": "native/javi-carlab"
+    }
   ]
 }

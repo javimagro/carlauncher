@@ -2,6 +2,7 @@ import { createGfx } from '/gfx/mgu-gfx.js';
 
 const stage = document.getElementById('stage');
 const status = document.getElementById('status');
+const home = document.documentElement.hasAttribute('data-drivehub');
 const layers = new Map();
 let sending = Promise.resolve();
 let pointer;
@@ -42,7 +43,8 @@ try {
         canvas.dataset.frames = info.frames;
         if (layers.get('launcher').canvas.dataset.visible === 'true') {
             const panel = layers.get('panel').gfx.stats();
-            status.textContent = panel.visible ? `Dos procesos visibles · Radio en ${panel.place.w} × ${panel.place.h}` : 'CarLauncher visible · Radio cerrada';
+            status.textContent = home ? 'Simulador conectado'
+                : panel.visible ? `Dos procesos visibles · Radio en ${panel.place.w} × ${panel.place.h}` : 'CarLauncher visible · Radio cerrada';
         }
     };
     source.onerror = () => { status.textContent = 'Reconectando con el simulador local…'; };
@@ -57,6 +59,9 @@ stage.addEventListener('pointerdown', (event) => {
     stage.setPointerCapture(event.pointerId);
     pointer = event.pointerId;
     touch(event, 1);
+});
+stage.addEventListener('pointermove', (event) => {
+    if (home && pointer === event.pointerId) touch(event, 2);
 });
 for (const [name, phase] of [['pointerup', 3], ['pointercancel', 0], ['lostpointercapture', 0]]) {
     stage.addEventListener(name, (event) => {
@@ -77,6 +82,10 @@ stage.addEventListener('keydown', (event) => {
         if (pressed) return;
         pressed = true;
         send({ turn: 0, press: true });
+    } else if (home && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        send({ turn: 0, press: pressed, tilt: event.key === 'ArrowUp' ? 1 : 7 });
+        send({ turn: 0, press: pressed, tilt: 0 });
     } else if (Object.hasOwn(turns, event.key)) {
         event.preventDefault();
         send({ turn: turns[event.key], press: pressed });

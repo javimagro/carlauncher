@@ -1,1 +1,1 @@
-module.exports = { font: () => "inter" };
+module.exports = { font: () => 'latin' };

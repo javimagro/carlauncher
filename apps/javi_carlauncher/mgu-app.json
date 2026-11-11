@@ -1,9 +1,10 @@
 {
   "schema": 1,
   "id": "javi_carlauncher",
-  "title": "CarLauncher",
-  "version": "0.1.1",
+  "title": "BMWLauncher",
+  "version": "0.2.0",
   "tree": "package",
+  "internet": true,
   "mguHmi": [
     "ID8"
   ],

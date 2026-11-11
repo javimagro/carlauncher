@@ -5,12 +5,15 @@ const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
-const { width, height } = require('../launcher-view');
+const home = process.argv.includes('--drivehub');
+const live = process.argv.includes('--live');
+const [requestedPort, kitPath, storePath] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
+const { width, height } = home ? require('../../native/javi-carlab/drivehub-state') : require('../launcher-view');
 
 const projects = path.resolve(__dirname, '../../..');
-const kit = path.resolve(process.argv[3] || path.join(projects, 'idrive7-apps'));
-const store = path.resolve(process.argv[4] || path.join(projects, 'mgu-store-official'));
-const port = Number(process.argv[2] || 18078);
+const kit = path.resolve(kitPath || path.join(projects, 'idrive7-apps'));
+const store = path.resolve(storePath || path.join(projects, 'mgu-store-official'));
+const port = Number(requestedPort || 18078);
 const host = `127.0.0.1:${port}`;
 const pipe = `\\\\.\\pipe\\carlauncher-split-${process.pid}`;
 const gfx = path.join(kit, 'kit/emu/web/gfx');
@@ -22,7 +25,7 @@ const files = new Map([
     ['/gfx/mgu-gfx-wasm.wasm', [path.join(gfx, 'mgu-gfx-wasm.wasm'), 'application/wasm']]
 ]);
 const renderer = {
-    hello: 1, place: 2, show: 3, atlas: 4, ramp: 5, frame: 7, claim: 9,
+    hello: 1, place: 2, show: 3, atlas: 4, ramp: 5, frame: 7, claim: 9, image: 10, dropImage: 11,
     mode: 0x4d520001, grab: 0x4d520002, ready: 0x4d520101, wheel: 0x4d520103,
     legacyReady: 101, touch: 105
 };
@@ -82,14 +85,17 @@ const daemon = net.createServer((socket) => {
                     [0, 4, 8, 12].map((offset) => payload.readFloatLE(4 + i * 16 + offset)));
                 continue;
             } else if (type === renderer.grab) {
+                const wasGrabbing = layer.grab;
                 layer.grab = !!payload.readUInt32LE();
+                if (home && layer.grab && !wasGrabbing) sendController(layer, 0, false, 0);
                 continue;
             } else if (type === renderer.show) {
                 layer.visible = !!payload.readUInt32LE();
             }
 
-            const key = type === renderer.atlas || type === renderer.ramp ? `${type}:${payload.readUInt32LE()}` : type;
-            layer.cache.set(key, message);
+            const key = [renderer.atlas, renderer.ramp, renderer.image].includes(type) ? `${type}:${payload.readUInt32LE()}` : type;
+            if (type === renderer.dropImage) layer.cache.delete(`${renderer.image}:${payload.readUInt32LE()}`);
+            else layer.cache.set(key, message);
             pending.push(message);
             if (type === renderer.frame || type === renderer.show) {
                 for (const viewer of viewers) publish(viewer, layer.name, pending);
@@ -124,17 +130,22 @@ function touch(phase, x, y) {
         payload.writeFloatLE(py, 8);
         gesture.socket.write(packet(renderer.touch, payload));
     }
-    if (phase !== 1) gesture = undefined;
+    if (phase === 0 || phase === 3) gesture = undefined;
 }
 
-function wheel(turn, press) {
-    const layer = layers.get('panel');
+function wheel(turn, press, tilt) {
+    const layer = layers.get(home ? 'launcher' : 'panel');
     if (!layer?.visible || !layer.grab) return;
+    sendController(layer, turn, press, tilt);
+}
+
+function sendController(layer, turn, press, tilt) {
     knob = (knob + turn) & 0xffff;
     const payload = Buffer.alloc(8);
     payload[0] = ++sequence & 255;
     payload.writeUInt16BE(knob, 1);
     payload[3] = Number(press);
+    payload[4] = tilt;
     layer.socket.write(packet(renderer.wheel, payload));
 }
 
@@ -164,10 +175,11 @@ const web = http.createServer(async (req, res) => {
             let body = '';
             for await (const chunk of req) body += chunk;
             const input = JSON.parse(body);
-            if ([0, 1, 3].includes(input.phase) && Number.isFinite(input.x) && Number.isFinite(input.y)) {
+            if ([0, 1, 2, 3].includes(input.phase) && Number.isFinite(input.x) && Number.isFinite(input.y)) {
                 touch(input.phase, input.x, input.y);
-            } else if ([-1, 0, 1].includes(input.turn) && typeof input.press === 'boolean') {
-                wheel(input.turn, input.press);
+            } else if ([-1, 0, 1].includes(input.turn) && typeof input.press === 'boolean'
+                && [undefined, 0, 1, 2, 4, 5, 7, 8, 10, 11].includes(input.tilt)) {
+                wheel(input.turn, input.press, input.tilt || 0);
             } else {
                 res.writeHead(400).end();
                 return;
@@ -182,12 +194,29 @@ const web = http.createServer(async (req, res) => {
     if (!file) { res.writeHead(404).end(); return; }
     const [filename, mime] = file;
     res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' });
-    fs.createReadStream(filename).pipe(res);
+    if (home && req.url === '/') {
+        res.end(fs.readFileSync(filename, 'utf8')
+            .replace('<html lang="es">', '<html lang="es" data-drivehub>')
+            .replace('CarLauncher · Prueba de panel derecho', 'BMWLauncher · Vista local')
+            .replace('CarLauncher · Prueba de panel derecho', 'BMWLauncher · Vista local')
+            .replace('Pantalla de CarLauncher', 'Pantalla de BMWLauncher')
+            .replace('max-width: 1600px', `max-width: ${width}px`)
+            .replace('1600 / 520', `${width} / ${height}`)
+            .replace(/width="1600"/g, `width="${width}"`)
+            .replace(/<p>Pulsa <strong>Radio<\/strong>.*?<\/p>/,
+                '<p>Desliza horizontalmente o usa la rueda para recorrer las tarjetas. Usa ↑/↓ o desliza en vertical para cambiar de vista en Tiempo o de noticia.</p>'));
+    } else fs.createReadStream(filename).pipe(res);
 });
 
 for (const [filename] of files.values()) fs.accessSync(filename, fs.constants.R_OK);
 web.listen(port, '127.0.0.1', () => {
     daemon.listen(pipe, () => {
+        if (home) {
+            const launcher = fork(path.join(__dirname, 'drivehub.js'), [pipe, store, live ? 'live' : 'fixture']);
+            launcher.on('exit', (code) => process.exit(code || 1));
+            console.log(`BMWLauncher en http://${host}/`);
+            return;
+        }
         const launcher = fork(path.join(__dirname, 'app.js'), ['launcher', pipe, kit, store]);
         const panel = fork(path.join(__dirname, 'app.js'), ['panel', pipe, kit, store]);
         launcher.on('message', (visible) => { if (panel.connected) panel.send(visible); });

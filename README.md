@@ -1,12 +1,49 @@
-# Carlauncher para BMW iDrive 8
+# BMWLauncher para iDrive 8
 
-## Fuente experimental para MGU Store
+[Arquitectura de desarrollo](ARQUITECTURA.md) · [Bitácora técnica](BITACORA.md)
+
+## Pantalla principal de BMWLauncher (0.2.0)
+
+El lado izquierdo queda reservado para el mapa. El derecho gana el espacio de la antigua barra de accesos y contiene un carrusel de tarjetas integrado en BMWLauncher. La franja inferior muestra batería y autonomía actual, al llegar a la parada, tras recargar y al llegar al destino. Las lecturas y las tarjetas de Trayecto y Radio sirven de referencia visual con datos de demostración.
+
+### Actualizar desde MGU Store
+
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión **0.2.0**. Conserva el identificador de la instalación anterior y actualiza la herramienta gráfica asociada. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+
+Con el coche parado, abre **BMWLauncher** y desliza horizontalmente sobre las tarjetas. Después gira la rueda para comprobar que el foco cambia y que el carrusel se desplaza hasta Tiempo y Noticias. En Tiempo, desliza en vertical o pulsa la rueda para alternar entre condiciones y lluvia. El mando físico necesita la puerta FrontCCU del renderizador.
+
+Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticias consulta los RSS cada 15 minutos mientras la app está abierta. Si falla la conexión, muestran la última respuesta disponible y reintentan pasados dos minutos.
+
+### Plan y arquitectura
+
+1. Reproducir el encuadre de CarLauncher para Carlinkit y medir las tarjetas originales de DriveHub. El carrusel conserva tres posiciones. Trayecto y Radio, Radio y Tiempo, y Noticias a todo el ancho. La trama diagonal es común al panel y se aclara dentro de la tarjeta enfocada.
+2. Compartir estado de selección, gestos, geometría y dibujo entre el servicio iDrive y el simulador de Windows. `drivehub-state.js` gestiona el desplazamiento, el toque y FrontCCU. `drivehub-view.js` dibuja el mapa reservado, el carrusel y la franja de energía. `drivehub-session.js` conecta ambos con `mgu-render`. El OAP mantiene su identificador y proporciona el acceso desde el menú de iDrive.
+3. Separar las fuentes de datos de la pantalla. Tiempo utiliza Open-Meteo con tres horas de previsión, precipitación por hora y siete días seleccionables. Noticias usa las portadas RSS de EL PAÍS, Xataka y Motorpasión, con titular, resumen del medio, imagen y contador. El servicio conserva la última respuesta válida. En iDrive las descargas se ejecutan con el UID de BMWLauncher y necesitan `mgu-uplink` conectado.
+4. Comparar con capturas de Carlinkit y probar en Chrome el desplazamiento, foco, lluvia, cambio de día, anterior y siguiente. En el coche queda por comprobar el área real de Winston, el acceso a internet y los eventos del mando físico.
+
+Las coordenadas de Tiempo usan Madrid por defecto. Para cambiar la ubicación en una futura instalación, `/var/opt/javi-carlab/drivehub.json` admite un objeto `location` con `name`, `latitude` y `longitude`. La posición del vehículo, la telemetría y la búsqueda de noticias mediante asistente quedan pendientes.
+
+Los fondos e iconos del tiempo, la imagen de reserva de Noticias y el ejemplo de Radio proceden de los recursos locales de DriveHub. Los iconos de energía proceden de los recursos locales de BMWLauncher para Carlinkit. `drivehub-art.rgba.gz` contiene versiones redimensionadas para el renderizador. Se regenera con `python tools/Preparar-ArteDriveHub.py <DriveHub> <BMWLauncher-Android>` y Pillow. Las licencias de Inter, jpeg-js y SAX se incluyen en `native/javi-carlab/vendor`.
+
+### Vista local
+
+Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el navegador](http://127.0.0.1:18078/).
+
+```powershell
+node emulator/split/server.js --drivehub
+```
+
+El simulador arranca con contenido reproducible. Añade `--live` para consultar los servicios reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
+
+## Versiones anteriores (0.1.x)
+
+### Fuente experimental para MGU Store
 
 La fuente publica dos apps OAP separadas para ID8 y una herramienta auxiliar. **CarLauncher** abre la pantalla de prueba. **Radio de prueba** es una segunda app que se abre en primer plano de iDrive y dibuja su propia superficie solo en el panel derecho. **CarLauncher Lab** mantiene el mapa y las barras en una capa independiente, solicita el cambio de pantalla al HMI y se oculta al salir de la prueba. La radio usa los botones RHMI para recibir el giro y la pulsación del mando. Las emisoras, la ruta y las lecturas son ficticias.
 
 El paquete está pensado para la salida ID8 de 2880 × 960. CarLauncher Lab depende de `mgu-render` 0.6.10 o superior y del `hmictl` de Overlays 0.4.0 o superior, publicado por IterioDev. La Store debe tener disponible la fuente `IterioDev/car-apps`, canal **Tags**, además de la fuente del renderizador. Overlays es una herramienta independiente y puede activar su propia barra de accesos. El marco de CarLauncher usa la capa ordinaria de `mgu-render`, que cede ante las superficies de cámara reconocidas por el renderizador. [Overlays de IterioDev](https://github.com/IterioDev/car-apps#overlays-tool-iteriodev-overlays-idrive-8-only) · [mgu-render](https://github.com/robertnisipeanu/mgu-store/blob/main/native/mgu-render/README.md)
 
-1. En MGU Store, añade `javimagro/carlauncher` en **Ajustes → Añadir fuente** y elige **Tags**. El repositorio es privado. La cuenta o el token configurado en la Store necesita acceso de lectura al repositorio. [Acceso a repositorios privados](https://github.com/robertnisipeanu/mgu-store#private-repositories)
+1. En MGU Store, añade `javimagro/carlauncher` en **Ajustes → Añadir fuente** y elige **Tags**.
 2. Abre la ficha de **CarLauncher** y comprueba que la Store ofrece la radio y la herramienta auxiliar como dependencias. Instala desde la ficha. En ID8, las apps quedan disponibles tras el siguiente reinicio de la MGU.
 3. Con el coche parado, abre **CarLauncher** desde el menú de apps y toca **Radio**. Comprueba que se abre **Radio de prueba** dentro del panel derecho y que se ven el mapa y ambas barras. Toca Radio 2, gira hasta Radio 3 y pulsa la rueda. Los contadores de **Toques**, **Giros** y **Pulsaciones** permiten separar los tres resultados. Toca **Cerrar** o usa **Atrás** para regresar y comprueba que el marco se oculta al abrir otra pantalla de iDrive.
 4. Para retirar la prueba, elimina **CarLauncher** y **Radio de prueba** desde **Instaladas**. Después elimina **CarLauncher Lab** desde **Herramientas**. Las retiradas de apps de ID8 también se aplican en el siguiente reinicio.
