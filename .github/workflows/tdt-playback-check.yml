@@ -30,7 +30,7 @@ jobs:
           export SSL_CERT_FILE="$PWD/tdt-runtime-build/ca-certificates.crt"
           for channel in la1 la2; do
             set +e
-            tdt-runtime-build/ffmpeg -nostdin -loglevel error -rw_timeout 8000000 -tls_verify 1 \
+            timeout 20s tdt-runtime-build/ffmpeg -nostdin -loglevel error -rw_timeout 8000000 -tls_verify 1 \
               -protocol_whitelist http,https,tcp,tls,httpproxy,crypto -i "https://rtvelivestream.rtve.es/rtvesec/$channel/${channel}_main_dvr.m3u8" \
               -map 0:v:0 -an -frames:v 3 -vf scale=640:360 -pix_fmt yuv420p -f rawvideo -y "$channel.i420"
             result=$?
@@ -47,3 +47,4 @@ jobs:
             apk add --quiet --no-cache build-base ca-certificates curl linux-headers nasm pkgconf openssl-dev openssl-libs-static libxml2-dev libxml2-static zlib-dev zlib-static xz-dev xz-static
             apk list --installed musl libcrypto3 libssl3 libxml2 zlib xz-libs ca-certificates-bundle
           '
+
