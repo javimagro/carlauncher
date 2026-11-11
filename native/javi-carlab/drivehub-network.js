@@ -79,3 +79,4 @@ if (require.main === module) {
 }
 
 module.exports = download;
+module.exports.lookupForUplink = lookupForUplink;

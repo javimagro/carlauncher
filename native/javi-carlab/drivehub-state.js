@@ -2,30 +2,36 @@
 
 const width = 1960;
 const height = 520;
-const viewport = { x: 966, y: 4, w: width - 970, h: 468 };
+const inset = 4;
+const formerSidebarWidth = 84;
+const split = 966 + formerSidebarWidth;
+const energyBar = { x: inset, y: height - inset - 40, w: split - 3 * inset, h: 40 };
+const map = { x: energyBar.x, y: inset, w: energyBar.w, h: energyBar.y - 2 * inset };
+const viewport = { x: split, y: inset, w: width - split - inset, h: height - 2 * inset };
 const gap = 9;
-const wide = 556;
+const wide = Math.round((viewport.w - gap) * 0.57);
 const narrow = viewport.w - wide - gap;
 const cards = [
     { id: 'trip', title: 'TRAYECTO', w: wide },
     { id: 'radio', title: 'RADIO', w: narrow },
     { id: 'weather', title: 'EL TIEMPO', w: wide },
-    { id: 'news', title: 'NOTICIAS', w: viewport.w }
+    { id: 'news', title: 'NOTICIAS', w: viewport.w },
+    { id: 'tdtworld', title: 'TDTWORLD', w: viewport.w }
 ];
 let offset = 0;
 for (const card of cards) {
     card.x = offset;
     offset += card.w + gap;
 }
-const anchors = [0, cards[1].x, cards[3].x];
-const cardPages = [0, 0, 1, 2];
-const pageCards = [0, 1, 3];
+const pageCards = [0, 1, 3, 4];
+const anchors = pageCards.map((index) => cards[index].x);
+const cardPages = [0, 0, 1, 2, 3];
 const directions = { 1: 'up', 2: 'up', 7: 'down', 8: 'down' };
-const dailyChart = { x: 36, y: 281, w: wide - 57, h: 153 };
+const dailyChart = { x: 36, y: 281, w: wide - 57, h: viewport.h - 315 };
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const contains = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
 
-function createDriveHub(invalidate, now = Date.now) {
+function createDriveHub(invalidate, now = Date.now, tdt) {
     const state = { selected: 0, weatherPage: 'summary', weatherDay: 0, article: 0 };
     let targetPage = 0;
     let scroll = 0;
@@ -92,7 +98,7 @@ function createDriveHub(invalidate, now = Date.now) {
             }
             if (gesture.axis === 'x') {
                 transition = undefined;
-                scroll = clamp(gesture.scroll + dx, 0, anchors[2]);
+                scroll = clamp(gesture.scroll + dx, 0, anchors[anchors.length - 1]);
                 invalidate();
             }
             return;
@@ -110,7 +116,9 @@ function createDriveHub(invalidate, now = Date.now) {
             }
         } else if (axis === 'y' && Math.abs(dy) >= 40 && start.index >= 0) {
             select(start.index, start.page);
-            interact(start.index, Math.sign(dy));
+            if (tdt && cards[start.index].id === 'tdtworld') {
+                tdt.touch(x - viewport.x, y - viewport.y, viewport.w, viewport.h, Math.sign(dy));
+            } else interact(start.index, Math.sign(dy));
         } else if (Math.max(Math.abs(dx), Math.abs(dy)) < 15 && contains(viewport, x, y) && start.index >= 0) {
             const localX = x - viewport.x - cards[start.index].x + position();
             if (cards[start.index].id === 'weather' && state.weatherPage === 'rain'
@@ -118,6 +126,7 @@ function createDriveHub(invalidate, now = Date.now) {
                 state.weatherDay = Math.floor((localX - dailyChart.x) * 7 / dailyChart.w);
             }
             select(start.index, start.page);
+            if (tdt && cards[start.index].id === 'tdtworld') tdt.touch(localX, y - viewport.y, viewport.w, viewport.h);
         } else {
             select(state.selected, start.page);
         }
@@ -145,19 +154,28 @@ function createDriveHub(invalidate, now = Date.now) {
             const direction = directions[event.tilt];
             if (knob === undefined) {
                 knob = event.knob;
-                pressed = down;
+                pressed = down ? event.press : false;
                 tilt = direction;
                 return;
             }
             const delta = ((event.knob - knob + 32768) & 0xffff) - 32768;
-            if (delta && Math.abs(delta) <= 64) moveCard(delta);
+            if (delta && Math.abs(delta) <= 64) {
+                if (tdt && cards[state.selected].id === 'tdtworld') tdt.rotate(delta);
+                else moveCard(delta);
+            }
             knob = event.knob;
-            if (down && !pressed) interact(state.selected, 1);
-            pressed = down;
-            if (direction && direction !== tilt) interact(state.selected, direction === 'up' ? -1 : 1);
+            if (tdt && cards[state.selected].id === 'tdtworld') {
+                if (event.press === 2 && pressed !== 2) tdt.press(true);
+                if (!down && pressed === 1) tdt.press(false);
+                if (direction && direction !== tilt) tdt.tilt(direction === 'up' ? -1 : 1);
+            } else {
+                if (down && !pressed) interact(state.selected, 1);
+                if (direction && direction !== tilt) interact(state.selected, direction === 'up' ? -1 : 1);
+            }
+            pressed = down ? event.press : false;
             tilt = direction;
         }
     };
 }
 
-module.exports = { width, height, cards, viewport, dailyChart, createDriveHub };
+module.exports = { width, height, cards, map, energyBar, viewport, dailyChart, createDriveHub };

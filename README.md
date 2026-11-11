@@ -4,11 +4,13 @@
 
 ## Pantalla principal de BMWLauncher
 
-El lado izquierdo queda reservado para el mapa. En la versión de prueba, ese espacio muestra las lecturas de diagnóstico del coche. El derecho contiene el carrusel de tarjetas integrado en BMWLauncher y la franja de energía. Los números de la franja y los ejemplos de Trayecto y Radio siguen siendo de demostración. El estado de precalentamiento en Trayecto procede de la señal de la MGU cuando hay una lectura válida.
+El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de energía debajo. En la vista de diagnóstico, las lecturas del coche ocupan el área de proyección. El carrusel de DriveHub ocupa toda la altura del lado derecho. Los números de la franja y los ejemplos de Trayecto y Radio son de demostración. El estado de precalentamiento en Trayecto procede de la señal de la MGU cuando hay una lectura válida.
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza la ficha de **CarLauncher** o **BMWLauncher** a la versión de prueba **0.2.2**. La actualización conserva el acceso de BMWLauncher y trae el **Motor gráfico de BMWLauncher** de la misma versión. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.3**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+
+Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si aparece **Audio no disponible**, la imagen puede seguir reproduciéndose. Anota el canal y el mensaje si falla una emisión.
 
 Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas del coche**, compara **Batería del cuadro** y **Autonomía del cuadro** con el cuadro y haz una foto de la pantalla. Los campos muestran valores de diagnóstico, incluidos los códigos que la MGU devuelve cuando falta un dato. Después inicia el precalentamiento en **Vehículo → Carga → Preacondicionar batería**, comprueba que aparece el icono en el cuadro y vuelve a BMWLauncher para mirar **Precalentamiento HV**. Si puedes, abre Android Auto y vuelve a BMWLauncher para mirar **Android Auto · vídeo**. Esa fila indica el estado que comunica iDrive al abrir BMWLauncher.
 
@@ -18,7 +20,7 @@ Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticia
 
 ### Plan y arquitectura
 
-1. Reproducir el encuadre de CarLauncher para Carlinkit y medir las tarjetas originales de DriveHub. El carrusel conserva tres posiciones. Trayecto y Radio, Radio y Tiempo, y Noticias a todo el ancho. La trama diagonal es común al panel y se aclara dentro de la tarjeta enfocada.
+1. Reproducir el encuadre de CarLauncher para Carlinkit y medir las tarjetas originales de DriveHub. El carrusel tiene cuatro posiciones. Trayecto y Radio, Radio y Tiempo, Noticias y TDTWorld. Las dos últimas ocupan todo el ancho de DriveHub. La trama diagonal es común al panel y se aclara dentro de la tarjeta enfocada.
 2. Compartir estado de selección, gestos, geometría y dibujo entre el servicio iDrive y el simulador de Windows. `drivehub-state.js` gestiona el desplazamiento, el toque y FrontCCU. `drivehub-view.js` dibuja el mapa reservado, el carrusel y la franja de energía. `drivehub-session.js` conecta ambos con `mgu-render`. El OAP mantiene su identificador y proporciona el acceso desde el menú de iDrive.
 3. Separar las fuentes de datos de la pantalla. Tiempo utiliza Open-Meteo con tres horas de previsión, precipitación por hora y siete días seleccionables. Noticias usa las portadas RSS de EL PAÍS, Xataka y Motorpasión, con titular, resumen del medio, imagen y contador. El servicio conserva la última respuesta válida. En iDrive las descargas se ejecutan con el UID de BMWLauncher y necesitan `mgu-uplink` conectado.
 4. Comparar con capturas de Carlinkit y probar en Chrome el desplazamiento, foco, lluvia, cambio de día, anterior y siguiente. En el coche queda por comprobar el área real de Winston, el acceso a internet y los eventos del mando físico.
@@ -35,7 +37,13 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo y Noticias reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
+El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
+
+### TDTWorld en DriveHub
+
+Gira el mando para elegir un canal e inclínalo arriba o abajo para recorrer su programación. La ficha y el fanart siguen al programa seleccionado. Pulsa el mando o toca **Ver en directo** para abrir la emisión dentro de la tarjeta. Toca **Menú** para abrir la guía, gestionar favoritos y configurar país, categorías, orden, último canal y duración de la información. El deslizamiento horizontal vuelve a Noticias y cierra la emisión.
+
+Para probar emisiones en Windows, instala FFmpeg o indica la ruta a su ejecutable con `JAVI_TDT_FFMPEG` y arranca el simulador con `--live`. El paquete de iDrive 8 lleva su propio FFmpeg para Linux x86-64 y un auxiliar PCM que intenta abrir la salida SmartX de la MGU. Se puede indicar otra salida con `JAVI_TDT_PCM` o usar `off` para silenciar la prueba. Las emisiones que requieren cuenta, DRM o reproductor web del proveedor dependen de una integración específica. [Código fuente y compilación de FFmpeg](native/javi-carlab/bin/SOURCES.txt)
 
 ## Versiones anteriores (0.1.x)
 

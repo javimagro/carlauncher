@@ -1,7 +1,7 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "title": "Motor gráfico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
@@ -14,6 +14,46 @@
     "iteriodev-overlays": "0.4.0"
   },
   "files": [
+    {
+      "path": "bin/ffmpeg",
+      "from": "bin/ffmpeg",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/tdt-pcm",
+      "from": "bin/tdt-pcm",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/ca-certificates.crt",
+      "from": "bin/ca-certificates.crt",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/FFmpeg-LGPLv3.txt",
+      "from": "bin/FFmpeg-LGPLv3.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/FFmpeg-GPLv3.txt",
+      "from": "bin/FFmpeg-GPLv3.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/SOURCES.txt",
+      "from": "bin/SOURCES.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/third-party-notices.txt",
+      "from": "bin/third-party-notices.txt",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/alpine-versions.txt",
+      "from": "bin/alpine-versions.txt",
+      "mode": "0644"
+    },
     {
       "path": "aa.js",
       "from": "aa.js",
@@ -132,6 +172,31 @@
     {
       "path": "drivehub-view.js",
       "from": "drivehub-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdtworld-data.js",
+      "from": "tdtworld-data.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdtworld.js",
+      "from": "tdtworld.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-catalog.js",
+      "from": "tdt-catalog.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-player.js",
+      "from": "tdt-player.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-proxy.js",
+      "from": "tdt-proxy.js",
       "mode": "0644"
     },
     {

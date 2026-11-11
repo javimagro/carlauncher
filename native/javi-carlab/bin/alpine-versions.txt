@@ -1,0 +1,7 @@
+ca-certificates-bundle-20261020-r0 x86_64 {ca-certificates} (MPL-2.0 AND MIT) [installed]
+libcrypto3-3.5.9-r0 x86_64 {openssl} (Apache-2.0) [installed]
+libssl3-3.5.9-r0 x86_64 {openssl} (Apache-2.0) [installed]
+libxml2-2.13.9-r1 x86_64 {libxml2} (MIT) [installed]
+musl-1.2.5-r24 x86_64 {musl} (MIT) [installed]
+xz-libs-5.8.4-r0 x86_64 {xz} (GPL-2.0-or-later AND 0BSD AND Public-Domain AND LGPL-2.1-or-later) [installed]
+zlib-1.4-r0 x86_64 {zlib} (Zlib) [installed]

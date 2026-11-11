@@ -273,6 +273,14 @@ class Recorder {
         return this;
     }
 
+    /** Shared I420 surface registered with RenderClient.video (protocol 4). */
+    video(id, x, y, w, h, r) {
+        this._grow(7); const f = this.f, i = this.n;
+        this.u[i] = 19; f[i + 1] = x; f[i + 2] = y; f[i + 3] = w; f[i + 4] = h; f[i + 5] = r || 0; this.u[i + 6] = id;
+        this.n += 7;
+        return this;
+    }
+
     /** Draw a cached layer (see layer()) at x, y. Canvas layers (old code) are not supported. */
     blit(L, x, y) {
         if (!L || L.layerId === undefined) throw new Error('Recorder.blit: not a layer');

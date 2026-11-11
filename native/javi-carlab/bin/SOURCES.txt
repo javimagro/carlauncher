@@ -1,0 +1,26 @@
+BMWLauncher 0.2.3 — TDT runtime
+
+FFmpeg 9.0.2 is distributed under the GNU LGPL v3 with the OpenSSL support
+enabled by --enable-version3. FFmpeg runs as a separate command-line program.
+The upstream FFmpeg source is unmodified.
+
+Corresponding FFmpeg source archive:
+https://github.com/javimagro/carlauncher/releases/download/v0.2.3/ffmpeg-9.0.2-source.tar.gz
+https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n9.0.2
+SHA-256: 6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9
+
+Build recipe, PCM helper source and playback check:
+https://github.com/javimagro/carlauncher/tree/v0.2.3/tools/tdt-runtime
+https://github.com/javimagro/carlauncher/blob/v0.2.3/.github/workflows/tdt-runtime.yml
+
+Static dependency package versions are recorded in alpine-versions.txt.
+The Alpine v3.23 packaging recipes link to the corresponding upstream source
+archives and carry Alpine's patches. For the matching packages see:
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/openssl
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/libxml2
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/zlib
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/xz
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/musl
+https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/ca-certificates
+
+The PCM helper is MIT-licensed. It loads the MGU's own ALSA library.

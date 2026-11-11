@@ -6,7 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
-const { createDriveHub, width, height, cards, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
+const { createDriveHub, width, height, cards, map, energyBar, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
+const { channels, visibleChannels } = require('../../native/javi-carlab/tdtworld-data');
+const { createTdt } = require('../../native/javi-carlab/tdtworld');
 const { fitArea } = require('../../native/javi-carlab/layout');
 const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = require('../../native/javi-carlab/drivehub-data');
 const { appUid, authorizeApp } = require('../../native/javi-carlab/drivehub-uplink');
@@ -17,9 +19,10 @@ const fonts = require('../../native/javi-carlab/vendor/kit_fonts');
 
 function panel() {
     let now = 0;
-    const drive = createDriveHub(() => {}, () => now);
+    const television = createTdt({ fixture: {}, now: () => now }, () => {});
+    const drive = createDriveHub(() => {}, () => now, television);
     return {
-        drive,
+        drive, television,
         settle() { now += 250; return drive.position(); },
         swipe(x, y, endX, endY) {
             drive.touch('down', x, y);
@@ -32,20 +35,50 @@ function panel() {
 
 test('horizontal swipe tracks the finger and snaps to the paired and full-width pages', () => {
     const { drive, settle, swipe } = panel();
-    drive.touch('down', 1450, 220);
-    drive.touch('move', 1220, 220);
+    const bottom = viewport.y + viewport.h - 12;
+    drive.touch('down', 1450, bottom);
+    drive.touch('move', 1220, bottom);
     assert.equal(drive.position(), 230);
-    drive.touch('up', 1030, 220);
+    drive.touch('up', 1030, bottom);
     assert.equal(settle(), cards[1].x);
     assert.equal(drive.state.selected, 1);
     swipe(1450, 220, 1000, 220);
     assert.equal(settle(), cards[3].x);
     assert.equal(drive.state.selected, 3);
-    swipe(1010, 220, 1530, 220);
+    swipe(viewport.x + 50, 220, viewport.x + 570, 220);
     assert.equal(settle(), cards[1].x);
     assert.equal(drive.state.selected, 2);
-    swipe(350, 220, 250, 220);
+    swipe(350, energyBar.y + 12, 250, energyBar.y + 12);
     assert.equal(settle(), cards[1].x);
+});
+
+test('the full-width TDTWorld page uses rotation for channel focus and horizontal swipe for cards', () => {
+    const { drive, television, settle, swipe, wheel } = panel();
+    const news = cards.findIndex((card) => card.id === 'news');
+    const tdt = cards.findIndex((card) => card.id === 'tdtworld');
+    assert.equal(cards[tdt].w, cards[news].w);
+    wheel(0);
+    wheel(3);
+    assert.equal(settle(), cards[news].x);
+    swipe(1720, 300, 1160, 300);
+    assert.equal(settle(), cards[tdt].x);
+    wheel(4);
+    assert.equal(television.state.channel, 1);
+    wheel(3);
+    assert.equal(television.state.channel, 0);
+    wheel(35);
+    assert.equal(television.state.channel, channels.length - 1);
+    assert.equal(television.state.firstChannel, channels.length - visibleChannels);
+    wheel(34);
+    assert.equal(television.state.channel, channels.length - 2);
+    assert.equal(television.state.firstChannel, channels.length - visibleChannels);
+    assert.equal(drive.state.selected, tdt);
+    assert.equal(drive.position(), cards[tdt].x);
+    swipe(1160, 300, 1720, 300);
+    assert.equal(settle(), cards[news].x);
+    wheel(35);
+    assert.equal(settle(), cards[tdt].x);
+    assert.equal(television.state.channel, channels.length - 2);
 });
 
 test('FrontCCU wraps its counter and treats long press and repeated tilt as one action', () => {
@@ -82,7 +115,7 @@ test('the rain chart selects a day and article navigation stops at either end', 
     assert.equal(drive.state.selected, 2);
     assert.equal(drive.state.weatherPage, 'rain');
     const x = weatherX + dailyChart.x + dailyChart.w / 2;
-    const y = viewport.y + dailyChart.y + 35;
+    const y = viewport.y + dailyChart.y + dailyChart.h - 20;
     drive.touch('down', x, y);
     drive.touch('up', x, y);
     assert.equal(drive.state.weatherDay, 3);
@@ -137,6 +170,11 @@ test('the app uses the full default panoramic content area on iDrive 8', () => {
     const area = { x: 0, y: 76, w: 2880, h: 764 };
     const fitted = fitArea(area, width, height);
     assert.deepEqual({ x: fitted.x, y: fitted.y, w: fitted.w, h: fitted.h }, area);
+    assert.equal(map.w, 954 + 84);
+    assert.equal(energyBar.x, map.x);
+    assert.equal(energyBar.w, map.w);
+    assert.equal(energyBar.y - (map.y + map.h), 4);
+    assert.equal(viewport.y + viewport.h, energyBar.y + energyBar.h);
 });
 
 test('FrontCCU frames from the OAP preserve the rotation and ignore horizontal deflection', () => {
@@ -146,11 +184,12 @@ test('FrontCCU frames from the OAP preserve the rotation and ignore horizontal d
         frontRotaryEncoderOperation: knob, frontRotaryEncoderPushButton: button, frontRotaryEncoderDeflection: deflection
     });
     const bytes = Buffer.concat([build(22, 0, 'WEST_KURZ_GEDRUECKT'),
-        build(23, 'DREHGEBER_KURZ_GEDRUECKT', 'NORD_KURZ_GEDRUECKT')]);
+        build(23, 'DREHGEBER_KURZ_GEDRUECKT', 'NORD_KURZ_GEDRUECKT'), build(23, 'DREHGEBER_LANG_GEDRUECKT', 0)]);
     assert.equal(build(0xffff, 15, 15), null);
     assert.ok(read(bytes.slice(0, 3)));
     assert.ok(read(bytes.slice(3)));
-    assert.deepEqual(frames, [{ knob: 22, press: 0, tilt: 0 }, { knob: 23, press: 1, tilt: 1 }]);
+    assert.deepEqual(frames, [{ knob: 22, press: 0, tilt: 0 }, { knob: 23, press: 1, tilt: 1 },
+        { knob: 23, press: 2, tilt: 0 }]);
     assert.equal(read(Buffer.alloc(257)), false);
 });
 

@@ -10,10 +10,11 @@ function sample(value) {
     if (!Number.isInteger(knob) || knob < 0 || knob >= 0xffff) return null;
     const button = value.frontRotaryEncoderPushButton;
     const direction = value.frontRotaryEncoderDeflection;
-    const press = [1, 2, 'DREHGEBER_KURZ_GEDRUECKT', 'DREHGEBER_LANG_GEDRUECKT'].indexOf(button) >= 0;
+    const press = [2, 'DREHGEBER_LANG_GEDRUECKT'].includes(button) ? 2
+        : [1, 'DREHGEBER_KURZ_GEDRUECKT'].includes(button) ? 1 : 0;
     const tilt = [1, 2, 'NORD_KURZ_GEDRUECKT', 'NORD_LANG_GEDRUECKT'].indexOf(direction) >= 0 ? 1
         : [7, 8, 'SUED_KURZ_GEDRUECKT', 'SUED_LANG_GEDRUECKT'].indexOf(direction) >= 0 ? 7 : 0;
-    const frame = Buffer.from([0, 0, Number(press), tilt]);
+    const frame = Buffer.from([0, 0, press, tilt]);
     frame.writeUInt16BE(knob, 0);
     return frame;
 }

@@ -1,9 +1,7 @@
 'use strict';
 
-const { cards, viewport, dailyChart } = require('./drivehub-state.js');
-
-const map = { x: 4, y: 4, w: viewport.x - 12, h: 512 };
-const energyBar = { x: viewport.x, y: 476, w: viewport.w, h: 40 };
+const { cards, map, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
+const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
 const background = '#080b0e';
 const primary = '#f2f7fb';
 const secondary = '#a9b8c7';
@@ -97,11 +95,17 @@ function diagnosticValue(value) {
 }
 
 function diagnostics(cv, records) {
+    const margin = 23;
+    const gap = 5;
+    const firstRow = 75;
+    const rowCount = Math.ceil(diagnosticRows.length / 2);
+    const rowHeight = Math.floor((map.h - firstRow - 12 + gap) / rowCount) - gap;
+    const column = (map.w - 2 * margin - 10) / 2;
     cv.text('LECTURAS DEL COCHE', map.x + 24, map.y + 31, 22, primary, bold);
     cv.text('Valores de prueba para comparar con el cuadro', map.x + 24, map.y + 55, 14, secondary);
     diagnosticRows.forEach(([label, signal, ...keys], index) => {
-        const x = map.x + 23 + index % 2 * 457;
-        const y = map.y + 75 + Math.floor(index / 2) * 52;
+        const x = map.x + margin + index % 2 * (column + 10);
+        const y = map.y + firstRow + Math.floor(index / 2) * (rowHeight + gap);
         const record = records && records.get(signal);
         const fields = record && record.fields;
         let value = !records ? 'Esperando conexión…' : 'Sin muestra';
@@ -114,9 +118,9 @@ function diagnostics(cv, records) {
             value = 'Error de ' + (phases[record.phase] || 'lectura');
             color = amber;
         }
-        cv.roundRect(x, y, 447, 47, 5, '#192734');
-        cv.text(label, x + 10, y + 17, 13, secondary);
-        fit(cv, value, x + 10, y + 38, 17, 427, color);
+        cv.roundRect(x, y, column, rowHeight, 5, '#192734');
+        cv.text(label, x + 10, y + 16, 13, secondary);
+        fit(cv, value, x + 10, y + rowHeight - 8, 17, column - 20, color);
     });
 }
 
@@ -136,12 +140,16 @@ function trip(cv, x, y, w, h, preconditioning) {
         cv.text(value, left + col / 2, top + 55, 21, primary, centered);
     });
     const left = x + 29;
-    cv.roundRect(left, y + 277, w - 60, 105, 9, [21, 38, 52, 142]);
-    cv.strokeRoundRect(left, y + 277, w - 60, 105, 9, 1, [117, 155, 178, 55]);
+    const altitudeTop = y + 277;
+    const altitudeBottom = y + h - 86;
+    const graphTop = y + 337;
+    cv.roundRect(left, altitudeTop, w - 60, altitudeBottom - altitudeTop, 9, [21, 38, 52, 142]);
+    cv.strokeRoundRect(left, altitudeTop, w - 60, altitudeBottom - altitudeTop, 9, 1, [117, 155, 178, 55]);
     cv.text('Altura', x + w / 2, y + 299, 16, secondary, centered);
     cv.text('917 m', x + w - 39, y + 299, 21, primary, right);
-    cv.gradientRect(left + 8, y + 337, w - 76, 41, [[0, [61, 196, 232, 90]], [1, [61, 196, 232, 0]]]);
-    cv.line(left + 8, y + 337, x + w - 39, y + 338, 2, '#52d9f8');
+    cv.gradientRect(left + 8, graphTop, w - 76, altitudeBottom - graphTop - 4,
+        [[0, [61, 196, 232, 90]], [1, [61, 196, 232, 0]]]);
+    cv.line(left + 8, graphTop, x + w - 39, graphTop + 1, 2, '#52d9f8');
     const batteryLabel = typeof preconditioning === 'boolean'
         ? 'Precalentamiento ' + (preconditioning ? 'activo' : 'inactivo') : 'Batería HV';
     for (const [index, label, value] of [[0, 'Exterior', '–'], [1, batteryLabel, '17 °C']]) {
@@ -258,7 +266,8 @@ function weatherRain(cv, x, y, w, h, data, selected, art) {
     cv.text((selected && day ? day.label + ' ' + day.date : 'Hoy') + ' · por horas', x + 17, y + 101, 12, primary);
     rainChart(cv, x + 17, y + 121, w - 36, 131, day ? day.hours : [], true);
     cv.text('Próximos 7 días', x + 17, y + 270, 12, primary);
-    rainChart(cv, x + dailyChart.x - 19, y + 291, dailyChart.w + 21, 143, data.dailyRain, false, selected);
+    rainChart(cv, x + dailyChart.x - 19, y + dailyChart.y + 10,
+        dailyChart.w + 21, dailyChart.h - 10, data.dailyRain, false, selected);
     cv.text('Desliza arriba o abajo para volver al resumen', x + 17, y + h - 14, 9, secondary);
 }
 
@@ -298,6 +307,154 @@ function news(cv, x, y, w, h, data, index, art, now) {
         left, summaryStart + row * 19, 15, summaryWidth(row), '#e6edf3'));
 }
 
+function programmeTimes(tdt, item) {
+    if (!item) return ['–', '–'];
+    return item.startLabel ? [item.startLabel, item.endLabel] : [tdt.time(item.start), tdt.time(item.end)];
+}
+
+function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
+    const l = tdtLayout(w, h);
+    const { state } = tdt;
+    const left = x + 9;
+    const top = y + l.top;
+    const detailX = x + l.detailX;
+    const detailRight = detailX + l.detailWidth;
+    const item = tdt.selected();
+    const programme = tdt.program(item, now, true);
+    const action = state.mode === 'browse' ? 'Menú' : 'Volver';
+    cv.roundRect(x + l.actionX, y + 7, 92, 23, 5, '#173043');
+    cv.text(action, x + l.actionX + 46, y + 23, 13, primary, centered);
+    if (state.mode === 'player') {
+        cv.roundRect(left, y + 7, 96, 23, 5, '#173043');
+        cv.text('Canales', left + 48, y + 23, 13, primary, centered);
+    } else if (state.status === 'cached') cv.text('Catálogo sin conexión', left, y + 23, 13, secondary);
+    cv.fillRect(left, top, w - 18, l.body, '#07111e');
+
+    if (['menu', 'settings', 'filters'].includes(state.mode)) {
+        const rows = {
+            menu: () => tdt.menu().map((label) => ({ label })), settings: tdt.settings, filters: tdt.filters
+        }[state.mode]();
+        rows.forEach(({ label, value }, index) => {
+            const row = y + l.menuTop + index * l.menuRow;
+            cv.roundRect(x + l.menuX, row, w - 2 * l.menuX, l.menuRow - 5, 6,
+                state.option === index ? '#183751' : '#0e1b2a');
+            cv.text(label, x + l.menuX + 14, row + 29, 18, primary);
+            if (value) cv.text(value + '  ›', x + w - l.menuX - 14, row + 29, 17, turquoise, right);
+        });
+        return;
+    }
+    if (state.mode === 'player') {
+        const surface = tdt.video();
+        if (surface && surface.image) {
+            const width = Math.min(w - 18, l.body * surface.image.w / surface.image.h);
+            const height = width * surface.image.h / surface.image.w;
+            cv.image(surface.image, x + (w - width) / 2, top + (l.body - height) / 2, width, height);
+        } else if (surface) cv.video(surface.id, left, top, w - 18, l.body);
+        const message = {
+            loading: 'Abriendo la emisión…', error: 'No se ha podido reproducir la emisión',
+            unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible'
+        }[state.playback];
+        if (message) cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
+        if (state.playback === 'playing' && state.audioStatus === 'audio-unavailable') {
+            cv.roundRect(x + w - 156, top + 8, 138, 24, 5, [7, 17, 30, 220]);
+            cv.text('Audio no disponible', x + w - 87, top + 24, 13, primary, centered);
+        }
+        if (state.overlayUntil > now) {
+            cv.fillRect(left, top + l.body - 57, w - 18, 57, [7, 17, 30, 225]);
+            fit(cv, item.name, left + 15, top + l.body - 31, 21, w - 50, primary, bold);
+            if (programme) fit(cv, programme.title, left + 15, top + l.body - 11, 15, w - 50, secondary);
+        }
+        if (state.playerChoice !== undefined) {
+            const first = tdt.playerStart();
+            state.channels.slice(first, first + visibleChannels).forEach((channel, index) => {
+                const at = top + index * l.rowHeight;
+                cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 6,
+                    first + index === state.playerChoice ? '#183751' : [7, 17, 30, 226]);
+                fit(cv, channel.name, left + 12, at + 32, 18, l.listWidth - 24, primary);
+            });
+        }
+        return;
+    }
+
+    if (state.mode === 'guide') {
+        const rows = tdt.programs();
+        const first = tdt.guideStart(now);
+        rows.slice(first, first + visibleChannels).forEach((entry, index) => {
+            const at = top + index * l.rowHeight;
+            cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 6, entry === programme ? '#183751' : '#0e1b2a');
+            fit(cv, entry.title, left + 9, at + 22, 16, l.listWidth - 18, primary);
+            cv.text(programmeTimes(tdt, entry).join(' – '), left + 9, at + 43, 13, secondary);
+        });
+    } else {
+        state.channels.slice(state.firstChannel, state.firstChannel + visibleChannels).forEach((channel, index) => {
+            const at = top + index * l.rowHeight;
+            const selected = index + state.firstChannel === state.channel && focused;
+            const info = tdt.program(channel, now, false);
+            const [start, end] = programmeTimes(tdt, info);
+            const progress = info ? (info.progress === undefined
+                ? Math.min(1, Math.max(0, (now - info.start) / (info.end - info.start))) : info.progress) : 0;
+            cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 7, selected ? '#112940' : '#0e1b2a');
+            if (selected) cv.strokeRoundRect(left, at, l.listWidth, l.rowHeight - 4, 7, 1.5, '#6a8aa4');
+            cv.roundRect(left + 7, at + 10, 31, 31, 3, channel.color || '#214969');
+            const logo = tdt.logo(channel);
+            if (logo) cv.image(logo, left + 7, at + 10, 31, 31, 3);
+            else cv.text(channel.badge || channel.name.slice(0, 2).toUpperCase(), left + 22.5, at + 31, 14, primary,
+                { align: 'center', font: 'bold' });
+            const textX = left + 46;
+            const endX = left + l.listWidth - 8;
+            fit(cv, channel.name, textX, at + 19, 17, endX - textX, primary);
+            cv.roundRect(textX, at + 24, endX - textX, 3, 1, '#223549');
+            if (progress > 0) cv.roundRect(textX, at + 24, (endX - textX) * progress, 3, 1, '#49c5b6');
+            cv.text(start, textX, at + 44, 11, primary);
+            cv.text(end, endX, at + 44, 11, primary, right);
+            fit(cv, info ? info.title : 'Sin EPG', (textX + endX) / 2, at + 44, 11, endX - textX - 74, secondary, centered);
+        });
+    }
+
+    if (!item) {
+        const status = { loading: 'Cargando canales…', offline: 'No se ha podido descargar el catálogo' }[state.status];
+        cv.text(status || 'No hay canales en esta lista', x + w / 2, top + l.body / 2, 20, primary, centered);
+        return;
+    }
+    if (state.mode === 'order') {
+        const actions = ['Subir canal', 'Bajar canal', 'Restaurar orden del catálogo', 'Orden alfabético'];
+        actions.forEach((label, index) => {
+            const at = top + index * l.menuRow;
+            cv.roundRect(detailX, at, l.detailWidth, l.menuRow - 5, 6, '#173043');
+            cv.text(label, detailX + 14, at + 29, 17, primary);
+        });
+        return;
+    }
+    const detailLeft = Math.max(detailX, clipLeft);
+    const visibleRight = Math.min(detailRight, clipRight);
+    if (visibleRight <= detailLeft) return;
+    cv.clip(detailLeft, top, visibleRight - detailLeft, l.body);
+    if (state.art && programme) {
+        const imageWidth = Math.max(l.detailWidth, l.body * state.art.w / state.art.h);
+        const imageHeight = imageWidth * state.art.h / state.art.w;
+        cv.image(state.art, detailX + (l.detailWidth - imageWidth) / 2, top + (l.body - imageHeight) / 2, imageWidth, imageHeight);
+        cv.fillRect(detailX, top, l.detailWidth, l.body, [7, 17, 30, 80]);
+    }
+    cv.gradientRect(detailX, top, l.detailWidth, 88, [[0, [7, 17, 30, 220]], [1, [7, 17, 30, 0]]]);
+    const textX = detailX + 15;
+    const title = programme ? programme.title : item.name;
+    fit(cv, title, textX, top + 27, 23, l.detailWidth - 30, primary, bold);
+    const status = state.guideStatus === 'loading' ? 'Cargando programación…' : 'Sin programación disponible';
+    const meta = programme ? programmeTimes(tdt, programme).join(' – ') + '  ·  ' + item.name : status;
+    fit(cv, meta, textX, top + 49, 13, l.detailWidth - 30, '#c0d6e9');
+    if (programme && programme.description) {
+        const descriptionWidth = Math.round(l.detailWidth * 0.62);
+        const lines = wrap(cv, programme.description.slice(0, 1900), 16, () => descriptionWidth - 20).slice(0, 14);
+        cv.roundRect(textX, top + 69, descriptionWidth, lines.length * 21 + 15, 7, [7, 17, 30, 185]);
+        lines.forEach((line, row) => fit(cv, line, textX + 10, top + 93 + row * 21, 16, descriptionWidth - 20, primary));
+    }
+    if (state.mode !== 'guide') {
+        cv.roundRect(detailRight - 137, y + h - 49, 122, 30, 5, '#173f51');
+        cv.text('Ver en directo', detailRight - 76, y + h - 29, 14, primary, centered);
+    }
+    cv.clip(clipLeft, y, clipRight - clipLeft, h);
+}
+
 function empty(cv, x, y, w, h, status, loading, offline, detail) {
     cv.text(status === 'offline' ? offline : loading, x + w / 2, y + h / 2, 17, primary, centered);
     if (status === 'offline' && detail) fit(cv, detail, x + w / 2, y + h / 2 + 24, 13, w - 36, secondary, centered);
@@ -334,6 +491,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, preconditioning)
         else weatherSummary(cv, x, y, w, h, data.weather, art);
     }
     if (card.id === 'news') news(cv, x, y, w, h, data, state.article, art, now);
+    if (card.id === 'tdtworld' && data.tdt) tdtworld(cv, x, y, w, h, data.tdt, selected, clipLeft, clipRight, now);
     const freshness = data[card.id + 'Status'];
     if (freshness === 'offline' && data[card.id]) cv.text('Sin conexión', x + w - 9, y + h - 6, 9, primary, right);
     cv.noclip();

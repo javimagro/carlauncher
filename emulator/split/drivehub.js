@@ -45,6 +45,7 @@ const gpu = new RenderClient('javi_carlauncher_preview', console, { socket, kit:
 const session = createSession(gpu, {
     diagnostics: telemetry === 'telemetry',
     fixture: mode === 'live' ? undefined : fixture,
+    tdtPlayback: { ffmpeg: process.env.JAVI_TDT_FFMPEG || 'ffmpeg', preview: true },
     area: () => ({ x: 0, y: 0, w: width, h: height, scale: 1 })
 });
 session.show(true);

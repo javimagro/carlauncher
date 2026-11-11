@@ -177,7 +177,7 @@ function loadArtwork() {
     };
 }
 
-async function loadPhoto(url, get) {
+async function loadPhoto(url, get, w = 528, h = 297, contain = false) {
     const address = new URL(url);
     if (address.hostname === 'imagenes.elpais.com' && address.pathname.startsWith('/resizer/v2/')) {
         address.searchParams.set('width', '640');
@@ -191,15 +191,16 @@ async function loadPhoto(url, get) {
         const jpg = decodeJpeg(bytes, { maxResolutionInMP: 10, maxMemoryUsageInMB: 48 });
         image = { w: jpg.width, h: jpg.height, data: jpg.data };
     }
-    const w = 528;
-    const h = 297;
-    const scale = Math.max(w / image.w, h / image.h);
+    const scale = contain ? Math.min(w / image.w, h / image.h) : Math.max(w / image.w, h / image.h);
     const left = (image.w - w / scale) / 2;
     const top = (image.h - h / scale) / 2;
-    const pixels = Buffer.allocUnsafe(w * h * 4);
+    const pixels = Buffer.alloc(w * h * 4);
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            const source = (Math.floor(top + (y + 0.5) / scale) * image.w + Math.floor(left + (x + 0.5) / scale)) * 4;
+            const sourceX = Math.floor(left + (x + 0.5) / scale);
+            const sourceY = Math.floor(top + (y + 0.5) / scale);
+            if (sourceX < 0 || sourceY < 0 || sourceX >= image.w || sourceY >= image.h) continue;
+            const source = (sourceY * image.w + sourceX) * 4;
             const target = (y * w + x) * 4;
             for (let channel = 0; channel < 4; channel++) pixels[target + channel] = image.data[source + channel];
         }
@@ -309,4 +310,4 @@ function createData({ cacheFile, configFile, fixture, get = download }, changed)
     };
 }
 
-module.exports = { createData, loadArtwork, loadNews, parseFeed, parseWeather, weatherUrl, networkDetail };
+module.exports = { createData, loadArtwork, loadNews, loadPhoto, parseFeed, parseWeather, weatherUrl, networkDetail };

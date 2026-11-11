@@ -15,3 +15,5 @@ La próxima comprobación en la unidad es observar qué cliente y qué ID IVI en
 ## Prueba local del encuadre
 
 Se usó la pantalla actual de BMWLauncher en el simulador y una captura del i4. La imagen de Android Auto se ajustó con su proporción original a la zona izquierda. Se comprobó por comparación de píxeles que las tarjetas y la franja de energía de la derecha son idénticas. La captura panorámica queda a 952 × 290 dentro de un panel de 952 × 508. Para aprovechar la altura hay que validar la negociación de un tamaño de proyección más estrecho. El PNG local `bmwlauncher-aa-prueba-estatica.png` muestra el encuadre. La prueba del flujo de vídeo en directo y de la entrada sigue pendiente.
+
+La distribución posterior reserva 1038 × 468 píxeles lógicos para la proyección y coloca la franja de energía debajo, en el mismo lado. Esta es el área que debe usar la próxima prueba de vídeo.
