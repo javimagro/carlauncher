@@ -18,13 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build static FFmpeg
-        run: docker run --rm -v "$PWD:/src" -w /src alpine:3.23 sh tools/tdt-runtime/build-ffmpeg.sh
+        run: docker run --rm -v "$PWD:/src" -w /src alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2 sh tools/tdt-runtime/build-ffmpeg.sh
       - name: Build PCM output for glibc 2.27
         run: |
           docker run --rm -v "$PWD:/src" -w /src ubuntu:18.04 sh -ec '
             apt-get update -qq
             apt-get install -qy --no-install-recommends gcc libc6-dev
-            cc -std=c11 -Wall -Wextra -Werror -O2 -s tools/tdt-runtime/tdt-pcm.c -o tdt-runtime-build/tdt-pcm -ldl
+            cc -std=c11 -Wall -Wextra -Werror -O2 -s tools/tdt-runtime/tdt-pcm.c -o tdt-runtime-build/tdt-pcm \
+              -Wl,--dynamic-linker=/lib/ld-linux-x86-64.so.2 -ldl
           '
       - name: Check Linux x86-64 binaries
         run: |
@@ -37,7 +38,7 @@ jobs:
           "$ffmpeg_path" -demuxers | grep -E ' hls +'
           latest="$(readelf --version-info tdt-pcm | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | cut -d_ -f2)"
           test "$(printf '%s\n' "$latest" 2.27 | sort -V | tail -1)" = '2.27'
-          test "$(head -c 4096 /dev/zero | ./tdt-pcm null)" = 'ready'
+          test "$(head -c 4096 /dev/zero | /lib64/ld-linux-x86-64.so.2 ./tdt-pcm null)" = 'ready'
       - uses: actions/upload-artifact@v4
         with:
           name: tdt-runtime-linux-x64
