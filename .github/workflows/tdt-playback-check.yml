@@ -13,38 +13,66 @@ permissions:
 jobs:
   playback:
     runs-on: ubuntu-24.04
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
+      - name: Wait for the WebVTT build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch 43108768025 --repo javimagro/carlauncher --interval 8 --exit-status
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 43106634337
+          run-id: 43108768025
           name: tdt-runtime-linux-x64
           path: tdt-runtime-build
-      - run: |
+      - name: Decode public channels through the app's proxy and shared frame buffer
+        run: |
           chmod +x tdt-runtime-build/ffmpeg
-          command -v ffmpeg || sudo apt-get install -y ffmpeg
-          sh tools/tdt-runtime/check-playback.sh tdt-runtime-build/ffmpeg
-      - name: Try public RTVE feeds with the packaged binary
-        run: |
-          export SSL_CERT_FILE="$PWD/tdt-runtime-build/ca-certificates.crt"
-          for channel in la1 la2; do
-            set +e
-            timeout 20s tdt-runtime-build/ffmpeg -nostdin -loglevel error -rw_timeout 8000000 -tls_verify 1 \
-              -protocol_whitelist http,https,tcp,tls,httpproxy,crypto -i "https://rtvelivestream.rtve.es/rtvesec/$channel/${channel}_main_dvr.m3u8" \
-              -map 0:v:0 -an -frames:v 3 -vf scale=640:360 -pix_fmt yuv420p -f rawvideo -y "$channel.i420"
-            result=$?
-            set -e
-            if test "$result" -eq 0 && test "$(wc -c < "$channel.i420")" -eq 1036800; then
-              printf '%s decoded three 640x360 I420 frames\n' "$channel"
-            else
-              printf '%s unavailable from this Linux runner\n' "$channel"
-            fi
-          done
-      - name: Identify the exact Alpine library packages
-        run: |
-          docker run --rm alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2 sh -ec '
-            apk add --quiet --no-cache build-base ca-certificates curl linux-headers nasm pkgconf openssl-dev openssl-libs-static libxml2-dev libxml2-static zlib-dev zlib-static xz-dev xz-static
-            apk list --installed musl libcrypto3 libssl3 libxml2 zlib xz-libs ca-certificates-bundle
-          '
-
+          node - <<'JS'
+          const { createPlayer } = require('./native/javi-carlab/tdt-player');
+          const startProxy = require('./native/javi-carlab/tdt-proxy');
+          const { lookup } = require('dns');
+          const fs = require('fs');
+          const path = require('path');
+          const os = require('os');
+          const entries = [
+            ['La 2', 'https://rtvelivestream.rtve.es/rtvesec/la2/la2_main_dvr.m3u8'],
+            ['24h', 'https://ztnr.rtve.es/ztnr/1694255.m3u8'],
+            ['Teledeporte', 'https://ztnr.rtve.es/ztnr/6712432.m3u8'],
+            ['TV3', 'https://directes3-tv-cat.3catdirectes.cat/live-content/tv3-hls/master.m3u8']
+          ];
+          async function check([name, url]) {
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mgu-frame-'));
+            const gpu = { video(id, file) { this.file = file; } };
+            const player = createPlayer(gpu, {
+              ffmpeg: path.resolve('tdt-runtime-build/ffmpeg'),
+              caFile: path.resolve('tdt-runtime-build/ca-certificates.crt'),
+              proxy: () => startProxy(lookup), directory
+            });
+            player.ready({ video: true });
+            return new Promise((resolve) => {
+              let finished = false;
+              const finish = (result) => {
+                if (finished) return;
+                finished = true;
+                clearTimeout(timer);
+                player.stop();
+                fs.rmdirSync(directory);
+                console.log(name + ': ' + result);
+                resolve(result === 'I420 OK');
+              };
+              const timer = setTimeout(() => finish('timed out'), 22000);
+              player.start([url], (status) => {
+                if (status === 'playing') {
+                  const bytes = fs.readFileSync(gpu.file);
+                  finish(bytes.readUInt32LE(0) === 0x4656474d && bytes.readUInt32LE(16) > 0 ? 'I420 OK' : 'invalid buffer');
+                }
+                if (status === 'error' || status === 'unavailable') finish(status);
+              });
+            });
+          }
+          Promise.all(entries.map(check)).then((results) => {
+            if (!results.some(Boolean)) process.exitCode = 1;
+          }, (err) => { console.error(err.code || err.message); process.exitCode = 1; });
+          JS
