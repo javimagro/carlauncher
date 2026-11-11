@@ -2,6 +2,9 @@ name: Build TDT runtime
 
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/tdt-runtime-build]
+    paths: [.github/workflows/tdt-runtime.yml]
 
 permissions:
   contents: read
@@ -43,3 +46,4 @@ jobs:
           name: tdt-runtime-linux-x64
           path: tdt-runtime-build/
           if-no-files-found: error
+

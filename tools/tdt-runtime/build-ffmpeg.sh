@@ -18,8 +18,8 @@ cd FFmpeg-n9.0.2
     --disable-ffplay --disable-ffprobe --disable-avdevice \
     --enable-version3 --enable-openssl --enable-libxml2 --enable-zlib \
     --enable-protocol=file,pipe,http,https,tcp,tls,httpproxy,crypto \
-    --enable-demuxer=hls,dash,mpegts,mov,aac,mp3,matroska,flv \
-    --enable-decoder=h264,hevc,mpeg2video,aac,aac_latm,mp3,mp2,ac3,eac3,opus,vorbis,vp8,vp9,av1,rawvideo,pcm_s16le \
+    --enable-demuxer=hls,dash,mpegts,mov,aac,mp3,matroska,flv,webvtt \
+    --enable-decoder=h264,hevc,mpeg2video,aac,aac_latm,mp3,mp2,ac3,eac3,opus,vorbis,vp8,vp9,av1,rawvideo,pcm_s16le,webvtt \
     --enable-parser=h264,hevc,mpegvideo,aac,aac_latm,mpegaudio,ac3,opus,vorbis,vp8,vp9,av1 \
     --enable-muxer=rawvideo,pcm_s16le \
     --enable-encoder=rawvideo,pcm_s16le \

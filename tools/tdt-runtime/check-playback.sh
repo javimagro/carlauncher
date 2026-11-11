@@ -11,6 +11,26 @@ ffmpeg -nostdin -loglevel error -f lavfi -i testsrc2=size=320x180:rate=12 \
     -f lavfi -i sine=frequency=440 -t 3 -c:v libx264 -g 12 -c:a aac sample.mp4
 ffmpeg -nostdin -loglevel error -i sample.mp4 -c copy -hls_time 1 -f hls test.m3u8
 ffmpeg -nostdin -loglevel error -i sample.mp4 -c copy -seg_duration 1 -f dash test.mpd
+cat >master.m3u8 <<'EOF'
+#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Español",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="es",URI="subs.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=600000,SUBTITLES="subs"
+test.m3u8
+EOF
+cat >subs.m3u8 <<'EOF'
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:3
+#EXTINF:3.0,
+subs.vtt
+#EXT-X-ENDLIST
+EOF
+cat >subs.vtt <<'EOF'
+WEBVTT
+
+00:00:00.100 --> 00:00:02.000
+TDTWorld
+EOF
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
     -addext 'subjectAltName=DNS:localhost' -keyout key.pem -out cert.pem 2>/dev/null
 
@@ -34,7 +54,7 @@ done
 port=$(cat port)
 export SSL_CERT_FILE="$work/cert.pem"
 
-for stream in test.m3u8 test.mpd; do
+for stream in master.m3u8 test.mpd; do
     if ! "$decoder" -nostdin -hide_banner -loglevel quiet -rw_timeout 8000000 -tls_verify 1 \
         -protocol_whitelist http,https,tcp,tls,httpproxy,crypto -re -i "https://localhost:$port/$stream" \
         -map 0:v:0 -an -t 1 -vf 'fps=20,scale=640:360:force_original_aspect_ratio=decrease:out_color_matrix=bt709,pad=640:360:(ow-iw)/2:(oh-ih)/2' \
