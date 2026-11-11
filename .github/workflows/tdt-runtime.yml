@@ -2,11 +2,6 @@ name: Build TDT runtime
 
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/tdt-runtime-build]
-    paths:
-      - .github/workflows/tdt-runtime.yml
-      - tools/tdt-runtime/**
 
 permissions:
   contents: read
@@ -39,6 +34,10 @@ jobs:
           latest="$(readelf --version-info tdt-pcm | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | cut -d_ -f2)"
           test "$(printf '%s\n' "$latest" 2.27 | sort -V | tail -1)" = '2.27'
           test "$(head -c 4096 /dev/zero | /lib64/ld-linux-x86-64.so.2 ./tdt-pcm null)" = 'ready'
+      - name: Verify HLS and DASH playback over HTTPS
+        run: |
+          command -v ffmpeg || sudo apt-get install -y --no-install-recommends ffmpeg
+          sh tools/tdt-runtime/check-playback.sh tdt-runtime-build/ffmpeg
       - uses: actions/upload-artifact@v4
         with:
           name: tdt-runtime-linux-x64

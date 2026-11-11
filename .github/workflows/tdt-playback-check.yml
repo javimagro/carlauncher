@@ -25,3 +25,25 @@ jobs:
           chmod +x tdt-runtime-build/ffmpeg
           command -v ffmpeg || sudo apt-get install -y ffmpeg
           sh tools/tdt-runtime/check-playback.sh tdt-runtime-build/ffmpeg
+      - name: Try public RTVE feeds with the packaged binary
+        run: |
+          export SSL_CERT_FILE="$PWD/tdt-runtime-build/ca-certificates.crt"
+          for channel in la1 la2; do
+            set +e
+            tdt-runtime-build/ffmpeg -nostdin -loglevel error -rw_timeout 8000000 -tls_verify 1 \
+              -protocol_whitelist http,https,tcp,tls,httpproxy,crypto -i "https://rtvelivestream.rtve.es/rtvesec/$channel/${channel}_main_dvr.m3u8" \
+              -map 0:v:0 -an -frames:v 3 -vf scale=640:360 -pix_fmt yuv420p -f rawvideo -y "$channel.i420"
+            result=$?
+            set -e
+            if test "$result" -eq 0 && test "$(wc -c < "$channel.i420")" -eq 1036800; then
+              printf '%s decoded three 640x360 I420 frames\n' "$channel"
+            else
+              printf '%s unavailable from this Linux runner\n' "$channel"
+            fi
+          done
+      - name: Identify the exact Alpine library packages
+        run: |
+          docker run --rm alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2 sh -ec '
+            apk add --quiet --no-cache build-base ca-certificates curl linux-headers nasm pkgconf openssl-dev openssl-libs-static libxml2-dev libxml2-static zlib-dev zlib-static xz-dev xz-static
+            apk list --installed musl libcrypto3 libssl3 libxml2 zlib xz-libs ca-certificates-bundle
+          '

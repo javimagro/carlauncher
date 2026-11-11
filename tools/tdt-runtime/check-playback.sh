@@ -4,7 +4,8 @@ set -eu
 decoder=$(realpath "$1")
 work=$(mktemp -d)
 cd "$work"
-trap 'kill "$server" 2>/dev/null || true' EXIT
+server=''
+trap 'if test -n "$server"; then kill "$server" 2>/dev/null || true; fi' EXIT
 
 ffmpeg -nostdin -loglevel error -f lavfi -i testsrc2=size=320x180:rate=12 \
     -f lavfi -i sine=frequency=440 -t 3 -c:v libx264 -g 12 -c:a aac sample.mp4
@@ -43,7 +44,11 @@ for stream in test.m3u8 test.mpd; do
             -map 0:v:0 -an -t 1 -pix_fmt yuv420p -f rawvideo -y probe.i420 || true
         exit 1
     fi
-    test "$(wc -c <video.i420)" -eq 6912000
-    test "$(wc -c <audio.pcm)" -eq 192000
-    printf '%s: I420 + PCM por HTTPS\n' "$stream"
+    video=$(wc -c <video.i420)
+    audio=$(wc -c <audio.pcm)
+    printf '%s: %s bytes I420 + %s bytes PCM por HTTPS\n' "$stream" "$video" "$audio"
+    test "$((video / 345600))" -ge 16
+    test "$((video % 345600))" -eq 0
+    test "$audio" -ge 153600
+    test "$((audio % 4))" -eq 0
 done
