@@ -259,7 +259,45 @@ test('the dashboard shows diagnostics and a live thermal status alongside clearl
         ]
     }, () => 1, 0);
     for (const label of ['Precalentamiento activo', 'Sí  ·  1', 'Android Auto · vídeo', 'No',
-        'Error de lectura', 'TRAYECTO · DEMO', 'Demostración']) assert(labels.includes(label), label);
+        'Error de lectura', 'TRAYECTO · DEMO', 'Ruta de ejemplo']) assert(labels.includes(label), label);
+    assert(!labels.includes('64%'));
+    assert(!labels.includes('248 km'));
+});
+
+test('the dashboard converts validated readings and never substitutes demo values for missing live energy', () => {
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    const state = { selected: 0, article: 0 };
+    const samples = {
+        statusChargeOfBatteryHybrid: { displayChargingConditionHighVoltageStorage: 182 },
+        displayRangeElectricVehicle: { displayRangeElectricVehicle: 431 },
+        ExteriorTemperature: { temperatureExterior: 112 },
+        statusBatteryTemperature: { actualValueTemperatureHighVoltageStorage: 69 },
+        statusConsumptionAverageElectricVehicle: { consumptionAverageElectricVehicleBC1: 170,
+            consumptionAverageElectricVehicleBC2: 4095, unitOfMeasurementConsumptionElectricVehicleBC: 1 }
+    };
+    const telemetry = Object.entries(samples).map(([signal, fields]) => ({ signal, fields, status: 'sample', sampledAt: 0, freshForMs: 30000 }));
+    const data = { energy: [{ label: 'Ahora', soc: 64, range: 248 }, { label: 'En destino', soc: 24, range: 93 }],
+        diagnostics: true, telemetry };
+    drawHome(canvas, state, 0, data, () => 1, 1000);
+    for (const label of ['91%', '91 %', '431 km', '16 °C', '19 °C', '17,0  ·  – kWh/100 km', '24%', 'Ruta de ejemplo']) {
+        assert(labels.includes(label), label);
+    }
+    assert.equal(labels.filter((label) => label === '431 km').length, 2);
+    labels.length = 0;
+    drawHome(canvas, state, 0, data, () => 1, 30000);
+    for (const label of ['91%', '431 km', '16 °C', '19 °C', '64%', '248 km']) assert(!labels.includes(label), label);
+    assert(labels.includes('Sin actualizar'));
+
+    samples.statusBatteryTemperature.actualValueTemperatureHighVoltageStorage = 255;
+    samples.statusChargeOfBatteryHybrid.displayChargingConditionHighVoltageStorage = 255;
+    samples.displayRangeElectricVehicle.displayRangeElectricVehicle = 4095;
+    labels.length = 0;
+    drawHome(canvas, state, 0, data, () => 1, 1000);
+    assert.equal(labels.filter((label) => label === 'Sin dato válido').length, 3);
+    assert(!labels.includes('205 °C'));
 });
 
 test('the dashboard distinguishes zero speed, missing speed and an expired reading', () => {

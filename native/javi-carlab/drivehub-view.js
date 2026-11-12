@@ -99,7 +99,53 @@ function staleSample(record, now) {
         now - record.sampledAt >= record.freshForMs;
 }
 
-function diagnostics(cv, records, now) {
+function freshFields(records, signal, now) {
+    const record = records && records.get(signal);
+    return record && record.status === 'sample' && !staleSample(record, now) && record.fields || {};
+}
+
+function vehicleReadings(records, now) {
+    const battery = freshFields(records, 'statusChargeOfBatteryHybrid', now).displayChargingConditionHighVoltageStorage;
+    const range = freshFields(records, 'displayRangeElectricVehicle', now).displayRangeElectricVehicle;
+    const outside = freshFields(records, 'ExteriorTemperature', now).temperatureExterior;
+    const batteryTemperature = freshFields(records, 'statusBatteryTemperature', now).actualValueTemperatureHighVoltageStorage;
+    const valid = (raw, max) => Number.isInteger(raw) && raw >= 0 && raw <= max;
+    return {
+        soc: valid(battery, 200) ? battery / 2 : undefined,
+        range: valid(range, 4094) ? range : undefined,
+        outside: valid(outside, 254) ? outside / 2 - 40 : undefined,
+        batteryTemperature: valid(batteryTemperature, 254) ? batteryTemperature - 50 : undefined
+    };
+}
+
+function withUnit(value, unit, decimals = 0) {
+    return Number.isFinite(value) ? number(value, decimals) + unit : 'Sin dato válido';
+}
+
+function formatDiagnostic(signal, fields, keys, vehicle) {
+    switch (signal) {
+    case 'statusCarSpeed2': {
+        const raw = fields.speedVehicleCentreOfGravity;
+        return Number.isInteger(raw) && raw >= 0 && raw < 65535 ? withUnit(raw / 64, ' km/h', 1) : 'Sin dato válido';
+    }
+    case 'statusChargeOfBatteryHybrid': return withUnit(vehicle.soc, ' %', 1);
+    case 'displayRangeElectricVehicle': return withUnit(vehicle.range, ' km');
+    case 'ExteriorTemperature': return withUnit(vehicle.outside, ' °C', 1);
+    case 'statusBatteryTemperature': return withUnit(vehicle.batteryTemperature, ' °C');
+    case 'statusConsumptionAverageElectricVehicle': {
+        const unit = fields.unitOfMeasurementConsumptionElectricVehicleBC;
+        if (unit !== 1 && unit !== 'VERBRAUCH_IN_KWH__S__100KM') break;
+        const values = keys.slice(0, 2).map((key) => {
+            const raw = fields[key];
+            return Number.isInteger(raw) && raw >= 0 && raw < 4095 ? (raw / 10).toFixed(1).replace('.', ',') : '–';
+        });
+        return values.join('  ·  ') + ' kWh/100 km';
+    }
+    }
+    return keys.map((key) => diagnosticValue(fields[key])).join('  ·  ');
+}
+
+function diagnostics(cv, records, vehicle, now) {
     const margin = 23;
     const gap = 5;
     const firstRow = 75;
@@ -120,12 +166,8 @@ function diagnostics(cv, records, now) {
             value = 'Sin actualizar';
             color = amber;
         } else if (fields && record.status === 'sample') {
-            value = keys.map((key) => diagnosticValue(fields[key])).join('  ·  ');
+            value = formatDiagnostic(signal, fields, keys, vehicle);
             color = primary;
-            if (signal === 'statusCarSpeed2') {
-                const raw = fields.speedVehicleCentreOfGravity;
-                value = Number.isInteger(raw) && raw >= 0 && raw < 65535 ? number(raw / 64, 1) + ' km/h' : 'Sin dato válido';
-            }
         } else if (record && record.status === 'error') {
             const phases = { proxy: 'servicio', getter: 'lectura', subscribe: 'suscripción' };
             value = 'Error de ' + (phases[record.phase] || 'lectura');
@@ -142,7 +184,7 @@ function diagnostics(cv, records, now) {
     });
 }
 
-function trip(cv, x, y, w, h, preconditioning) {
+function trip(cv, x, y, w, h, preconditioning, vehicle) {
     const metrics = [
         ['Consumo medio', '25,3 kWh/100 km'], ['Consumo medio total', '21,9 kWh/100 km'],
         ['Distancia recorrida', '50,9 km'], ['Velocidad media', '76 km/h'],
@@ -170,7 +212,9 @@ function trip(cv, x, y, w, h, preconditioning) {
     cv.line(left + 8, graphTop, x + w - 39, graphTop + 1, 2, '#52d9f8');
     const batteryLabel = typeof preconditioning === 'boolean'
         ? 'Precalentamiento ' + (preconditioning ? 'activo' : 'inactivo') : 'Batería HV';
-    for (const [index, label, value] of [[0, 'Exterior', '–'], [1, batteryLabel, '17 °C']]) {
+    const outside = vehicle && Number.isFinite(vehicle.outside) ? withUnit(vehicle.outside, ' °C', 1) : '–';
+    const hv = vehicle && Number.isFinite(vehicle.batteryTemperature) ? withUnit(vehicle.batteryTemperature, ' °C') : '–';
+    for (const [index, label, value] of [[0, 'Exterior', outside], [1, batteryLabel, hv]]) {
         const center = left + col * (index + 0.5) + index * 5;
         cv.text(label, center, y + h - 60, 13, index && preconditioning ? amber : primary, centered);
         cv.text(value, center, y + h - 41, 15, primary, centered);
@@ -178,10 +222,6 @@ function trip(cv, x, y, w, h, preconditioning) {
         cv.rampRect(center - 69, y + h - 26, 138, 8, 4, [
             colors[0], colors[0], colors[1], colors[1], colors[2], colors[3], colors[3]
         ]);
-        if (index) {
-            cv.circle(center - 36, y + h - 22, 6, '#0a141e');
-            cv.circle(center - 36, y + h - 22, 4, primary);
-        }
     }
 }
 
@@ -373,9 +413,19 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible'
         }[state.playback];
         if (message) cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
-        if (state.playback === 'playing' && state.audioStatus === 'audio-unavailable') {
-            cv.roundRect(x + w - 156, top + 8, 138, 24, 5, [7, 17, 30, 220]);
-            cv.text('Audio no disponible', x + w - 87, top + 24, 13, primary, centered);
+        if (state.playback === 'reconnecting') {
+            cv.roundRect(left + 8, top + 8, 152, 24, 5, [7, 17, 30, 220]);
+            cv.text('Reconectando…', left + 84, top + 24, 13, primary, centered);
+        }
+        const audioError = {
+            'audio-unavailable': 'Audio no disponible', 'audio-alsa': 'Audio · ALSA no disponible',
+            'audio-open': 'Audio · no se abre la salida', 'audio-format': 'Audio · formato no admitido',
+            'audio-timeout': 'Audio · salida sin respuesta', 'audio-write': 'Audio · error de reproducción'
+        }[state.audioStatus];
+        if (state.playback === 'playing' && audioError) {
+            const badgeWidth = cv.textWidth(audioError, 13) + 24;
+            cv.roundRect(x + w - badgeWidth - 18, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
+            cv.text(audioError, x + w - badgeWidth / 2 - 18, top + 24, 13, primary, centered);
         }
         if (state.overlayUntil > now) {
             cv.fillRect(left, top + l.body - 57, w - 18, 57, [7, 17, 30, 225]);
@@ -478,7 +528,7 @@ function empty(cv, x, y, w, h, status, loading, offline, detail) {
     if (status === 'offline' && detail) fit(cv, detail, x + w / 2, y + h / 2 + 24, 13, w - 36, secondary, centered);
 }
 
-function drawCard(cv, card, x, selected, data, state, art, now, preconditioning) {
+function drawCard(cv, card, x, selected, data, state, art, now, preconditioning, vehicle) {
     const { y, h } = viewport;
     const w = card.w;
     const clipLeft = Math.max(x, viewport.x);
@@ -500,7 +550,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, preconditioning)
     fit(cv, title, x + w / 2, y + 25, 19, w - 35, primary, { align: 'center', spacing: 2 });
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
-    if (card.id === 'trip') trip(cv, x, y, w, h, preconditioning);
+    if (card.id === 'trip') trip(cv, x, y, w, h, preconditioning, vehicle);
     if (card.id === 'radio') radio(cv, x, y, w, h, art);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
@@ -515,32 +565,35 @@ function drawCard(cv, card, x, selected, data, state, art, now, preconditioning)
     cv.noclip();
 }
 
-function energy(cv, readings, art) {
+function energy(cv, readings, art, vehicle) {
     const { x, y, w, h } = energyBar;
     cv.roundRect(x, y, w, h, 8, '#05080b');
     const column = (w - 100) / readings.length;
     readings.forEach(({ label, soc, range }, index) => {
         const left = x + index * column + 9;
+        if (!index && vehicle) ({ soc, range } = vehicle);
         if (index) cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
         cv.text(label, left, y + 12, 10, secondary);
-        const band = soc < 20 ? 'low' : soc < 70 ? 'mid' : 'high';
-        cv.image(art('battery-' + band), left - 3, y + 17, 35, 19);
-        cv.text(soc + '%', left + 34, y + 34, 19, primary, bold);
-        cv.image(art('range'), left + 81, y + 17, 18, 18);
-        cv.text(range + ' km', left + 102, y + 34, 18, primary, bold);
+        if (Number.isFinite(soc)) {
+            const band = soc < 20 ? 'low' : soc < 70 ? 'mid' : 'high';
+            cv.image(art('battery-' + band), left - 3, y + 17, 35, 19);
+        }
+        cv.text(Number.isFinite(soc) ? number(soc, 1) + '%' : '–', left + 34, y + 34,
+            Number.isInteger(soc) ? 19 : 16, primary, bold);
+        if (Number.isFinite(range)) cv.image(art('range'), left + 81, y + 17, 18, 18);
+        cv.text(Number.isFinite(range) ? range + ' km' : '–', left + 102, y + 34, 18, primary, bold);
     });
-    cv.text('Demostración', x + w - 13, y + 24, 10, secondary, right);
+    cv.text(vehicle ? 'Ruta de ejemplo' : 'Demostración', x + w - 13, y + 24, 10, secondary, right);
 }
 
 function drawHome(cv, state, scroll, data, art, now) {
     cv.clear(background);
     cv.roundRect(map.x, map.y, map.w, map.h, 10, '#121c25');
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
-    const records = data.diagnostics && data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
-    const thermal = records && records.get('statusPredictiveThermalManagement');
-    const active = thermal && thermal.status === 'sample' && !staleSample(thermal, now) && thermal.fields
-        ? thermal.fields.preconditioningActive : undefined;
-    if (data.diagnostics) diagnostics(cv, records, now);
+    const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
+    const vehicle = (data.diagnostics || records) && vehicleReadings(records, now);
+    const active = freshFields(records, 'statusPredictiveThermalManagement', now).preconditioningActive;
+    if (data.diagnostics) diagnostics(cv, records, vehicle, now);
     else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
     if (data.home) {
         const { x, y, w, h } = home;
@@ -552,8 +605,8 @@ function drawHome(cv, state, scroll, data, art, now) {
         if (data.home === 'error') cv.text('No se ha podido volver a iDrive', x - 12, y + 29, 14, primary, right);
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
-        state.selected === index, data, state, art, now, active));
-    energy(cv, data.energy, art);
+        state.selected === index, data, state, art, now, active, vehicle));
+    energy(cv, data.energy, art, vehicle);
 }
 
 module.exports = { drawHome };

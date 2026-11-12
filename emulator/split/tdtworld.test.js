@@ -5,9 +5,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const { setTimeout: delay } = require('node:timers/promises');
 const catalog = require('../../native/javi-carlab/tdt-catalog');
-const { createRing } = require('../../native/javi-carlab/tdt-player');
+const { createPlayer, createRing } = require('../../native/javi-carlab/tdt-player');
 const { createTdt } = require('../../native/javi-carlab/tdtworld');
 const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
 
@@ -160,4 +162,61 @@ test('shared video rotates slots and records the renderer video operation', (t) 
     assert.equal(cv.words()[6], 1);
     ring.close();
     assert.ok(!fs.existsSync(ring.file));
+});
+
+test('video continues through audio backpressure and keeps its last frame while reconnecting', async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-reconnect-'));
+    const decoders = [];
+    const audioWrites = [];
+    const states = [];
+    let attachment;
+    let sink;
+    const player = createPlayer({ video(id, file) { attachment = file; } }, {
+        directory,
+        audio: { command: 'sink', args: [], handshake: true },
+        log: { warn() {} },
+        spawnProcess(command, args) {
+            const child = new EventEmitter();
+            child.kill = () => {};
+            child.stdout = new PassThrough();
+            child.stderr = new PassThrough();
+            if (command === 'sink') {
+                sink = child;
+                child.stdin = new EventEmitter();
+                child.stdin.write = (bytes) => { audioWrites.push(bytes); return false; };
+            } else {
+                assert(args.includes('pipe:3'));
+                child.stdio = [null, child.stdout, child.stderr, new PassThrough()];
+                decoders.push(child);
+            }
+            return child;
+        }
+    });
+    t.after(() => { player.stop(); fs.rmdirSync(directory); });
+    player.ready({ video: true });
+    player.start(first.sources, (status) => states.push(status));
+    await new Promise((resolve) => setImmediate(resolve));
+    const frame = Buffer.alloc(640 * 360 * 3 / 2);
+    const decoder = decoders[0];
+    decoder.stdio[3].write(Buffer.alloc(1, 1));
+    sink.stdout.write('ready\n');
+    decoder.stdio[3].write(Buffer.alloc(3, 2));
+    decoder.stdio[3].write(Buffer.alloc(8, 3));
+    decoder.stdout.write(frame);
+    decoder.stdout.write(frame);
+    assert.equal(decoder.stdio[3].isPaused(), false);
+    assert.deepEqual(audioWrites, [Buffer.from([1, 2, 2, 2])]);
+    const file = attachment;
+    assert.equal(fs.readFileSync(file).readUInt32LE(16), 2);
+    sink.emit('close', 5);
+    assert(states.includes('audio-format'));
+    decoder.emit('close', 1);
+    assert.equal(states[states.length - 1], 'reconnecting');
+    assert.deepEqual(player.frame(), { id: 1 });
+    assert.equal(attachment, file);
+    for (let i = 0; i < 50 && decoders.length < 2; i++) await delay(40);
+    assert.equal(decoders.length, 2);
+    decoders[1].stdout.write(frame);
+    assert.equal(states[states.length - 1], 'playing');
+    assert.equal(fs.readFileSync(file).readUInt32LE(16), 3);
 });

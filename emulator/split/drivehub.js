@@ -53,7 +53,14 @@ session.setHome('ready');
 session.show(true);
 if (telemetry === 'telemetry') {
     const samples = {
-        statusChargeOfBatteryHybrid: { displayChargingConditionHighVoltageStorage: 68 },
+        statusChargeOfBatteryHybrid: { displayChargingConditionHighVoltageStorage: 182 },
+        displayRangeElectricVehicle: { displayRangeElectricVehicle: 431 },
+        ExteriorTemperature: { temperatureExterior: 112 },
+        statusBatteryTemperature: { actualValueTemperatureHighVoltageStorage: 69 },
+        statusConsumptionAverageElectricVehicle: {
+            consumptionAverageElectricVehicleBC1: 170, consumptionAverageElectricVehicleBC2: 180,
+            unitOfMeasurementConsumptionElectricVehicleBC: 'VERBRAUCH_IN_KWH__S__100KM'
+        },
         dataRangeDisplay: {
             dataRangeDisplayElectric: 254, unitRangeDisplay: 'KILOMETER', fadeoutRangeDisplayElectric: 0
         },

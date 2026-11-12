@@ -19,7 +19,7 @@ const directory = '/var/opt/public/oap';
 const dataDirectory = '/var/opt/javi-carlab';
 const uplink = '/var/opt/mgu-uplink';
 const uplinkLease = '/run/mgu-uplink/lease.json';
-const tdtAudio = process.env.JAVI_TDT_PCM || 'smartx:MediaSink_AudioOut_Front_CF_48_COMBINED_STEREO_MULTICHANNEL';
+const tdtAudio = process.env.JAVI_TDT_PCM || 'plug:smartx:MediaSink_AudioOut_Front_CF_48_COMBINED_STEREO_MULTICHANNEL';
 const lease = createLease('/run/javi-carlab/frontccu.lease', (err) => console.warn('BMWLauncher: captura del mando: ' + err.code));
 let screenConfirmed = false;
 let ccuReady = false;
