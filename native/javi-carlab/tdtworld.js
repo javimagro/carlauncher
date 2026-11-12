@@ -266,6 +266,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         if (tdtPlayer) tdtPlayer.stop();
         state.playback = 'idle';
         state.audioStatus = '';
+        state.audioDiagnostic = '';
         state.overlayUntil = 0;
         state.playerChoice = undefined;
     }
@@ -284,17 +285,24 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             const sources = await catalog.resolveSources(item, get);
             if (request !== tuning) return;
             if (!sources.length) state.playback = 'no-source';
-            else tdtPlayer.start(sources, (status) => {
-                    if (request !== tuning) return;
-                if (status.startsWith('audio-')) { state.audioStatus = status; change(); return; }
-                    if (status !== 'frame') state.playback = status;
-                    if (status === 'playing') {
-                        state.overlayUntil = now() + prefs.seconds * 1000;
+            else tdtPlayer.start(sources, (status, diagnostic) => {
+                if (request !== tuning) return;
+                if (status.startsWith('audio-')) {
+                    state.audioStatus = status;
+                    state.audioDiagnostic = diagnostic || '';
+                    change();
+                    return;
+                }
+                if (status !== 'frame') state.playback = status;
+                if (status === 'playing') {
+                    state.overlayUntil = now() + prefs.seconds * 1000;
+                    if (prefs.last[prefs.country] !== item.id) {
                         prefs.last[prefs.country] = item.id;
                         savePrefs();
                     }
-                    change();
-                });
+                }
+                change();
+            });
         } catch (_) {
             if (request !== tuning) return;
             state.playback = 'error';

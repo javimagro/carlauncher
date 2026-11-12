@@ -169,10 +169,12 @@ test('video continues through audio backpressure and keeps its last frame while 
     const decoders = [];
     const audioWrites = [];
     const states = [];
+    const diagnostics = [];
     let attachment;
     let sink;
     const player = createPlayer({ video(id, file) { attachment = file; } }, {
         directory,
+        bufferSeconds: 0,
         audio: { command: 'sink', args: [], handshake: true },
         log: { warn() {} },
         spawnProcess(command, args) {
@@ -194,7 +196,10 @@ test('video continues through audio backpressure and keeps its last frame while 
     });
     t.after(() => { player.stop(); fs.rmdirSync(directory); });
     player.ready({ video: true });
-    player.start(first.sources, (status) => states.push(status));
+    player.start(first.sources, (status, diagnostic) => {
+        states.push(status);
+        if (diagnostic) diagnostics.push(diagnostic);
+    });
     await new Promise((resolve) => setImmediate(resolve));
     const frame = Buffer.alloc(640 * 360 * 3 / 2);
     const decoder = decoders[0];
@@ -208,8 +213,11 @@ test('video continues through audio backpressure and keeps its last frame while 
     assert.deepEqual(audioWrites, [Buffer.from([1, 2, 2, 2])]);
     const file = attachment;
     assert.equal(fs.readFileSync(file).readUInt32LE(16), 2);
+    sink.stderr.write('tdt-pcm: format=');
+    sink.stderr.write('-22\n');
     sink.emit('close', 5);
     assert(states.includes('audio-format'));
+    assert.deepEqual(diagnostics, ['format=-22']);
     decoder.emit('close', 1);
     assert.equal(states[states.length - 1], 'reconnecting');
     assert.deepEqual(player.frame(), { id: 1 });
@@ -219,4 +227,38 @@ test('video continues through audio backpressure and keeps its last frame while 
     decoders[1].stdout.write(frame);
     assert.equal(states[states.length - 1], 'playing');
     assert.equal(fs.readFileSync(file).readUInt32LE(16), 3);
+});
+
+test('playout starts with buffered video, preserves the last frame on depletion and resumes', async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-buffer-'));
+    const decoder = new EventEmitter();
+    decoder.kill = () => {};
+    decoder.stdout = new PassThrough();
+    decoder.stderr = new PassThrough();
+    const statuses = [];
+    let attachment;
+    const player = createPlayer({ video(id, file) { attachment = file; } }, {
+        directory, bufferSeconds: 0.15, spawnProcess: () => decoder
+    });
+    t.after(() => { player.stop(); fs.rmdirSync(directory); });
+    player.ready({ video: true });
+    player.start(first.sources, (status) => statuses.push(status));
+    await new Promise((resolve) => setImmediate(resolve));
+    const frame = Buffer.alloc(640 * 360 * 3 / 2);
+    decoder.stdout.write(frame);
+    decoder.stdout.write(frame);
+    await delay(80);
+    assert.equal(attachment, undefined);
+    decoder.stdout.write(frame);
+
+    for (let i = 0; i < 25 && !statuses.includes('buffering'); i++) await delay(20);
+    assert.deepEqual(statuses, ['playing', 'buffering']);
+    const file = attachment;
+    assert.equal(fs.readFileSync(file).readUInt32LE(16), 3);
+
+    for (let i = 0; i < 3; i++) decoder.stdout.write(frame);
+    for (let i = 0; i < 25 && statuses.length < 3; i++) await delay(20);
+    assert.deepEqual(statuses, ['playing', 'buffering', 'playing']);
+    assert.equal(attachment, file);
+    assert.ok(fs.readFileSync(file).readUInt32LE(16) > 3);
 });

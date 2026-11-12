@@ -9,16 +9,30 @@ Primera inspección local sobre PSdZData 4.58.15 Full. El paquete `SWFL 000056EE
 | Batería actual | `Efficiencytainment2.statusChargeOfBatteryHybrid` y `LSCDataSink.displayConditionHybrid` | Las dos estructuras contienen un valor de carga visible de alta tensión y tienen `255` como valor sin inicializar. Comparar ambas con el porcentaje del cuadro, también después de cargar. |
 | Autonomía actual | `LSCDataSink.dataRangeDisplay` y `KombiIF.displayRangeElectricVehicle` | El primero distingue autonomía eléctrica de total e indica unidad y si se debe mostrar. `4095` es el valor por defecto. Comparar con los km que presenta el cuadro. |
 | Consumo medio | `KombiIF.statusConsumptionAverageElectricVehicle` | Ofrece dos medias, BC1 y BC2, y el código de unidad. Comparar escala y periodo de cada media con Datos de viaje de BMW. |
-| Distancia, duración y velocidad media | `BcPersonal.driveSegment` | Comprobar si publica el trayecto en curso o solo segmentos finalizados y cómo responde al reinicio del periodo de viaje. |
+| Datos de viaje por periodo | `ResetLogic3.bcDataAll` | El HMI lo usa para distancia, duración y consumo. Contrastar los cuatro periodos con el cuadro. |
+| Segmento bruto | `BcPersonal.driveSegment` | Distancia, duración, consumo y velocidad media de un segmento. La relación entre ese segmento y los periodos del cuadro sigue pendiente. |
 | Altura | `Positioning.rawPositionData` | Contiene `heightValid` y `height.rawLengthMeter`. Comprobar con fijación 3D y confirmar la referencia vertical antes de presentarla como altitud sobre el nivel del mar. |
 | Temperaturas | `EnvironmentalInformation.ExteriorTemperature` y `Efficiencytainment2.statusBatteryTemperature` | Para exterior, Live Data usa `valor × 0,5 − 40` °C. Verificar esa escala y la de la batería en el i4. Ambas estructuras usan `255` como valor por defecto. |
-| Consumo instantáneo y energía | `Efficiencytainment2.displayPowerDrive`, `Vehicle2.statusCarSpeed2` y `Vehicle2.highVoltageStorageInfoToExternal` | El catálogo identifica una cuota relativa de tracción o regeneración y valores de energía disponible y máxima. Falta una señal pasiva de potencia física con signo para obtener consumo instantáneo y acumular energía. La cuota relativa queda como lectura de diagnóstico. |
+| Potencia de batería HV | `InternalTasu` y UDS al SME | Contrastar tensión, corriente y potencia del OAP con el lector OBD de Android y comprobar la cadencia en la MGU. |
+| Indicador de tracción y energía disponible | `Efficiencytainment2.displayPowerDrive`, `Vehicle2.highVoltageStorageInfoToExternal` | El catálogo identifica una cuota relativa de tracción o regeneración y valores de energía disponible y máxima. |
 
 El catálogo denomina algunas interfaces `Hybrid`. La prueba debe decidir si se publican en el i4. La app eDrive de IterioDev 1.1.0 consulta el DID `DDBC` para el porcentaje y estima su autonomía. El perfil OBD del BMWLauncher Android para el i4 Gen5 usa `E5CE` para carga del pack, `E5C7` para energía disponible, `E54D` para voltaje y `E561` para corriente. Son antecedentes para una eventual comparación con OBD. La sonda usa el acceso a campos SOME/IP del SDK OAP. [eDrive de IterioDev](https://github.com/IterioDev/car-apps#edrive-iteriodev-edrive-idrive-8-only) · [Escalas de Live Data](https://github.com/cauliflowermossgrape/idrive7-apps/blob/main/apps/live_data/signals.js)
 
 Si se obtiene potencia HV física, la estimación a partir de potencia y velocidad en km/h es `100 × potencia_kW / velocidad_km_h`. Se deben alinear las muestras, excluir velocidades próximas a cero y conservar el signo de la regeneración. La potencia medida en el pack puede incluir auxiliares. Batería y autonomía tras parada o llegada se calculan con una ruta, su consumo previsto y la recarga de cada parada.
 
+## Potencia de la batería HV
+
+BMWLauncher usa el mismo perfil de lectura del i4 Gen5 que CarLauncher Android. Al SME (`0x07`) se le consultan los DIDs `E54D` y `E561` por separado con UDS `0x22`. Tras los bytes de respuesta `62` y del DID, la tensión se lee como entero sin signo de 16 bits desde el byte 0, multiplicado por 0,01 V. La corriente se lee como entero con signo de 16 bits desde el byte 2, multiplicado por −0,01 A. Ambos enteros son big-endian.
+
+El OAP usa el método `sendTasuRequest` y el evento selectivo `sendTasuResponse` del catálogo MGU21. Comprueba que la respuesta corresponde al SME y al DID solicitado. Calcula `kW = V × A ÷ 1000` a partir de las dos lecturas del mismo ciclo. Los valores positivos indican descarga y los negativos, entrada de energía a la batería. El diagnóstico muestra los kW, voltios y amperios en la misma fila. La cadencia prevista es de un par por segundo y hay una pausa de cinco segundos si falla una lectura. Se cancela el muestreo al ocultar la app. [Pasarela de diagnóstico de iDrive](https://github.com/cauliflowermossgrape/idrive7-apps/blob/main/README.md) · [eDrive de IterioDev](https://github.com/IterioDev/car-apps/tree/main/apps/iteriodev_edrive)
+
+En el i4, la primera comprobación es obtener las tres cifras con el coche parado y comparar su variación al activar la climatización. Después se contrasta la lectura y el signo con el OBD2 de Android durante una prueba de marcha y regeneración.
+
 ## Verificar la versión de prueba
+
+El catálogo de MGU21 identifica los periodos de `ResetLogic3.bcDataAll` como `INDIVIDUAL` (1), `CHARGE` (3), `STARTOFDRIVING` (4) y `LONGTERM` (5). El orden del array puede variar. `DevJourneyData::onBcDataAll` y sus consumidores de `Hmi8` confirman el uso del registro en Datos de viaje. El HMI aplica `counterDistance × 0,1` en `updateCounterDistance` y `(consumptionElectricAverageDigit − 65535) × 0,1` en `updateAvgElConsumption`. Ambas funciones tratan `0xfffffffd` como no disponible. El diagnóstico aplica esas conversiones cuando la unidad es compatible.
+
+Compara la distancia y el consumo en **Inicio de viaje**, **Última carga**, **Individual** y **Desde fábrica** con iDrive. Mantén las filas de `BcPersonal` como valores brutos mientras falten sus escalas y periodo. El catálogo también ofrece el consumo eléctrico instantáneo de `ResetLogic3` y su código de unidad. Queda por medir su cadencia en el i4 y comprobar cuándo indica consumo por distancia o por tiempo antes de calcular potencia.
 
 En la raíz del proyecto y con Node.js 18 o superior:
 

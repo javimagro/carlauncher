@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('node:net');
 const { start, report } = require('../../apps/javi_carlauncher/telemetria-mgu.js');
+const { createPowerProbe, service: tasu, instance: tasuInstance } = require('../../apps/javi_carlauncher/potencia-hv.js');
 const { consume } = require('../../native/javi-carlab/telemetry-input.js');
 const { drawHome } = require('../../native/javi-carlab/drivehub-view.js');
 const turn = () => new Promise((resolve) => setImmediate(resolve));
@@ -313,4 +314,133 @@ test('the dashboard distinguishes zero speed, missing speed and an expired readi
             status: 'sample', fields: { speedVehicleCentreOfGravity: raw }, sampledAt: 1000, freshForMs: 6000 }] }, () => 1, now);
         assert(labels.includes(expected), expected);
     }
+});
+
+test('the trip probe maps periods by reset option and presents scaled distances and averages', async (t) => {
+    const builders = {
+        buildTypedProxy(service) {
+            if (!service.endsWith('.ResetLogic3')) throw new Error('proxy unavailable');
+            return {
+                init() {}, waitUntilAvailable() {},
+                bcDataAll: {
+                    getValue: () => ({
+                        bcUnits: { tachoDigital: 'KILOMETERS', averageConsumptionElectric: 1 },
+                        bcData3: [
+                            { resetOption: 5, counterDistance: 450340, consumptionElectricAverageDigit: 65718 },
+                            { resetOption: 'STARTOFDRIVING', counterDistance: 345, consumptionElectricAverageDigit: 65753 },
+                            { resetOption: 'INDIVIDUAL', counterDistance: 0xfffffffd },
+                            { resetOption: 3, counterDistance: 523, consumptionElectricAverageDigit: 65763 },
+                            { resetOption: 'REFUEL', counterDistance: 900, consumptionElectricAverageDigit: 65742 }
+                        ]
+                    })
+                }
+            };
+        }
+    };
+    const probe = start(builders);
+    t.after(() => probe.stop());
+    await turn();
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    drawHome(canvas, { selected: 0, article: 0 }, 0,
+        { energy: [], diagnostics: true, telemetry: probe.snapshot() }, () => 1, Date.now());
+    for (const label of ['34,5 km  ·  21,8 kWh/100 km', '52,3 km  ·  22,8 kWh/100 km',
+        '45034 km  ·  18,3 kWh/100 km', '–  ·  –']) assert(labels.includes(label), label);
+    assert(!labels.includes('90 km  ·  20,7 kWh/100 km'));
+});
+
+function tasuReply(did, payload, ecu = 7) {
+    return { errorCode: 'NO_ERROR', udsResponse: Buffer.from([
+        0, 0, 0, 0, 0, 0, ecu, 0, 0, 0x62, did >> 8, did & 0xff, ...payload
+    ]) };
+}
+
+test('the battery power probe reads only the SME voltage and signed current and displays their product', async (t) => {
+    const requests = [];
+    const removed = [];
+    let notify;
+    let currentRaw = [0, 0, 0xec, 0x78];
+    const proxy = {
+        sendTasuResponse: {
+            subscribe(listener) { notify = listener; return 0; },
+            unsubscribe(id) { removed.push(id); }
+        },
+        sendTasuRequest(request) {
+            requests.push(request);
+            const did = request.udsData.readUInt16BE();
+            const payload = did === 0xe54d ? [0x9c, 0x40] : currentRaw;
+            notify(tasuReply(did, [0, 0, 0, 0], 0x12));
+            notify(tasuReply(0xe555, [0, 0, 0, 0]));
+            notify(tasuReply(did, []));
+            notify(tasuReply(did, payload));
+            return { TasuErrorEnum: 'NO_ERROR' };
+        }
+    };
+    const probe = createPowerProbe({
+        buildAndInitTypedProxy(service, instance) {
+            assert.equal(service, tasu);
+            assert.equal(instance, tasuInstance);
+            return proxy;
+        }
+    }, { periodMs: 60 });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (let i = 0; i < 40 && probe.snapshot().status !== 'sample'; i++) await delay(10);
+    assert.deepEqual(probe.snapshot().fields, { kw: 20, volts: 400, amps: 50 });
+    currentRaw = [0, 0, 0x13, 0x88];
+    for (let i = 0; i < 40 && probe.snapshot().fields.kw !== -20; i++) await delay(10);
+    const record = probe.snapshot();
+    assert.deepEqual(record.fields, { kw: -20, volts: 400, amps: -50 });
+    assert.deepEqual(requests.map((request) => request.udsData.toString('hex')), ['e54d', 'e561', 'e54d', 'e561']);
+    for (const request of requests) {
+        assert.equal(request.targetAddress, 7);
+        assert.equal(request.serviceID, 0x22);
+        assert.equal(request.udsDataLength, 2);
+    }
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    drawHome(canvas, { selected: 0, article: 0 }, 0,
+        { energy: [], diagnostics: true, telemetry: [record] }, () => 1, record.sampledAt);
+    assert(labels.includes('-20 kW  ·  400 V  ·  -50 A'));
+    probe.show(false);
+    await turn();
+    assert.deepEqual(removed, [0]);
+    assert.equal(probe.snapshot().status, 'no-sample');
+});
+
+test('hiding and reopening during a diagnostic request waits for the previous TASU proxy to close', async (t) => {
+    let complete;
+    let sent = 0;
+    const lifecycle = [];
+    const probe = createPowerProbe({
+        buildAndInitTypedProxy() {
+            lifecycle.push('open');
+            return {
+                sendTasuResponse: { subscribe() { return 1; }, unsubscribe() { lifecycle.push('unsubscribe'); } },
+                sendTasuRequest() {
+                    sent++;
+                    if (sent === 1) return new Promise((resolve) => { complete = resolve; });
+                    return { TasuErrorEnum: 'APP_REQUEST_TEMPORARILY_NOT_ACCEPTED' };
+                },
+                dispose() { lifecycle.push('dispose'); }
+            };
+        }
+    });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    await turn();
+    probe.show(false);
+    probe.show(true);
+    await turn();
+    assert.deepEqual(lifecycle, ['open']);
+    complete({ TasuErrorEnum: 'NO_ERROR' });
+    await turn();
+    assert.deepEqual(lifecycle, ['open', 'unsubscribe', 'dispose', 'open']);
+    assert.equal(sent, 2);
+    assert.equal(probe.snapshot().status, 'error');
 });

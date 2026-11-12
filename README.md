@@ -8,9 +8,11 @@ El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de 
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.6**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras la actualización. [ZIP de la versión 0.2.6 para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.6)
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.7**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras la actualización. [ZIP de la versión 0.2.7 para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.7)
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
+
+En **Lecturas del coche**, comprueba la fila **Batería HV**, que muestra kW, voltios y amperios. Compara también la distancia y el consumo medio de **Inicio de viaje**, **Última carga**, **Individual** y **Desde fábrica** con Datos de viaje de iDrive. [Prueba de telemetría](TELEMETRIA-MGU21.md#potencia-de-la-batería-hv)
 
 Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas del coche**, compara **Batería del cuadro** y **Autonomía del cuadro** con el cuadro y haz una foto de la pantalla. Los campos muestran valores de diagnóstico, incluidos los códigos que la MGU devuelve cuando falta un dato. Después inicia el precalentamiento en **Vehículo → Carga → Preacondicionar batería**, comprueba que aparece el icono en el cuadro y vuelve a BMWLauncher para mirar **Precalentamiento HV**. Si puedes, abre Android Auto y vuelve a BMWLauncher para mirar **Android Auto · vídeo**. Esa fila indica el estado que comunica iDrive al abrir BMWLauncher.
 

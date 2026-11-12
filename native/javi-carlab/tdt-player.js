@@ -46,18 +46,51 @@ function createRing(directory, w, h) {
     };
 }
 
+function createPcmQueue(limit) {
+    const chunks = [];
+    let queued = 0;
+    let offset = 0;
+
+    function take(length, target) {
+        if (queued < length) return false;
+        for (let at = 0; at < length;) {
+            const chunk = chunks[0];
+            const count = Math.min(length - at, chunk.length - offset);
+            if (target) chunk.copy(target, at, offset, offset + count);
+            at += count;
+            offset += count;
+            if (offset === chunk.length) { chunks.shift(); offset = 0; }
+        }
+        queued -= length;
+        return true;
+    }
+
+    return {
+        push(chunk) {
+            chunks.push(chunk);
+            queued += chunk.length;
+            if (queued > limit) take(Math.ceil((queued - limit) / 4) * 4);
+        },
+        take
+    };
+}
+
 function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory = '/dev/shm', preview = false,
-    log = console, spawnProcess = spawn } = {}) {
+    bufferSeconds = preview ? 0 : 2, log = console, spawnProcess = spawn } = {}) {
     const w = preview ? 320 : 640;
     const h = preview ? 180 : 360;
     const fps = preview ? 8 : 20;
     const size = preview ? w * h * 4 : w * h * 3 / 2;
+    const prebuffer = Math.ceil(fps * bufferSeconds);
+    const maxFrames = 2 * prebuffer;
+    const pcmSize = 48000 * 4 / fps;
     let capable = preview;
     let job;
     let surface;
 
     function clearDecoder(current) {
         clearTimeout(current.timer);
+        clearInterval(current.playout);
         const video = current.video;
         current.video = null;
         if (current.closeAudio) { current.closeAudio(); current.closeAudio = null; }
@@ -86,7 +119,9 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             '-reconnect_on_http_error', '429,5xx', '-reconnect_max_retries', '2', '-reconnect_delay_max', '2'];
         if (network) args.push('-http_proxy', network.url);
         if (caFile) args.push('-tls_verify', '1');
-        args.push('-protocol_whitelist', 'http,https,tcp,tls,httpproxy,crypto', '-re', '-i', source);
+        args.push('-protocol_whitelist', 'http,https,tcp,tls,httpproxy,crypto', '-re');
+        if (prebuffer) args.push('-readrate_initial_burst', String(bufferSeconds + 0.5), '-readrate_catchup', '1.5');
+        args.push('-i', source);
         return args;
     }
 
@@ -97,13 +132,14 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         return spawnProcess(ffmpeg, args, options);
     }
 
-    function playAudio(pcm, changed) {
+    function playAudio(pcm, changed, queue) {
         let sink;
         let ended = false;
         let ready = false;
         let blocked = false;
         let timer;
         let stalled;
+        let diagnostic = '';
         let tail = Buffer.alloc(0);
         function close(reason) {
             if (ended) return;
@@ -112,20 +148,26 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             clearTimeout(stalled);
             if (sink) sink.kill();
             if (reason) {
-                log.warn('TDTWorld: salida de audio: ' + reason);
-                changed('audio-' + reason);
+                log.warn('TDTWorld: salida de audio: ' + reason + (diagnostic ? ' (' + diagnostic + ')' : ''));
+                changed('audio-' + reason, diagnostic);
             }
         }
         function open() {
             try {
-                sink = spawnProcess(audio.command, audio.args, { stdio: ['pipe', audio.handshake ? 'pipe' : 'ignore', 'ignore'] });
+                sink = spawnProcess(audio.command, audio.args, { stdio: ['pipe', audio.handshake ? 'pipe' : 'ignore', 'pipe'] });
             } catch (_) { close('unavailable'); return; }
             sink.on('error', () => close('unavailable'));
-            sink.on('close', (code) => close({ 3: 'alsa', 4: 'open', 5: 'format', 7: 'write' }[code] || 'unavailable'));
+            sink.on('close', (code) => close({ 3: 'alsa', 4: 'open', 5: 'format', 7: 'write', 8: 'stall' }[code] || 'unavailable'));
+            let stderr = '';
+            sink.stderr.on('data', (chunk) => {
+                stderr = (stderr + String(chunk)).slice(-512);
+                const result = /(?:^|\n)tdt-pcm: ((?:open|format|write|recover)=-?\d{1,4})\r?\n/.exec(stderr);
+                if (result) diagnostic = result[1];
+            });
             // The close event supplies the helper's exit code after an EPIPE.
             sink.stdin.on('error', () => {
                 blocked = true;
-                if (!stalled) stalled = setTimeout(() => close('write'), 2500);
+                if (!stalled) stalled = setTimeout(() => close('stall'), 2500);
             });
             sink.stdin.on('drain', () => { blocked = false; clearTimeout(stalled); stalled = undefined; });
             if (!audio.handshake) { ready = true; changed('audio-ready'); return; }
@@ -140,21 +182,27 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             });
             timer = setTimeout(() => close('timeout'), 4000);
         }
-        // Consume the decoder's PCM even when ALSA stalls. Discard whole stereo frames only.
+        function writePcm(bytes) {
+            if (ended || !ready || blocked) return;
+            if (!sink.stdin.write(bytes)) {
+                blocked = true;
+                stalled = setTimeout(() => close('stall'), 2500);
+            }
+        }
+        // Drain the decoder even when ALSA stalls. Discard whole stereo frames only.
         pcm.on('data', (bytes) => {
+            if (ended && !queue) return;
+            if (queue) queue.push(bytes);
             if (ended) return;
             if (!sink) open();
+            if (queue) return;
             const buffer = tail.length ? Buffer.concat([tail, bytes]) : bytes;
             const length = buffer.length - buffer.length % 4;
             tail = Buffer.from(buffer.slice(length));
-            if (!length || !ready || blocked || ended) return;
-            if (!sink.stdin.write(buffer.slice(0, length))) {
-                blocked = true;
-                stalled = setTimeout(() => close('write'), 2500);
-            }
+            if (length) writePcm(buffer.slice(0, length));
         });
         pcm.on('error', () => close('unavailable'));
-        return close;
+        return { close, write: writePcm };
     }
 
     function decode(current, source, withAudio, failed, changed) {
@@ -166,9 +214,15 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         if (withAudio) args.push('-map', '0:a:0', '-vn', '-ac', '2', '-ar', '48000', '-f', 's16le', 'pipe:3');
         const video = decodeProcess(args, current.network, withAudio);
         current.video = video;
+        const frames = [];
+        const spareFrames = [];
+        const queue = withAudio && prebuffer ? createPcmQueue((maxFrames + fps) * pcmSize) : null;
+        const pcm = queue && Buffer.allocUnsafe(pcmSize);
+        let output;
         if (withAudio) {
             changed('audio-connecting');
-            current.closeAudio = playAudio(video.stdio[3], changed);
+            output = playAudio(video.stdio[3], changed, queue);
+            current.closeAudio = output.close;
         }
         else if (audio) changed('audio-unavailable');
         let diagnostic = '';
@@ -177,7 +231,45 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         });
         let offset = 0;
         let ready = false;
-        const frame = Buffer.allocUnsafe(size);
+        let playing = false;
+        let decoderEnded = false;
+        let frame = Buffer.allocUnsafe(size);
+        function present(bytes) {
+            try {
+                if (preview) {
+                    if (surface) dropImage(surface.image);
+                    surface = { image: makeImage(w, h, Buffer.from(bytes)) };
+                } else {
+                    if (!current.ring) {
+                        current.ring = createRing(directory, w, h);
+                        gpu.video(videoId, current.ring.file);
+                    }
+                    current.ring.push(bytes);
+                    surface = { id: videoId };
+                }
+            } catch (_) { failed(video, 'unavailable'); return; }
+            if (!playing) {
+                playing = true;
+                changed('playing');
+            } else if (preview) changed('frame');
+        }
+        if (prebuffer) {
+            current.playout = setInterval(() => {
+                if (decoderEnded && !frames.length) { failed(video, 'error', ready); return; }
+                if (!frames.length) {
+                    if (playing) { playing = false; changed('buffering'); }
+                    return;
+                }
+                if (!playing && !decoderEnded && frames.length < prebuffer) return;
+                const next = frames.shift();
+                present(next);
+                spareFrames.push(next);
+                if (queue && job === current && current.video === video) {
+                    // The pending write owns its buffer until the stream consumes it.
+                    if (queue.take(pcmSize, pcm)) output.write(Buffer.from(pcm));
+                }
+            }, 1000 / fps);
+        }
         current.timer = setTimeout(() => failed(video, 'error', ready), 16000);
         video.stdout.on('data', (bytes) => {
             if (current !== job || current.video !== video) return;
@@ -189,23 +281,15 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
                 offset += count;
                 if (offset !== size) continue;
                 offset = 0;
-                try {
-                    if (preview) {
-                        if (surface) dropImage(surface.image);
-                        surface = { image: makeImage(w, h, Buffer.from(frame)) };
-                    } else {
-                        if (!current.ring) {
-                            current.ring = createRing(directory, w, h);
-                            gpu.video(videoId, current.ring.file);
-                        }
-                        current.ring.push(frame);
-                        surface = { id: videoId };
+                ready = true;
+                if (prebuffer) {
+                    if (frames.length === maxFrames) {
+                        spareFrames.push(frames.shift());
+                        if (queue) queue.take(pcmSize);
                     }
-                } catch (_) { failed(video, 'unavailable'); return; }
-                if (!ready) {
-                    ready = true;
-                    changed('playing');
-                } else if (preview) changed('frame');
+                    frames.push(frame);
+                    frame = spareFrames.pop() || Buffer.allocUnsafe(size);
+                } else present(frame);
                 if (job !== current || current.video !== video) return;
                 clearTimeout(current.timer);
                 current.timer = setTimeout(() => failed(video, 'error', ready), 12000);
@@ -213,11 +297,15 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         });
         video.on('error', (error) => failed(video, error.code === 'ENOENT' ? 'unavailable' : 'error', ready));
         video.on('close', (code) => {
-            if (job === current && current.video === video && code) {
+            if (job !== current || current.video !== video) return;
+            if (code) {
                 const http = /(?:HTTP error |Server returned )(\d{3})/.exec(diagnostic);
                 log.warn('TDTWorld: FFmpeg terminó con código ' + code + (http ? ' (HTTP ' + http[1] + ')' : ''));
             }
-            failed(video, 'error', ready);
+            if (prebuffer && frames.length) {
+                clearTimeout(current.timer);
+                decoderEnded = true;
+            } else failed(video, 'error', ready);
         });
     }
 

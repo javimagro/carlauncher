@@ -10,6 +10,22 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-12 · 0.2.7 · Potencia de batería HV
+
+- **Lectura.** Se reprodujo en el OAP el cálculo del perfil OBD de CarLauncher Android. El proxy TASU de la MGU lee al SME con `22 E5 4D` para tensión y `22 E5 61` para corriente. El manifiesto concede acceso al método de envío y al evento selectivo de respuesta. La aplicación solo emite esas dos peticiones de lectura.
+- **Presentación.** En Lecturas del coche, la fila de batería HV muestra la potencia firmada en kW junto a tensión y corriente. Se requiere un par válido del mismo ciclo y se cancela el muestreo al salir de la vista.
+- **Verificación.** Pasaron 34 pruebas locales. Con 400 V y corriente de ±50 A, la sonda produce ±20 kW. Se comprobó el filtrado de respuestas ajenas, la liberación del proxy, la compatibilidad con Node 8.16.2, el catálogo MGU21 y el enlace OAP con donante sintético. Falta confirmar que la MGU del i4 autoriza ambas consultas y devuelve muestras en directo. [Escalas y prueba en el coche](TELEMETRIA-MGU21.md#potencia-de-la-batería-hv)
+
+## 2026-11-12 · 0.2.7 · Pausas de TDTWorld y periodos de viaje
+
+- **Síntoma.** La 0.2.6 conserva el último fotograma en el i4, pero la imagen se congela a intervalos y el audio muestra error de reproducción. En Windows, con FFmpeg 9.0.2, se sirvió por HTTP una muestra HLS de un segundo por segmento y se retrasaron dos segmentos 1.400 ms. Con el audio desactivado, la 0.2.6 presentó dos pausas de 1.417 y 1.416 ms.
+- **Vídeo.** El reproductor acumula 40 fotogramas I420 antes de mostrar el primero y reutiliza los búferes, con un límite de 80. Con la misma muestra, el mayor hueco observado fue de 70 ms en 240 fotogramas, tanto con el audio desactivado como con un receptor PCM de prueba. Este último recibió 2.294.400 bytes. Si se vacía el búfer, muestra «Cargando vídeo» sobre el último fotograma hasta que puede continuar. [Ritmo de lectura de FFmpeg](https://ffmpeg.org/ffmpeg.html)
+- **Audio.** El código anterior compartía un aviso para un bloqueo de escritura y un error de ALSA. El auxiliar reintenta una escritura que devuelve cero o `EAGAIN` y registra códigos negativos de apertura, formato y escritura. Node sigue drenando el audio cuando el destino falla y muestra el código cuando se puede recuperar. Se comprobó el formato ELF x86-64, el intérprete `/lib/ld-linux-x86-64.so.2` y las dependencias de glibc. Falta ejecutar el auxiliar con SmartX y comprobar el audio por los altavoces del i4. [Errores de PCM en ALSA](https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html)
+- **Trayecto.** `ResetLogic3.bcDataAll` alimenta Datos de viaje en el HMI original. Se añadieron cuatro periodos de lectura en el diagnóstico. Se comprobó el manifiesto contra el catálogo y el formato con muestras simuladas. Queda contrastar los cuatro periodos simultáneamente con el cuadro del i4 y validar una señal de potencia instantánea en kW. [Escalas y señales](TELEMETRIA-MGU21.md)
+- **Android Auto.** En la 0.2.6, el usuario abrió la proyección de serie y después BMWLauncher. El diagnóstico mostraba «No» en `Android Auto · vídeo`. La comprobación de la salida de vídeo queda aplazada hasta disponer de ENET. [Vídeo de Android Auto](ANDROID-AUTO-MGU21.md)
+- **Verificación local.** Se contrastó el manifiesto con el catálogo, se cargaron los módulos en Node 8.16.2 y se empaquetaron el OAP y la herramienta con MGU Store. La revisión de la vista se hizo con las órdenes de dibujo del simulador.
+- **Distribución de prueba.** La etiqueta `v0.2.7` se distribuye por el canal Tags. La publicación incluye el ZIP para USB. [BMWLauncher 0.2.7](https://github.com/javimagro/carlauncher/releases/tag/v0.2.7)
+
 ## 2026-11-12 · 0.2.6 · Reproducción de TDTWorld y unidades de telemetría
 
 - **TDTWorld.** En el i4 se veían cortes de imagen y no sonaba el audio. Se reprodujo en Windows la presión de una salida PCM que no leía. La versión anterior pausaba el PCM del mismo FFmpeg que suministraba el vídeo. Ahora se drena el PCM independientemente de la salida y se conserva el último fotograma durante el reintento. Se usa `plug:smartx` con la ruta frontal de medios. El aviso distingue fallos de apertura, formato y escritura.

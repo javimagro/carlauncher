@@ -5,6 +5,7 @@ const path = require('path');
 const zlib = require('zlib');
 const assert = require('assert');
 const { signals } = require('../apps/javi_carlauncher/telemetria-mgu.js');
+const { service: tasu, instance: tasuInstance } = require('../apps/javi_carlauncher/potencia-hv.js');
 const manifest = require('../apps/javi_carlauncher/package/manifest.json');
 
 function verifyCatalog(catalog) {
@@ -27,14 +28,25 @@ function verifyCatalog(catalog) {
             for (const memberPath of paths) {
                 let type = catalog.datatypes[field.dataRef];
                 for (const member of memberPath.split('.')) {
-                    const entry = type && type.members && type.members.find((item) => item.name === member);
-                    if (!entry) throw new Error('Falta ' + memberPath + ' en ' + service + '.' + name);
+                    const array = member.endsWith('[]');
+                    const key = array ? member.slice(0, -2) : member;
+                    const entry = type && type.members && type.members.find((item) => item.name === key);
+                    if (!entry || Boolean(entry.dimension) !== array) {
+                        throw new Error('Falta ' + memberPath + ' en ' + service + '.' + name);
+                    }
                     type = catalog.datatypes[entry.dataRef];
                 }
             }
         }
         assert.deepStrictEqual(manifest.proxies[service], { instances: [instance], attributes }, service);
     }
+    const { methods, events } = catalog.interfaces[tasu];
+    assert.strictEqual(catalog.instanceIDs[tasu][tasuInstance], 128);
+    assert.strictEqual(methods.sendTasuRequest.methodId, 1);
+    assert.strictEqual(events.sendTasuResponse.eventId, 32769);
+    assert.deepStrictEqual(manifest.proxies[tasu], {
+        instances: [tasuInstance], methods: ['sendTasuRequest'], broadcasts: ['sendTasuResponse']
+    }, tasu);
 }
 
 function readCatalog(file) {

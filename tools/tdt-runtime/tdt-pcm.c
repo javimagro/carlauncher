@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <stdio.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct _snd_pcm snd_pcm_t;
@@ -28,8 +29,14 @@ int main(int argc, char **argv)
     if (!open_pcm || !setup || !write_pcm || !recover || !close_pcm) return 3;
 
     snd_pcm_t *pcm = NULL;
-    if (open_pcm(&pcm, argv[1], playback, 0) < 0) return 4;
-    if (setup(pcm, signed_le16, interleaved, channels, rate, 1, 120000) < 0) {
+    int error = open_pcm(&pcm, argv[1], playback, 0);
+    if (error < 0) {
+        fprintf(stderr, "tdt-pcm: open=%d\n", error);
+        return 4;
+    }
+    error = setup(pcm, signed_le16, interleaved, channels, rate, 1, 120000);
+    if (error < 0) {
+        fprintf(stderr, "tdt-pcm: format=%d\n", error);
         close_pcm(pcm);
         return 5;
     }
@@ -51,13 +58,25 @@ int main(int argc, char **argv)
         size_t size = kept + (size_t)got;
         pcm_frames frames = size / frame_bytes;
         pcm_frames at = 0;
+        unsigned retries = 0;
         while (at < frames) {
             pcm_result count = write_pcm(pcm, bytes + at * frame_bytes, frames - at);
-            if (count > 0) at += (pcm_frames)count;
-            else if (!count || recover(pcm, (int)count, 1) < 0) {
-                status = 7;
-                break;
+            if (count > 0) {
+                at += (pcm_frames)count;
+                retries = 0;
+                continue;
             }
+            if (count && count != -EAGAIN) {
+                error = recover(pcm, (int)count, 1);
+                if (error < 0) {
+                    fprintf(stderr, "tdt-pcm: write=%ld\ntdt-pcm: recover=%d\n", count, error);
+                    status = 7;
+                    break;
+                }
+            }
+            if (++retries >= 100) { status = 8; break; }
+            const struct timespec pause = { 0, 10000000 };
+            nanosleep(&pause, NULL);
         }
         if (status) break;
         kept = size % frame_bytes;

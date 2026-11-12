@@ -23,12 +23,17 @@ const diagnosticRows = [
     ['Consumo medio BC1 · BC2 · unidad', 'statusConsumptionAverageElectricVehicle',
         'consumptionAverageElectricVehicleBC1', 'consumptionAverageElectricVehicleBC2',
         'unitOfMeasurementConsumptionElectricVehicleBC'],
-    ['Trayecto · distancia · duración', 'driveSegment', 'bcBeTripDistanceKm', 'bcBeDurationDrive'],
-    ['Trayecto · consumo · velocidad media', 'driveSegment', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive'],
+    ['Segmento bruto · distancia · duración', 'driveSegment', 'bcBeTripDistanceKm', 'bcBeDurationDrive'],
+    ['Segmento bruto · consumo · velocidad media', 'driveSegment', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive'],
+    ['Inicio de viaje · distancia · consumo medio', 'bcDataAll', 'trip'],
+    ['Última carga · distancia · consumo medio', 'bcDataAll', 'charge'],
+    ['Individual · distancia · consumo medio', 'bcDataAll', 'individual'],
+    ['Desde fábrica · distancia · consumo medio', 'bcDataAll', 'factory'],
     ['Altura GPS · válida · fijación', 'rawPositionData', 'position.height.rawLengthMeter', 'position.heightValid', 'fixType'],
     ['Temperatura batería HV', 'statusBatteryTemperature', 'actualValueTemperatureHighVoltageStorage'],
     ['Temperatura exterior', 'ExteriorTemperature', 'temperatureExterior'],
     ['Precalentamiento HV · VWM', 'statusPredictiveThermalManagement', 'preconditioningActive', 'statusVWM'],
+    ['Batería HV · potencia · tensión · corriente', 'batteryPowerHv'],
     ['Potencia relativa de tracción', 'displayPowerDrive', 'quotaImmediateElectricEngineDriveRecuperation'],
     ['Energía disponible · máxima', 'highVoltageStorageInfoToExternal',
         'energyDischargeHighVoltageStoragePresentDynamic', 'energyDischargeHighVoltageStorageMaximalDynamic'],
@@ -132,6 +137,20 @@ function formatDiagnostic(signal, fields, keys, vehicle) {
     case 'displayRangeElectricVehicle': return withUnit(vehicle.range, ' km');
     case 'ExteriorTemperature': return withUnit(vehicle.outside, ' °C', 1);
     case 'statusBatteryTemperature': return withUnit(vehicle.batteryTemperature, ' °C');
+    case 'batteryPowerHv': return [withUnit(fields.kw, ' kW', 1), withUnit(fields.volts, ' V', 1),
+        withUnit(fields.amps, ' A', 1)].join('  ·  ');
+    case 'bcDataAll': {
+        const [period] = keys;
+        const distanceUnit = { 1: ' km', 2: ' mi', KILOMETERS: ' km', MILES: ' mi' }[fields['bcUnits.tachoDigital']];
+        const averageUnit = { 1: ' kWh/100 km', KWH: ' kWh/100 km',
+            5: ' kWh/100 mi', KWH_100MI: ' kWh/100 mi' }[fields['bcUnits.averageConsumptionElectric']];
+        const distance = fields[period + '.counterDistance'];
+        const average = fields[period + '.consumptionElectricAverageDigit'];
+        const valid = (raw) => Number.isInteger(raw) && raw >= 0 && raw < 0xfffffffd;
+        const formattedDistance = distanceUnit && valid(distance) ? number(distance / 10, 1) + distanceUnit : '–';
+        const formattedAverage = averageUnit && valid(average) ? number((average - 65535) / 10, 1) + averageUnit : '–';
+        return formattedDistance + '  ·  ' + formattedAverage;
+    }
     case 'statusConsumptionAverageElectricVehicle': {
         const unit = fields.unitOfMeasurementConsumptionElectricVehicleBC;
         if (unit !== 1 && unit !== 'VERBRAUCH_IN_KWH__S__100KM') break;
@@ -147,8 +166,8 @@ function formatDiagnostic(signal, fields, keys, vehicle) {
 
 function diagnostics(cv, records, vehicle, now) {
     const margin = 23;
-    const gap = 5;
-    const firstRow = 75;
+    const gap = 4;
+    const firstRow = 69;
     const rowCount = Math.ceil(diagnosticRows.length / 2);
     const rowHeight = Math.floor((map.h - firstRow - 12 + gap) / rowCount) - gap;
     const column = (map.w - 2 * margin - 10) / 2;
@@ -174,13 +193,13 @@ function diagnostics(cv, records, vehicle, now) {
             color = amber;
         }
         cv.roundRect(x, y, column, rowHeight, 5, '#192734');
-        cv.text(label, x + 10, y + 16, 13, secondary);
+        cv.text(label, x + 10, y + 12, 12, secondary);
         if (fields && record.status === 'sample' && Number.isFinite(record.sampledAt)) {
             const seconds = Math.max(0, Math.floor((now - record.sampledAt) / 1000));
             const age = seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min';
-            cv.text(age, x + column - 10, y + 16, 12, secondary, right);
+            cv.text(age, x + column - 10, y + 12, 12, secondary, right);
         }
-        fit(cv, value, x + 10, y + rowHeight - 8, 17, column - 20, color);
+        fit(cv, value, x + 10, y + rowHeight - 4, 16, column - 20, color);
     });
 }
 
@@ -413,19 +432,23 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible'
         }[state.playback];
         if (message) cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
-        if (state.playback === 'reconnecting') {
+        if (state.playback === 'reconnecting' || state.playback === 'buffering') {
             cv.roundRect(left + 8, top + 8, 152, 24, 5, [7, 17, 30, 220]);
-            cv.text('Reconectando…', left + 84, top + 24, 13, primary, centered);
+            cv.text(state.playback === 'buffering' ? 'Cargando vídeo…' : 'Reconectando…',
+                left + 84, top + 24, 13, primary, centered);
         }
         const audioError = {
             'audio-unavailable': 'Audio no disponible', 'audio-alsa': 'Audio · ALSA no disponible',
             'audio-open': 'Audio · no se abre la salida', 'audio-format': 'Audio · formato no admitido',
-            'audio-timeout': 'Audio · salida sin respuesta', 'audio-write': 'Audio · error de reproducción'
+            'audio-timeout': 'Audio · la salida no arranca', 'audio-stall': 'Audio · salida bloqueada',
+            'audio-write': 'Audio · error de escritura'
         }[state.audioStatus];
-        if (state.playback === 'playing' && audioError) {
-            const badgeWidth = cv.textWidth(audioError, 13) + 24;
+        if (surface && audioError) {
+            const code = /^\w+=(-?\d{1,4})$/.exec(state.audioDiagnostic || '');
+            const label = code ? audioError + ' (' + code[1] + ')' : audioError;
+            const badgeWidth = cv.textWidth(label, 13) + 24;
             cv.roundRect(x + w - badgeWidth - 18, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
-            cv.text(audioError, x + w - badgeWidth / 2 - 18, top + 24, 13, primary, centered);
+            cv.text(label, x + w - badgeWidth / 2 - 18, top + 24, 13, primary, centered);
         }
         if (state.overlayUntil > now) {
             cv.fillRect(left, top + l.body - 57, w - 18, 57, [7, 17, 30, 225]);

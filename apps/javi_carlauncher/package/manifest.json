@@ -109,6 +109,17 @@
         "driveSegment": "r"
       }
     },
+    "de.bmw.infotainment.resetlogic.ResetLogic3": {
+      "instances": ["1"],
+      "attributes": {
+        "bcDataAll": "r"
+      }
+    },
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "instances": ["SystemFunctionsInternalTasuInst1"],
+      "methods": ["sendTasuRequest"],
+      "broadcasts": ["sendTasuResponse"]
+    },
     "de.bmw.infotainment.vehicle.Vehicle2": {
       "instances": ["1"],
       "attributes": {

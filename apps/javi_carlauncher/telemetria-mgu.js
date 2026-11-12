@@ -1,6 +1,7 @@
 'use strict';
 
 const net = require('net');
+const { createPowerProbe } = require('./potencia-hv.js');
 
 // Candidatos del catálogo MGU21. Esta sonda conserva las lecturas sin escalar.
 const signals = [
@@ -29,6 +30,11 @@ const signals = [
     ['de.bmw.infotainment.telematic.journeyhistory.BcPersonal', '1', {
         driveSegment: ['r', 'bcBeDurationDrive', 'bcBeTripDistanceKm', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive']
     }],
+    ['de.bmw.infotainment.resetlogic.ResetLogic3', '1', {
+        bcDataAll: ['r', 'bcUnits.tachoDigital', 'bcUnits.averageConsumptionElectric',
+            'bcUnits.currentConsumptionElectric', 'bcData3[].resetOption', 'bcData3[].counterDistance',
+            'bcData3[].consumptionElectricAverageDigit', 'bcData3[].consumptionElectricCurrentDigit']
+    }],
     ['de.bmw.infotainment.vehicle.Vehicle2', '1', {
         statusCarSpeed2: ['rs', 'speedVehicleCentreOfGravity'],
         highVoltageStorageInfoToExternal: ['s', 'energyDischargeHighVoltageStoragePresentDynamic',
@@ -42,6 +48,11 @@ const signals = [
             isVideoStreaming: ['rs']
     }]
 ];
+
+const journeyPeriods = {
+    1: 'individual', 3: 'charge', 4: 'trip', 5: 'factory',
+    INDIVIDUAL: 'individual', CHARGE: 'charge', STARTOFDRIVING: 'trip', LONGTERM: 'factory'
+};
 
 function sample(value, paths) {
     if (!paths.length) {
@@ -59,6 +70,24 @@ function sample(value, paths) {
         const raw = result.statusVWM;
         // Hmi8 uses bit 0 for the status-bar icon and treats 61–63 as unavailable.
         result.preconditioningActive = raw >= 0 && raw < 61 ? Boolean(raw & 1) : null;
+    }
+    return Object.keys(result).length ? result : null;
+}
+
+function sampleJourney(value, paths) {
+    const prefix = 'bcData3[].';
+    const result = sample(value, paths.filter((path) => !path.startsWith(prefix))) || {};
+    const entries = value && value.bcData3;
+    if (Array.isArray(entries)) {
+        const members = paths.filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length));
+        for (const entry of entries.slice(0, 5)) {
+            const fields = sample(entry, members);
+            const period = fields && journeyPeriods[fields.resetOption];
+            if (!period) continue;
+            for (const key of Object.keys(fields)) {
+                if (key !== 'resetOption') result[period + '.' + key] = fields[key];
+            }
+        }
     }
     return Object.keys(result).length ? result : null;
 }
@@ -95,7 +124,7 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout) {
         let notifications = 0;
         const receive = (value) => {
             if (stopped) return;
-            const fields = sample(value, paths);
+            const fields = signal === 'bcDataAll' ? sampleJourney(value, paths) : sample(value, paths);
             samples.set(signal, { status: fields ? 'sample' : 'empty', sampledAt: Date.now(),
                 freshForMs: readable ? period * 3 : undefined, fields });
         };
@@ -159,6 +188,7 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout) {
 }
 
 function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
+    const power = createPowerProbe(builders);
     let probe;
     let socket;
     let timer;
@@ -174,7 +204,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
             return;
         }
         if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
-            socket.write(JSON.stringify({ version: 1, records: probe.snapshot() }) + '\n');
+            socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot()) }) + '\n');
         }
     }
 
@@ -182,10 +212,12 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
         show(on) {
             if (on && !probe) {
                 probe = start(builders);
+                power.show(true);
                 timer = setInterval(send, 1000);
                 send();
             } else if (!on && probe) {
                 clearInterval(timer);
+                power.show(false);
                 probe.stop();
                 probe = undefined;
                 if (socket) { socket.destroy(); socket = undefined; }
