@@ -8,15 +8,21 @@ El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de 
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.3**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. En iDrive 8, los cambios se aplican tras reiniciar la MGU.
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.4**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras instalar ambos componentes.
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si aparece **Audio no disponible**, la imagen puede seguir reproduciéndose. Anota el canal y el mensaje si falla una emisión.
 
 Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas del coche**, compara **Batería del cuadro** y **Autonomía del cuadro** con el cuadro y haz una foto de la pantalla. Los campos muestran valores de diagnóstico, incluidos los códigos que la MGU devuelve cuando falta un dato. Después inicia el precalentamiento en **Vehículo → Carga → Preacondicionar batería**, comprueba que aparece el icono en el cuadro y vuelve a BMWLauncher para mirar **Precalentamiento HV**. Si puedes, abre Android Auto y vuelve a BMWLauncher para mirar **Android Auto · vídeo**. Esa fila indica el estado que comunica iDrive al abrir BMWLauncher.
 
-Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Inclina el mando a la izquierda y comprueba si iDrive mantiene la app abierta. Verifica que **Back** sigue permitiendo salir. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
+Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Con la herramienta de captura instalada, inclina el mando a la izquierda y hacia arriba. Comprueba que BMWLauncher mantiene el foco y usa la casita para volver a iDrive. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
 
 Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticias consulta los RSS cada 15 minutos mientras la app está abierta. Si falla la conexión, muestran la última respuesta disponible y reintentan pasados dos minutos.
+
+### Probar el mando con 0.2.4 desde USB
+
+Extrae el ZIP de prueba en la raíz del USB. MGU Store detecta la fuente en `mgu-repo/BMWLauncher`. Con el coche parado, abre la sección **USB** de MGU Store, actualiza **BMWLauncher** a **0.2.4** e instala **Captura del mando de BMWLauncher**. Reinicia iDrive para que cargue el filtro. La herramienta utiliza la protección de arranque de la Store y requiere `mgu-deploy` 0.3.2 o posterior. [Descargar el ZIP de prueba](https://github.com/javimagro/carlauncher/releases/tag/v0.2.4)
+
+Abre BMWLauncher desde la pantalla de iDrive a la que quieras volver. Gira la rueda, inclínala a izquierda y derecha para cambiar de tarjeta y prueba arriba en Noticias o TDTWorld. Comprueba que Atrás y Menú físicos no abren otra pantalla mientras la app tiene el mando. Toca la casita del panel izquierdo para volver. Si la casita aparece atenuada, sal con los controles normales de iDrive y vuelve a abrir BMWLauncher. Para quitar la captura, desinstala su herramienta desde la Store y reinicia iDrive.
 
 ### Plan y arquitectura
 
@@ -37,7 +43,7 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. Desliza en horizontal, gira la rueda del ratón o usa las flechas izquierda y derecha. Desliza en vertical o usa arriba y abajo para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas.
+El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Toca la casita para cerrar la vista.
 
 ### TDTWorld en DriveHub
 

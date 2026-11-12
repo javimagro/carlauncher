@@ -10,6 +10,15 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-12 · 0.2.4 · Captura del mando en MGU21
+
+- **Síntoma en el i4.** Inclinar el mando a la izquierda saca de BMWLauncher e inclinarlo arriba abre los accesos rápidos.
+- **Causa.** El OAP observa la notificación de FrontCCU y la entrega a BMWLauncher. `Hmi8` también recibe ese evento. El desensamblado confirma que procesa la inclinación y que su operación de desplazamiento izquierdo puede entrar en la ruta de Atrás.
+- **Corrección.** La herramienta opcional `javi-ccu-gate` usa el punto de interposición comprobado en CommonAPI-SomeIP. El servicio renueva el permiso solo con la capa confirmada, el mando conectado al OAP y un destino de retorno válido. La casita solicita ese destino a `hmictl` y espera la transición. [Análisis del mando](MANDO-MGU21.md)
+- **Verificación.** Pasaron 25 pruebas JavaScript y la prueba C++ de los dos tipos de eventos y la caducidad. Chrome confirmó que tocar el mapa conserva la app, que la inclinación lateral cambia el foco y que la casita cierra la vista. Se comprobó la carga con Node.js 8.16.2, el enlace OAP con donante sintético y la lectura de los tres componentes con el empaquetador de MGU Store. El ELF es x86-64 y su símbolo de glibc más reciente es `GLIBC_2.17`.
+- **Distribución.** La etiqueta `v0.2.4` incluye la app, el motor gráfico y la herramienta opcional de captura. La publicación de GitHub incluye el ZIP para instalar por USB. [Publicación](https://github.com/javimagro/carlauncher/releases/tag/v0.2.4)
+- **Pendiente en el i4.** Verificar que `Hmi8` carga el filtro, que la rueda y los botones solo llegan al destino previsto, que la casita vuelve al contexto anterior y que la cámara o un aviso liberan el mando. Para revertir, desinstalar la herramienta y reiniciar iDrive. [Prueba desde USB](README.md#probar-el-mando-con-024-desde-usb)
+
 ## 2026-11-11 · 0.2.3 · Prueba de TDTWorld en el i4
 
 - **Paquete.** La actualización incluye FFmpeg 9.0.2 estático para Linux x86-64, certificados CA y el auxiliar PCM para glibc 2.27. El motor abre el ejecutable incluido y compone el vídeo por software dentro de DriveHub. El auxiliar intenta abrir la salida SmartX frontal de la MGU y se detiene al cerrar la emisión. Si no abre la salida o se atasca, la reproducción recupera el vídeo y muestra el estado del audio.

@@ -1,6 +1,6 @@
 'use strict';
 
-const { cards, map, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
+const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
 const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
 const background = '#080b0e';
 const primary = '#f2f7fb';
@@ -524,6 +524,15 @@ function drawHome(cv, state, scroll, data, art, now) {
         ? thermal.fields.preconditioningActive : undefined;
     if (data.diagnostics) diagnostics(cv, records);
     else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
+    if (data.home) {
+        const { x, y, w, h } = home;
+        const color = data.home === 'ready' ? primary : secondary;
+        cv.roundRect(x, y, w, h, 8, '#253642');
+        cv.line(x + 15, y + 23, x + 28, y + 12, 2.5, color);
+        cv.line(x + 28, y + 12, x + 41, y + 23, 2.5, color);
+        cv.strokeRoundRect(x + 20, y + 22, 16, 14, 2, 2, color);
+        if (data.home === 'error') cv.text('No se ha podido volver a iDrive', x - 12, y + 29, 14, primary, right);
+    }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, active));
     energy(cv, data.energy, art);

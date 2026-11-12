@@ -76,19 +76,20 @@ stage.addEventListener('wheel', (event) => {
     send({ turn: Math.sign(event.deltaY), press: pressed });
 }, { passive: false });
 stage.addEventListener('keydown', (event) => {
-    const turns = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 };
+    const tilts = { ArrowUp: 1, ArrowRight: 4, ArrowDown: 7, ArrowLeft: 10 };
     if (event.key === 'Enter') {
         event.preventDefault();
         if (pressed) return;
         pressed = true;
         send({ turn: 0, press: true });
-    } else if (home && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    } else if (home && Object.hasOwn(tilts, event.key)) {
         event.preventDefault();
-        send({ turn: 0, press: pressed, tilt: event.key === 'ArrowUp' ? 1 : 7 });
+        if (event.repeat) return;
+        send({ turn: 0, press: pressed, tilt: tilts[event.key] });
         send({ turn: 0, press: pressed, tilt: 0 });
-    } else if (Object.hasOwn(turns, event.key)) {
+    } else if (Object.hasOwn(tilts, event.key)) {
         event.preventDefault();
-        send({ turn: turns[event.key], press: pressed });
+        send({ turn: event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1, press: pressed });
     }
 });
 function release() {

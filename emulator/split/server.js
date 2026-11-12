@@ -140,7 +140,7 @@ function wheel(turn, press, tilt) {
 }
 
 function sendController(layer, turn, press, tilt) {
-    knob = (knob + turn) & 0xffff;
+    knob = (knob + turn + 65535) % 65535;
     const payload = Buffer.alloc(8);
     payload[0] = ++sequence & 255;
     payload.writeUInt16BE(knob, 1);

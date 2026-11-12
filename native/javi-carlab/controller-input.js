@@ -29,8 +29,14 @@ function listen(endpoint, receive, stopped, readFrom = consume, disconnected = (
         fs.chmodSync(endpoint, 0o600);
         fs.chownSync(endpoint, owner, 0);
     }
+    function dropPeer() {
+        if (!peer) return;
+        peer.destroy();
+        peer = undefined;
+        disconnected();
+    }
     const server = net.createServer((socket) => {
-        if (peer) peer.destroy();
+        dropPeer();
         peer = socket;
         const read = readFrom(receive);
         socket.on('data', (chunk) => { if (peer !== socket || !read(chunk)) socket.destroy(); });
@@ -50,10 +56,10 @@ function listen(endpoint, receive, stopped, readFrom = consume, disconnected = (
         setOwner(uid) {
             if (uid === owner) return;
             owner = uid;
-            if (peer) { peer.destroy(); peer = undefined; }
+            dropPeer();
             if (ready) restrict();
         },
-        close() { if (peer) peer.destroy(); server.close(); }
+        close() { dropPeer(); server.close(); }
     };
 }
 

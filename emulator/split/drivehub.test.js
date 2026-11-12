@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
-const { createDriveHub, width, height, cards, map, energyBar, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
+const { createDriveHub, width, height, cards, map, home, energyBar, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
 const { channels, visibleChannels } = require('../../native/javi-carlab/tdtworld-data');
 const { createTdt } = require('../../native/javi-carlab/tdtworld');
 const { fitArea } = require('../../native/javi-carlab/layout');
@@ -14,6 +14,8 @@ const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = requir
 const { appUid, authorizeApp } = require('../../native/javi-carlab/drivehub-uplink');
 const { consume } = require('../../native/javi-carlab/controller-input');
 const { sample } = require('../../apps/javi_carlauncher/controller');
+const { createLease } = require('../../native/javi-carlab/controller-lease');
+const { parseContext, isLauncher, openContext } = require('../../native/javi-carlab/home-context');
 const createSession = require('../../native/javi-carlab/drivehub-session');
 const fonts = require('../../native/javi-carlab/vendor/kit_fonts');
 
@@ -83,6 +85,7 @@ test('the full-width TDTWorld page uses rotation for channel focus and horizonta
 
 test('FrontCCU wraps its counter and treats long press and repeated tilt as one action', () => {
     const { drive, settle, wheel } = panel();
+    wheel(65534);
     wheel(65535);
     wheel(0);
     assert.equal(drive.state.selected, 1);
@@ -96,8 +99,9 @@ test('FrontCCU wraps its counter and treats long press and repeated tilt as one 
     wheel(1, 0, 8);
     assert.equal(drive.state.weatherPage, 'summary');
     wheel(1, 0, 10);
-    assert.equal(settle(), cards[1].x);
-    assert.equal(drive.state.selected, 2);
+    wheel(1, 0, 11);
+    assert.equal(settle(), 0);
+    assert.equal(drive.state.selected, 1);
     wheel(1, 0, 4);
     assert.equal(drive.state.selected, 2);
     wheel(2);
@@ -177,45 +181,103 @@ test('the app uses the full default panoramic content area on iDrive 8', () => {
     assert.equal(viewport.y + viewport.h, energyBar.y + energyBar.h);
 });
 
-test('FrontCCU frames from the OAP preserve the rotation and ignore horizontal deflection', () => {
+test('FrontCCU frames from the OAP preserve rotation and all four deflections', () => {
     const frames = [];
     const read = consume((frame) => frames.push(frame));
     const build = (knob, button, deflection) => sample({
         frontRotaryEncoderOperation: knob, frontRotaryEncoderPushButton: button, frontRotaryEncoderDeflection: deflection
     });
     const bytes = Buffer.concat([build(22, 0, 'WEST_KURZ_GEDRUECKT'),
-        build(23, 'DREHGEBER_KURZ_GEDRUECKT', 'NORD_KURZ_GEDRUECKT'), build(23, 'DREHGEBER_LANG_GEDRUECKT', 0)]);
+        build(23, 'DREHGEBER_KURZ_GEDRUECKT', 'NORD_KURZ_GEDRUECKT'), build(23, 'DREHGEBER_LANG_GEDRUECKT', 0),
+        build(23, 0, 'OST_LANG_GEDRUECKT'), build(23, 0, 8)]);
     assert.equal(build(0xffff, 15, 15), null);
     assert.ok(read(bytes.slice(0, 3)));
     assert.ok(read(bytes.slice(3)));
-    assert.deepEqual(frames, [{ knob: 22, press: 0, tilt: 0 }, { knob: 23, press: 1, tilt: 1 },
-        { knob: 23, press: 2, tilt: 0 }]);
+    assert.deepEqual(frames, [{ knob: 22, press: 0, tilt: 10 }, { knob: 23, press: 1, tilt: 1 },
+        { knob: 23, press: 2, tilt: 0 }, { knob: 23, press: 0, tilt: 5 }, { knob: 23, press: 0, tilt: 8 }]);
     assert.equal(read(Buffer.alloc(257)), false);
 });
 
-test('the rendered session uses OAP rotation when the renderer cannot grab the controller', async (t) => {
+test('the rendered session uses OAP rotation and releases capture when hidden or covered', async (t) => {
     const gpu = new EventEmitter();
     Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, grab() { assert.fail('unexpected grab'); } });
     let last;
     gpu.frame = (recording) => { last = recording.words().slice(); };
-    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] } });
+    const confirmed = [];
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] },
+        useOap: true, onCaptureScreen: (visible) => confirmed.push(visible) });
     t.after(() => session.close());
-    gpu.emit('ready', {}, { controller: false });
+    gpu.emit('ready', {}, { controller: true, touch: true });
     session.show(true);
+    assert.equal(confirmed.at(-1), false);
+    gpu.emit('state', { onScreen: true });
+    assert.equal(confirmed.at(-1), true);
     const initial = last;
     const turn = (knob, tilt = 0) => ({ knob, press: 0, tilt });
     session.controller(turn(100));
-    session.controller(turn(100, 10));
-    await new Promise((resolve) => setTimeout(resolve, 55));
-    assert.equal(last, initial);
     session.controller(turn(101));
     await new Promise((resolve) => setTimeout(resolve, 55));
     assert.notDeepEqual(last, initial);
+    gpu.emit('state', { onScreen: false });
+    assert.equal(confirmed.at(-1), false);
+    gpu.emit('state', { onScreen: true });
+    assert.equal(confirmed.at(-1), true);
     const beforeExit = last;
     session.show(false);
+    assert.equal(confirmed.at(-1), false);
     session.controller(turn(102));
     await new Promise((resolve) => setTimeout(resolve, 55));
     assert.equal(last, beforeExit);
+});
+
+test('the whole content receives touch and the house exits only on a completed tap', (t) => {
+    const gpu = new EventEmitter();
+    let exits = 0;
+    let claimed;
+    Object.assign(gpu, { place() {}, claim(rects) { claimed = rects; }, show() {}, close() {}, frame() {} });
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] }, onExit: () => ++exits });
+    t.after(() => session.close());
+    gpu.emit('ready', {}, { touch: true });
+    session.show(true);
+    assert.deepEqual(claimed, [{ x: 0, y: 0, w: width, h: height }]);
+    const x = home.x + 12;
+    const y = home.y + 12;
+    gpu.emit('touch', 'down', x - 80, y);
+    gpu.emit('touch', 'up', x, y);
+    gpu.emit('touch', 'down', x, y);
+    gpu.emit('touch', 'move', x - 80, y);
+    gpu.emit('touch', 'up', x, y);
+    assert.equal(exits, 0);
+    gpu.emit('touch', 'down', x, y);
+    gpu.emit('touch', 'up', x, y);
+    assert.equal(exits, 1);
+    gpu.emit('closed');
+    gpu.emit('touch', 'down', x, y);
+    gpu.emit('touch', 'up', x, y);
+    assert.equal(exits, 1);
+});
+
+test('iDrive context commands use only validated state and applet IDs', () => {
+    const previous = parseContext('ok 420 15 -1 -1 -1');
+    assert.equal(openContext(previous), 'open 420 15');
+    assert.equal(isLauncher(previous, 333), false);
+    assert.equal(isLauncher(parseContext('ok 420 3333 0 0 0'), 333), true);
+    for (const reply of ['error', 'ok 420 -1 0 0 0', 'ok 420 15 0 0 0\nopen 1 2']) assert.equal(parseContext(reply), null);
+});
+
+test('the controller lease is renewed and removed on release', (t) => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'bmwlauncher-lease-'));
+    const file = path.join(base, 'frontccu.lease');
+    t.after(() => { if (fs.existsSync(file)) fs.unlinkSync(file); fs.rmdirSync(base); });
+    fs.writeFileSync(file, 'old');
+    const update = createLease(file, (err) => assert.fail(err.message));
+    assert.equal(fs.existsSync(file), false);
+    update(true);
+    fs.utimesSync(file, new Date(0), new Date(0));
+    update(true);
+    assert.ok(fs.statSync(file).mtimeMs > 0);
+    update(false);
+    assert.equal(fs.existsSync(file), false);
 });
 
 test('the ID8 app can restore only its declared internet access after a queued update', (t) => {

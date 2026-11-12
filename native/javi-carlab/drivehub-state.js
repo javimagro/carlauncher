@@ -7,6 +7,7 @@ const formerSidebarWidth = 84;
 const split = 966 + formerSidebarWidth;
 const energyBar = { x: inset, y: height - inset - 40, w: split - 3 * inset, h: 40 };
 const map = { x: energyBar.x, y: inset, w: energyBar.w, h: energyBar.y - 2 * inset };
+const home = { x: map.x + map.w - 66, y: map.y + 10, w: 56, h: 48 };
 const viewport = { x: split, y: inset, w: width - split - inset, h: height - 2 * inset };
 const gap = 9;
 const wide = Math.round((viewport.w - gap) * 0.57);
@@ -26,7 +27,9 @@ for (const card of cards) {
 const pageCards = [0, 1, 3, 4];
 const anchors = pageCards.map((index) => cards[index].x);
 const cardPages = [0, 0, 1, 2, 3];
-const directions = { 1: 'up', 2: 'up', 7: 'down', 8: 'down' };
+const directions = { 1: 'up', 2: 'up', 4: 'right', 5: 'right', 7: 'down', 8: 'down', 10: 'left', 11: 'left' };
+const knobRange = 0xffff; // This value itself means invalid.
+const halfKnobRange = Math.floor(knobRange / 2);
 const dailyChart = { x: 36, y: 281, w: wide - 57, h: viewport.h - 315 };
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const contains = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
@@ -149,7 +152,7 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
             select(state.selected, targetPage);
         },
         controller(event) {
-            if (event.press === 15 && event.tilt === 15) return;
+            if (event.knob === knobRange || (event.press === 15 && event.tilt === 15)) return;
             const down = event.press === 1 || event.press === 2;
             const direction = directions[event.tilt];
             if (knob === undefined) {
@@ -158,19 +161,22 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
                 tilt = direction;
                 return;
             }
-            const delta = ((event.knob - knob + 32768) & 0xffff) - 32768;
+            const delta = (event.knob - knob + knobRange + halfKnobRange) % knobRange - halfKnobRange;
             if (delta && Math.abs(delta) <= 64) {
                 if (tdt && cards[state.selected].id === 'tdtworld') tdt.rotate(delta);
                 else moveCard(delta);
             }
             knob = event.knob;
-            if (tdt && cards[state.selected].id === 'tdtworld') {
+            const deflected = direction && direction !== tilt;
+            if (deflected && (direction === 'left' || direction === 'right')) {
+                moveCard(direction === 'left' ? -1 : 1);
+            } else if (tdt && cards[state.selected].id === 'tdtworld') {
                 if (event.press === 2 && pressed !== 2) tdt.press(true);
                 if (!down && pressed === 1) tdt.press(false);
-                if (direction && direction !== tilt) tdt.tilt(direction === 'up' ? -1 : 1);
+                if (deflected) tdt.tilt(direction === 'up' ? -1 : 1);
             } else {
                 if (down && !pressed) interact(state.selected, 1);
-                if (direction && direction !== tilt) interact(state.selected, direction === 'up' ? -1 : 1);
+                if (deflected) interact(state.selected, direction === 'up' ? -1 : 1);
             }
             pressed = down ? event.press : false;
             tilt = direction;
@@ -178,4 +184,4 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
     };
 }
 
-module.exports = { width, height, cards, map, energyBar, viewport, dailyChart, createDriveHub };
+module.exports = { width, height, cards, map, home, energyBar, viewport, dailyChart, contains, createDriveHub };

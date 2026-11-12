@@ -7,6 +7,8 @@ const { fitArea } = require('./layout.js');
 const record = require('./vendor/kit_record.js');
 const createSession = require('./drivehub-session.js');
 const { listen } = require('./controller-input.js');
+const { createLease, gateLoaded } = require('./controller-lease.js');
+const { parseContext, isLauncher, openContext } = require('./home-context.js');
 const { consume: consumeTelemetry } = require('./telemetry-input.js');
 const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
@@ -18,9 +20,31 @@ const dataDirectory = '/var/opt/javi-carlab';
 const uplink = '/var/opt/mgu-uplink';
 const uplinkLease = '/run/mgu-uplink/lease.json';
 const tdtAudio = process.env.JAVI_TDT_PCM || 'smartx:MediaSink_AudioOut_Front_CF_48_COMBINED_STEREO_MULTICHANNEL';
+const lease = createLease('/run/javi-carlab/frontccu.lease', (err) => console.warn('BMWLauncher: captura del mando: ' + err.code));
+let screenConfirmed = false;
+let ccuReady = false;
+let launcherVisible = false;
+let lastContext;
+let returnContext;
+let homeRequest = false;
+let homeDeadline = 0;
+let exitFailed = false;
+
+function releaseController() { lease(false); }
+
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
     diagnostics: true,
+    useOap: true,
+    onCaptureScreen(confirmed) {
+        screenConfirmed = confirmed;
+        if (!confirmed) releaseController();
+    },
+    onExit() {
+        if (!launcherVisible || !returnContext || homeDeadline) return;
+        homeRequest = true;
+        session.setHome('pending');
+    },
     configFile: path.join(dataDirectory, 'drivehub.json'),
     cacheFile: path.join(dataDirectory, 'drivehub-cache.json'),
     tdtDirectory: dataDirectory,
@@ -36,12 +60,16 @@ const session = createSession(gpu, {
             console.warn('BMWLauncher requiere la salida ID8 de 2880 x 960 y el modo layer');
             return null;
         }
-        if (!info.controller) console.info('BMWLauncher: usando la lectura OAP de FrontCCU');
         return fitArea(info.appArea, width, height);
     }
 });
-const input = listen('/run/javi-carlab/controller.sock', session.controller,
-    (err) => console.warn('BMWLauncher: entrada OAP: ' + err.code));
+const input = listen('/run/javi-carlab/controller.sock', (event) => {
+    ccuReady = true;
+    session.controller(event);
+}, (err) => console.warn('BMWLauncher: entrada OAP: ' + err.code), undefined, () => {
+    ccuReady = false;
+    releaseController();
+});
 const telemetry = listen('/run/javi-carlab/telemetry.sock', session.telemetry,
     (err) => console.warn('BMWLauncher: telemetría OAP: ' + err.code),
     consumeTelemetry, () => session.telemetry(null));
@@ -94,6 +122,7 @@ async function startTdtProxy() {
 
 const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl', (err) => {
     console.error(err.message);
+    releaseController();
     input.close();
     telemetry.close();
     session.close();
@@ -115,10 +144,11 @@ function launcherApplet() {
 async function poll() {
     try {
         const id = launcherApplet();
-        const context = /^ok\s+(-?\d+)\s+(-?\d+)/.exec(await request('ctx'));
-        const applet = context && Number(context[2]);
-        const visible = Number.isInteger(id) && (applet === id || applet === id + 3000);
+        const context = parseContext(await request('ctx'));
+        const visible = isLauncher(context, id);
+        if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
         if (visible) {
+            if (!launcherVisible) returnContext = lastContext && !isLauncher(lastContext, id) ? lastContext : null;
             try {
                 const uid = appUid(directory, launcherId);
                 if (uid) {
@@ -127,20 +157,48 @@ async function poll() {
                 }
             }
             catch (_) { /* The touch renderer remains available during OAP registration. */ }
+            if (homeRequest) {
+                homeRequest = false;
+                homeDeadline = Date.now() + 1800;
+                const result = await request(openContext(returnContext));
+                if (!/^ok(?:\s|$)/.test(result)) failExit();
+            } else if (homeDeadline && Date.now() >= homeDeadline) failExit();
+            session.setHome(exitFailed && !homeDeadline ? 'error' : homeDeadline ? 'pending' : returnContext ? 'ready' : 'unavailable');
+        } else {
+            if (Number.isInteger(id)) lastContext = context;
+            returnContext = null;
+            homeRequest = false;
+            homeDeadline = 0;
+            exitFailed = false;
+            releaseController();
         }
+        launcherVisible = visible;
         session.show(visible);
+        lease(visible && !!returnContext && !exitFailed && ccuReady && screenConfirmed && gateLoaded());
     } catch (err) {
         console.warn(err.message);
+        launcherVisible = false;
+        lastContext = null;
+        homeRequest = false;
+        homeDeadline = 0;
+        releaseController();
         session.show(false);
     } finally {
         setTimeout(poll, 400);
     }
 }
 
+function failExit() {
+    homeDeadline = 0;
+    exitFailed = true;
+    releaseController();
+}
+
 gpu.connect();
 poll();
 
 process.once('SIGTERM', () => {
+    releaseController();
     input.close();
     telemetry.close();
     session.close();

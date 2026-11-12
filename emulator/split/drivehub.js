@@ -46,8 +46,10 @@ const session = createSession(gpu, {
     diagnostics: telemetry === 'telemetry',
     fixture: mode === 'live' ? undefined : fixture,
     tdtPlayback: { ffmpeg: process.env.JAVI_TDT_FFMPEG || 'ffmpeg', preview: true },
+    onExit: () => session.show(false),
     area: () => ({ x: 0, y: 0, w: width, h: height, scale: 1 })
 });
+session.setHome('ready');
 session.show(true);
 if (telemetry === 'telemetry') {
     const samples = {

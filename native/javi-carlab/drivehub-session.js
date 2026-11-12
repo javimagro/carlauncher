@@ -1,7 +1,7 @@
 'use strict';
 
 const { Recorder } = require('./vendor/kit_record.js');
-const { createDriveHub, width, height, viewport, cards } = require('./drivehub-state.js');
+const { createDriveHub, width, height, viewport, cards, home, contains } = require('./drivehub-state.js');
 const { createData, loadArtwork } = require('./drivehub-data.js');
 const { drawHome } = require('./drivehub-view.js');
 const { createTdt } = require('./tdtworld.js');
@@ -15,6 +15,9 @@ module.exports = function createSession(gpu, options) {
     let area;
     let canGrab = false;
     let onScreen = true;
+    let touchAvailable = false;
+    let confirmedOnScreen = false;
+    let homeGesture;
     let lastFrame = 0;
     let lastArticle;
     const player = options.tdtPlayback && createPlayer(gpu, options.tdtPlayback);
@@ -32,6 +35,10 @@ module.exports = function createSession(gpu, options) {
     data.tdt = tdt;
     data.diagnostics = options.diagnostics;
     panel.setArticleCount((data.news || []).length);
+
+    function reportScreen() {
+        if (options.onCaptureScreen) options.onCaptureScreen(!!(shown && area && touchAvailable && confirmedOnScreen));
+    }
 
     function present() {
         if (!area) return;
@@ -55,27 +62,47 @@ module.exports = function createSession(gpu, options) {
 
     gpu.on('ready', (screen, info) => {
         const target = options.area(screen, info);
-        if (!target) { gpu.show(false); return; }
+        if (!target) { area = undefined; hidden(); gpu.show(false); return; }
         area = target;
         onScreen = true;
+        confirmedOnScreen = false;
+        touchAvailable = !!info.touch;
+        reportScreen();
         if (player) player.ready(info);
-        canGrab = !!info.controller;
+        canGrab = !!info.controller && !options.useOap;
         cv.textScale = area.scale;
         gpu.place(area);
-        gpu.claim([viewport]);
+        gpu.claim(options.onExit ? [{ x: 0, y: 0, w: width, h: height }] : [viewport]);
         present();
     });
-    gpu.on('touch', (phase, x, y) => { if (shown) panel.touch(phase, x, y); });
+    gpu.on('touch', (phase, x, y) => {
+        if (!shown || !onScreen) return;
+        if (phase === 'down') homeGesture = options.onExit && contains(home, x, y) ? { valid: true } : undefined;
+        if (!homeGesture) { panel.touch(phase, x, y); return; }
+        if (phase === 'move' && !contains(home, x, y)) homeGesture.valid = false;
+        if (phase === 'up' || phase === 'cancel') {
+            const activate = phase === 'up' && homeGesture.valid && contains(home, x, y);
+            homeGesture = undefined;
+            if (activate) options.onExit();
+        }
+    });
     gpu.on('ccu', (event) => { if (shown && canGrab) panel.controller(event); });
     function hidden() {
         onScreen = false;
+        confirmedOnScreen = false;
+        homeGesture = undefined;
+        reportScreen();
         panel.resetInput();
         tdt.update(Date.now(), false);
     }
     gpu.on('closed', hidden);
     gpu.on('close', () => { area = undefined; hidden(); });
     gpu.on('state', (state) => {
-        if (state.onScreen) onScreen = true;
+        if (state.onScreen && shown) {
+            onScreen = true;
+            confirmedOnScreen = true;
+            reportScreen();
+        }
         else hidden();
     });
 
@@ -88,22 +115,31 @@ module.exports = function createSession(gpu, options) {
     }, 33);
 
     return {
+        setHome(status) {
+            if (data.home === status) return;
+            data.home = status;
+            dirty = true;
+        },
         telemetry(records) {
             data.telemetry = records;
             dirty = true;
         },
-        controller(event) { if (shown && !canGrab) panel.controller(event); },
+        controller(event) { if (shown && onScreen && !canGrab) panel.controller(event); },
         show(on) {
             if (shown === on) return;
             shown = on;
             if (!on) {
+                confirmedOnScreen = false;
+                homeGesture = undefined;
                 data.telemetry = null;
                 tdt.update(Date.now(), false);
             }
             panel.resetInput();
+            reportScreen();
             present();
         },
         close() {
+            hidden();
             clearInterval(timer);
             provider.close();
             tdt.close();
