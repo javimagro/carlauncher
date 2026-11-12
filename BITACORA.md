@@ -10,6 +10,13 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-12 · 0.2.5 · Lecturas del coche fijas
+
+- **Síntoma y causa.** En el i4, el valor de velocidad seguía en 0 al moverse. Se reprodujo con el código de 0.2.4 y un proveedor simulado. El OAP consultaba velocidad, trayecto, altura y otros campos con getter solo al abrir la app.
+- **Corrección.** Se añadió la suscripción de velocidad y su lectura cada dos segundos. Los demás getters se repiten cada diez segundos. Una respuesta tardía de un getter cede a una notificación recibida durante esa consulta. El panel muestra la edad de las muestras y marca las lecturas caducadas. La velocidad muestra km/h y distingue cero de señal inválida.
+- **Verificación.** Pasaron 28 pruebas locales, incluidas la transición desde 0, la vuelta a 0, el reintento tras error y la caducidad. Se comprobó el manifiesto contra el catálogo de la MGU, la carga con Node 8.16.2, la vista en Chrome, el enlace OAP con donante sintético y la lectura del ZIP con el empaquetador de MGU Store. Queda comprobar en el i4 que la velocidad cambia con el coche en movimiento y qué campos del segmento de viaje actualiza BMW durante la marcha. [Lecturas del coche](TELEMETRIA-MGU21.md)
+- **Distribución.** La etiqueta `v0.2.5` está destinada al canal Tags de MGU Store y la publicación incluye el ZIP para USB. [Publicación](https://github.com/javimagro/carlauncher/releases/tag/v0.2.5)
+
 ## 2026-11-12 · 0.2.4 · Captura del mando en MGU21
 
 - **Síntoma en el i4.** Inclinar el mando a la izquierda saca de BMWLauncher e inclinarlo arriba abre los accesos rápidos.

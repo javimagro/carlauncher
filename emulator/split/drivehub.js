@@ -59,9 +59,11 @@ if (telemetry === 'telemetry') {
         },
         driveSegment: { bcBeTripDistanceKm: 310, bcBeDurationDrive: 2150, bcBeConsElectricVisible: 2700, bcBeSpeedAvgDrive: 2750 },
         statusPredictiveThermalManagement: { preconditioningActive: true, statusVWM: 1 },
-        isVideoStreaming: { value: false }
+        isVideoStreaming: { value: false },
+        statusCarSpeed2: { speedVehicleCentreOfGravity: 1280 }
     };
-    session.telemetry(Object.entries(samples).map(([signal, fields]) => ({ signal, status: 'sample', fields })));
+    const sampledAt = Date.now();
+    session.telemetry(Object.entries(samples).map(([signal, fields]) => ({ signal, status: 'sample', sampledAt, fields })));
 }
 process.on('disconnect', () => session.close());
 gpu.connect();

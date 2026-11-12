@@ -84,6 +84,93 @@ test('a subscription resolved after closing is still removed', async () => {
     assert.deepEqual(removed, [22]);
 });
 
+test('speed is refreshed while visible and a getter cannot replace a newer notification', async () => {
+    const pending = new Map();
+    const removed = [];
+    let notify;
+    let complete;
+    let calls = 0;
+    const builders = {
+        buildTypedProxy(service) {
+            if (!service.endsWith('.Vehicle2')) throw new Error('proxy unavailable');
+            return {
+                init() {}, waitUntilAvailable() {},
+                statusCarSpeed2: {
+                    getValue() {
+                        calls++;
+                        if (calls === 1) return { speedVehicleCentreOfGravity: 0 };
+                        if (calls === 2) return { speedVehicleCentreOfGravity: 640 };
+                        return new Promise((resolve) => { complete = resolve; });
+                    },
+                    subscribe(listener) { notify = listener; return 12; },
+                    unsubscribe(id) { removed.push(id); }
+                }
+            };
+        }
+    };
+    const probe = start(builders, (fn, delay) => { pending.set(fn, delay); return fn; }, (id) => pending.delete(id));
+    const speed = () => probe.snapshot().find(({ signal }) => signal === 'statusCarSpeed2');
+    function next() {
+        const [[run, delay]] = pending;
+        assert.equal(delay, 2000);
+        pending.delete(run);
+        run();
+    }
+    await turn();
+    assert.equal(speed().fields.speedVehicleCentreOfGravity, 0);
+    next();
+    await turn();
+    assert.equal(speed().fields.speedVehicleCentreOfGravity, 640);
+    assert.equal(speed().freshForMs, 6000);
+    next();
+    assert.equal(pending.size, 0);
+    notify({ speedVehicleCentreOfGravity: 1280 });
+    complete({ speedVehicleCentreOfGravity: 640 });
+    await turn();
+    assert.equal(speed().fields.speedVehicleCentreOfGravity, 1280);
+    assert.equal(pending.size, 1);
+    notify({ speedVehicleCentreOfGravity: 0 });
+    assert.equal(speed().fields.speedVehicleCentreOfGravity, 0);
+    probe.stop();
+    await turn();
+    assert.deepEqual(removed, [12]);
+    assert.equal(pending.size, 0);
+    assert.equal(calls, 3);
+});
+
+test('a slower getter keeps updating without subscriptions and retries after a read failure', async () => {
+    const pending = new Map();
+    let calls = 0;
+    const probe = start({
+        buildTypedProxy(service) {
+            if (!service.endsWith('.BcPersonal')) throw new Error('proxy unavailable');
+            return {
+                init() {}, waitUntilAvailable() {},
+                driveSegment: { getValue() {
+                    calls++;
+                    if (calls === 2) throw new Error('read failed');
+                    return { bcBeTripDistanceKm: calls * 10 };
+                } }
+            };
+        }
+    }, (fn, delay) => { pending.set(fn, delay); return fn; }, (id) => pending.delete(id));
+    const segment = () => probe.snapshot().find(({ signal }) => signal === 'driveSegment');
+    await turn();
+    assert.equal(segment().fields.bcBeTripDistanceKm, 10);
+    const initialTime = segment().sampledAt;
+    for (let i = 0; i < 2; i++) {
+        const [[run, delay]] = pending;
+        assert.equal(delay, 10000);
+        pending.delete(run);
+        run();
+        await turn();
+        if (i === 0) assert.equal(segment().sampledAt, initialTime);
+    }
+    assert.equal(segment().fields.bcBeTripDistanceKm, 30);
+    probe.stop();
+    assert.equal(pending.size, 0);
+});
+
 test('preconditioning distinguishes the active flag from the selected mode and missing data', async () => {
     for (const [raw, expected] of [[1, true], [3, true], [4, false], [61, null], [63, null]]) {
         const builders = {
@@ -173,4 +260,19 @@ test('the dashboard shows diagnostics and a live thermal status alongside clearl
     }, () => 1, 0);
     for (const label of ['Precalentamiento activo', 'Sí  ·  1', 'Android Auto · vídeo', 'No',
         'Error de lectura', 'TRAYECTO · DEMO', 'Demostración']) assert(labels.includes(label), label);
+});
+
+test('the dashboard distinguishes zero speed, missing speed and an expired reading', () => {
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    const state = { selected: 0, article: 0 };
+    for (const [raw, now, expected] of [[0, 2000, '0 km/h'], [1280, 2000, '20 km/h'],
+        [65535, 2000, 'Sin dato válido'], [0, 7000, 'Sin actualizar']]) {
+        labels.length = 0;
+        drawHome(canvas, state, 0, { energy: [], diagnostics: true, telemetry: [{ signal: 'statusCarSpeed2',
+            status: 'sample', fields: { speedVehicleCentreOfGravity: raw }, sampledAt: 1000, freshForMs: 6000 }] }, () => 1, now);
+        assert(labels.includes(expected), expected);
+    }
 });

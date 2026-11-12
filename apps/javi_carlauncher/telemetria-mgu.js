@@ -30,7 +30,7 @@ const signals = [
         driveSegment: ['r', 'bcBeDurationDrive', 'bcBeTripDistanceKm', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive']
     }],
     ['de.bmw.infotainment.vehicle.Vehicle2', '1', {
-        statusCarSpeed2: ['r', 'speedVehicleCentreOfGravity'],
+        statusCarSpeed2: ['rs', 'speedVehicleCentreOfGravity'],
         highVoltageStorageInfoToExternal: ['s', 'energyDischargeHighVoltageStoragePresentDynamic',
             'energyDischargeHighVoltageStorageMaximalDynamic']
     }],
@@ -63,10 +63,11 @@ function sample(value, paths) {
     return Object.keys(result).length ? result : null;
 }
 
-function start(builders) {
+function start(builders, schedule = setTimeout, cancel = clearTimeout) {
     const samples = new Map();
     const subscriptions = [];
     const proxies = [];
+    const timers = new Set();
     let stopped = false;
 
     function dispose(proxy) {
@@ -82,37 +83,56 @@ function start(builders) {
     function stop() {
         if (stopped) return;
         stopped = true;
+        timers.forEach(cancel);
+        timers.clear();
         Promise.all(subscriptions.map(([attribute, id]) => unsubscribe(attribute, id)))
             .then(() => proxies.forEach(dispose));
     }
 
     function observe(attribute, [mode, ...paths], signal) {
-        const pending = [];
+        const period = signal === 'statusCarSpeed2' ? 2000 : 10000;
+        const readable = mode.includes('r');
+        let notifications = 0;
         const receive = (value) => {
             if (stopped) return;
             const fields = sample(value, paths);
-            samples.set(signal, { status: fields ? 'sample' : 'empty', sampledAt: Date.now(), fields });
+            samples.set(signal, { status: fields ? 'sample' : 'empty', sampledAt: Date.now(),
+                freshForMs: readable ? period * 3 : undefined, fields });
         };
         const fail = (phase) => {
             if (!stopped && samples.get(signal).status !== 'sample') {
                 samples.set(signal, { status: 'error', phase });
             }
         };
+        async function read() {
+            if (stopped) return;
+            const previous = notifications;
+            try {
+                const value = await attribute.getValue();
+                if (previous === notifications) receive(value);
+            } catch (_) {
+                if (previous === notifications) fail('getter');
+            }
+            if (stopped) return;
+            const timer = schedule(() => {
+                timers.delete(timer);
+                read();
+            }, period);
+            timers.add(timer);
+        }
         if (mode.includes('s')) {
-            pending.push(Promise.resolve().then(() => {
+            Promise.resolve().then(async () => {
+                if (stopped) return;
                 if (!attribute || typeof attribute.unsubscribe !== 'function') throw new Error();
-                return attribute.subscribe(receive);
-            }).then((id) => {
+                const id = await attribute.subscribe((value) => {
+                    notifications++;
+                    receive(value);
+                });
                 if (stopped) return unsubscribe(attribute, id);
                 subscriptions.push([attribute, id]);
-            }).catch(() => fail('subscribe')));
+            }).catch(() => fail('subscribe'));
         }
-        if (mode.includes('r')) {
-            pending.push(Promise.resolve().then(() => attribute.getValue()).then((value) => {
-                if (samples.get(signal).status !== 'sample') receive(value);
-            }).catch(() => fail('getter')));
-        }
-        return Promise.all(pending);
+        if (readable) read();
     }
 
     async function connect(service, instance, fields) {
@@ -126,7 +146,7 @@ function start(builders) {
             if (stopped) return;
             await proxy.waitUntilAvailable();
             if (stopped) return;
-            await Promise.all(names.map((name) => observe(proxy[name], fields[name], name)));
+            for (const name of names) observe(proxy[name], fields[name], name);
         } catch (_) {
             if (!stopped) {
                 for (const name of names) samples.set(name, { status: 'error', phase: 'proxy' });

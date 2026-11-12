@@ -8,7 +8,7 @@ El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de 
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.4**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras instalar ambos componentes.
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.5**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras la actualización. [ZIP de la versión 0.2.5 para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.5)
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si aparece **Audio no disponible**, la imagen puede seguir reproduciéndose. Anota el canal y el mensaje si falla una emisión.
 

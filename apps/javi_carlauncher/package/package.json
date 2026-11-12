@@ -19,7 +19,7 @@
     "node": ">=8.7.0"
   },
   "name": "javi_carlauncher",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "BMWLauncher y sus tarjetas integradas para iDrive 8",
   "mguInternet": true,
   "mguHmi": [

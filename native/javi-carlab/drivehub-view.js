@@ -94,7 +94,12 @@ function diagnosticValue(value) {
     return '–';
 }
 
-function diagnostics(cv, records) {
+function staleSample(record, now) {
+    return Number.isFinite(record.sampledAt) && Number.isFinite(record.freshForMs) &&
+        now - record.sampledAt >= record.freshForMs;
+}
+
+function diagnostics(cv, records, now) {
     const margin = 23;
     const gap = 5;
     const firstRow = 75;
@@ -102,17 +107,25 @@ function diagnostics(cv, records) {
     const rowHeight = Math.floor((map.h - firstRow - 12 + gap) / rowCount) - gap;
     const column = (map.w - 2 * margin - 10) / 2;
     cv.text('LECTURAS DEL COCHE', map.x + 24, map.y + 31, 22, primary, bold);
-    cv.text('Valores de prueba para comparar con el cuadro', map.x + 24, map.y + 55, 14, secondary);
+    cv.text('Valores del coche para comparar con el cuadro', map.x + 24, map.y + 55, 14, secondary);
     diagnosticRows.forEach(([label, signal, ...keys], index) => {
         const x = map.x + margin + index % 2 * (column + 10);
         const y = map.y + firstRow + Math.floor(index / 2) * (rowHeight + gap);
         const record = records && records.get(signal);
         const fields = record && record.fields;
+        const stale = record && record.status === 'sample' && staleSample(record, now);
         let value = !records ? 'Esperando conexión…' : 'Sin muestra';
         let color = secondary;
-        if (fields && record.status === 'sample') {
+        if (stale) {
+            value = 'Sin actualizar';
+            color = amber;
+        } else if (fields && record.status === 'sample') {
             value = keys.map((key) => diagnosticValue(fields[key])).join('  ·  ');
             color = primary;
+            if (signal === 'statusCarSpeed2') {
+                const raw = fields.speedVehicleCentreOfGravity;
+                value = Number.isInteger(raw) && raw >= 0 && raw < 65535 ? number(raw / 64, 1) + ' km/h' : 'Sin dato válido';
+            }
         } else if (record && record.status === 'error') {
             const phases = { proxy: 'servicio', getter: 'lectura', subscribe: 'suscripción' };
             value = 'Error de ' + (phases[record.phase] || 'lectura');
@@ -120,6 +133,11 @@ function diagnostics(cv, records) {
         }
         cv.roundRect(x, y, column, rowHeight, 5, '#192734');
         cv.text(label, x + 10, y + 16, 13, secondary);
+        if (fields && record.status === 'sample' && Number.isFinite(record.sampledAt)) {
+            const seconds = Math.max(0, Math.floor((now - record.sampledAt) / 1000));
+            const age = seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min';
+            cv.text(age, x + column - 10, y + 16, 12, secondary, right);
+        }
         fit(cv, value, x + 10, y + rowHeight - 8, 17, column - 20, color);
     });
 }
@@ -520,9 +538,9 @@ function drawHome(cv, state, scroll, data, art, now) {
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
     const records = data.diagnostics && data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
     const thermal = records && records.get('statusPredictiveThermalManagement');
-    const active = thermal && thermal.status === 'sample' && thermal.fields
+    const active = thermal && thermal.status === 'sample' && !staleSample(thermal, now) && thermal.fields
         ? thermal.fields.preconditioningActive : undefined;
-    if (data.diagnostics) diagnostics(cv, records);
+    if (data.diagnostics) diagnostics(cv, records, now);
     else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
     if (data.home) {
         const { x, y, w, h } = home;

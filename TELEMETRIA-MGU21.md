@@ -30,7 +30,9 @@ node emulator/split/server.js --drivehub --telemetry
 
 También se admite el catálogo JSON extraído. El script contrasta cada instancia, operación y campo con los permisos de solo lectura que se empaquetan en la app.
 
-La 0.2.2 lee los campos al abrir BMWLauncher, conserva la última muestra recibida y envía un resumen una vez por segundo al renderizador por un socket local del usuario de la app. Al cerrar la pantalla, desconecta y libera las suscripciones. De posición solo recoge altura y validez de fijación. Los valores brutos permiten distinguir ausencia de dato, valor por defecto, cero y error de acceso. Los datos se presentan en **Lecturas del coche** y las previsiones de ruta se identifican como demostración.
+Desde la 0.2.5, el OAP consulta la velocidad cada dos segundos y se suscribe a sus avisos de cambio. Lee los demás campos que tienen getter cada diez segundos. Los que solo tienen notificador siguen por suscripción. Se envía un resumen cada segundo al renderizador y al cerrar se cancelan las consultas programadas y se liberan las suscripciones. De posición solo se recoge altura y validez de fijación. **Lecturas del coche** muestra la edad desde la última recepción. Un campo con getter aparece **Sin actualizar** si pasan tres periodos sin una muestra. [Lectura periódica de velocidad en el kit comunitario](https://github.com/cauliflowermossgrape/idrive7-apps/blob/main/kit/runtime/parked.js)
+
+Para la velocidad se muestra `valor ÷ 64` km/h y se descarta `65535`, valor por defecto del catálogo. La escala procede de Live Data y queda por contrastar en movimiento con el cuadro del i4. Los demás valores del panel conservan sus formatos de diagnóstico. La franja de energía y las cifras de Trayecto se identifican como demostración. [Conversión de velocidad en Live Data](https://github.com/cauliflowermossgrape/idrive7-apps/blob/main/apps/live_data/signals.js)
 
 ## Validación en la unidad
 
@@ -39,6 +41,7 @@ El 11 de noviembre de 2026 la MGU del i4 confirmó por ENET que lleva `SWFL 0000
 - **Trayecto.** Se observó una oferta del servicio `BcPersonal` y su getter `driveSegment` respondió por TCP con código de éxito y 107 bytes. La longitud coincide con la estructura del catálogo. Se extrajeron campos de duración, distancia, consumo, velocidad media y carga al inicio y al final. Faltan las escalas y comprobar si el segmento corresponde al trayecto en curso.
 - **Batería y autonomía.** Se observaron ofertas de `LSCDataSink` y `KombiIF`. El binario `Hmi8` enlaza callbacks de batería y autonomía del cuadro a `Efficiencytainment2.statusChargeOfBatteryHybrid` y `KombiIF.displayRangeElectricVehicle`. `Efficiencytainment2` no se vio en la ventana de descubrimiento. El cliente UDP directo recibió `EPERM` al consultar `KombiIF`. El intento con el módulo SOME/IP nativo desde SSH tampoco entregó muestras.
 - **Siguiente contraste.** Leer desde el proceso OAP con su manifiesto y comparar con el cuadro y **Datos de viaje**. Verificar cambios en dos momentos, unidades, caducidad y cierre de suscripciones. Separar la validación de carga actual de la estimación de batería tras parada.
+- **Observación con 0.2.4.** En las fotos del usuario, la autonomía de `KombiIF` y la del cuadro mostraban 414 km. Las fotos tienen horas distintas. El usuario observó 0 en el panel de velocidad incluso al moverse. El OAP consultaba ese campo una sola vez y carecía de permiso de suscripción para él. El valor bruto de batería del diagnóstico era 192. Hace falta una comparación simultánea en varios estados de carga para validar su conversión.
 
 ## Precalentamiento HV
 
