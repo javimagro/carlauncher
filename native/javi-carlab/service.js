@@ -12,6 +12,7 @@ const { parseContext, isLauncher, openContext } = require('./home-context.js');
 const { consume: consumeTelemetry } = require('./telemetry-input.js');
 const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
+const { createCockpit } = require('./cockpit.js');
 const { RenderClient } = require('/var/opt/mgu-render/current/mgu_render_client.js');
 
 const launcherId = 'javi_carlauncher';
@@ -20,6 +21,7 @@ const dataDirectory = '/var/opt/javi-carlab';
 const uplink = '/var/opt/mgu-uplink';
 const uplinkLease = '/run/mgu-uplink/lease.json';
 const tdtAudio = process.env.JAVI_TDT_PCM || 'plug:smartx:MediaSink_AudioOut_Front_CF_48_COMBINED_STEREO_MULTICHANNEL';
+const clusterClient = '/var/opt/cluster-render/current/cluster_render_client.js';
 const lease = createLease('/run/javi-carlab/frontccu.lease', (err) => console.warn('BMWLauncher: captura del mando: ' + err.code));
 let screenConfirmed = false;
 let ccuReady = false;
@@ -32,10 +34,19 @@ let exitFailed = false;
 
 function releaseController() { lease(false); }
 
+let cockpit;
+if (fs.existsSync(clusterClient)) {
+    try {
+        const { ClusterRender } = require(clusterClient);
+        if (typeof ClusterRender === 'function') cockpit = createCockpit(ClusterRender, downloadAsApp);
+    } catch (_) { console.warn('BMWLauncher: cliente de cockpit no disponible'); }
+}
+
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
     diagnostics: true,
     useOap: true,
+    cockpit,
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
         if (!confirmed) releaseController();
@@ -52,6 +63,7 @@ const session = createSession(gpu, {
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
         caFile: path.join(__dirname, 'bin/ca-certificates.crt'),
         proxy: startTdtProxy,
+        get: downloadAsApp,
         audio: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true }
     },
     get: downloadAsApp,
@@ -92,11 +104,11 @@ async function onlineApp() {
     return uid;
 }
 
-async function downloadAsApp(url, limit) {
+async function downloadAsApp(url, limit, timeout = 36000) {
     const uid = await onlineApp();
     return new Promise((resolve, reject) => {
         execFile(process.execPath, [path.join(__dirname, 'drivehub-network.js'), url, String(limit)], {
-            uid, gid: uid, encoding: 'buffer', maxBuffer: limit + 1024, timeout: 36000
+            uid, gid: uid, encoding: 'buffer', maxBuffer: limit + 1024, timeout
         }, (err, bytes, stderr) => {
             if (!err) { resolve(bytes); return; }
             const code = String(stderr).trim();

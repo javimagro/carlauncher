@@ -20,7 +20,8 @@ test('the probe reads named fields only and unsubscribes when closed', async () 
                     init() {}, waitUntilAvailable() {},
                     rawPositionData: { getValue: () => ({
                         fixType: 'FIX_3D', utcDateTime: 'test', position: {
-                            heightValid: true, height: { rawLengthMeter: -14 }, latitude: 40, longitude: -3
+                            heightValid: true, coordinatesValid: true, height: { rawLengthMeter: -14 },
+                            latitude: 40, longitude: -3, unverifiedField: 42
                         }
                     }) }
                 };
@@ -53,7 +54,8 @@ test('the probe reads named fields only and unsubscribes when closed', async () 
     const records = probe.snapshot();
     const record = (name) => records.find(({ signal }) => signal === name);
     assert.deepEqual(record('rawPositionData').fields, {
-        fixType: 'FIX_3D', 'position.heightValid': true, 'position.height.rawLengthMeter': -14
+        fixType: 'FIX_3D', 'position.heightValid': true, 'position.height.rawLengthMeter': -14,
+        'position.coordinatesValid': true, 'position.latitude': 40, 'position.longitude': -3
     });
     assert.deepEqual(record('displayConditionHybrid').fields, { displayChargingconditionHighvoltageStorage: 0 });
     assert.equal(record('dataRangeDisplay').status, 'no-sample');
@@ -259,8 +261,9 @@ test('the dashboard shows diagnostics and a live thermal status alongside clearl
             { signal: 'statusChargeOfBatteryHybrid', status: 'error', phase: 'getter' }
         ]
     }, () => 1, 0);
-    for (const label of ['Precalentamiento activo', 'Sí  ·  1', 'Android Auto · vídeo', 'No',
-        'Error de lectura', 'TRAYECTO · DEMO', 'Ruta de ejemplo']) assert(labels.includes(label), label);
+    for (const label of ['Activo', 'Sí  ·  1', 'Android Auto · vídeo', 'No',
+        'Error de lectura', 'TRAYECTO', 'Ruta de ejemplo']) assert(labels.includes(label), label);
+    for (const label of ['25,3 kWh/100 km', '50,9 km', '917 m']) assert(!labels.includes(label), label);
     assert(!labels.includes('64%'));
     assert(!labels.includes('248 km'));
 });
@@ -286,7 +289,7 @@ test('the dashboard converts validated readings and never substitutes demo value
     for (const label of ['91%', '91 %', '431 km', '16 °C', '19 °C', '17,0  ·  – kWh/100 km', '24%', 'Ruta de ejemplo']) {
         assert(labels.includes(label), label);
     }
-    assert.equal(labels.filter((label) => label === '431 km').length, 2);
+    assert.equal(labels.filter((label) => label === '431 km').length, 3);
     labels.length = 0;
     drawHome(canvas, state, 0, data, () => 1, 30000);
     for (const label of ['91%', '431 km', '16 °C', '19 °C', '64%', '248 km']) assert(!labels.includes(label), label);
@@ -327,7 +330,8 @@ test('the trip probe maps periods by reset option and presents scaled distances 
                         bcUnits: { tachoDigital: 'KILOMETERS', averageConsumptionElectric: 1 },
                         bcData3: [
                             { resetOption: 5, counterDistance: 450340, consumptionElectricAverageDigit: 65718 },
-                            { resetOption: 'STARTOFDRIVING', counterDistance: 345, consumptionElectricAverageDigit: 65753 },
+                            { resetOption: 'STARTOFDRIVING', counterDistance: 345, consumptionElectricAverageDigit: 65753,
+                                speedAverage: 425, dateTimeTrip: { day: 0, hour: 1, minute: 7, second: 0 } },
                             { resetOption: 'INDIVIDUAL', counterDistance: 0xfffffffd },
                             { resetOption: 3, counterDistance: 523, consumptionElectricAverageDigit: 65763 },
                             { resetOption: 'REFUEL', counterDistance: 900, consumptionElectricAverageDigit: 65742 }
@@ -347,8 +351,37 @@ test('the trip probe maps periods by reset option and presents scaled distances 
     drawHome(canvas, { selected: 0, article: 0 }, 0,
         { energy: [], diagnostics: true, telemetry: probe.snapshot() }, () => 1, Date.now());
     for (const label of ['34,5 km  ·  21,8 kWh/100 km', '52,3 km  ·  22,8 kWh/100 km',
-        '45034 km  ·  18,3 kWh/100 km', '–  ·  –']) assert(labels.includes(label), label);
+        '45034 km  ·  18,3 kWh/100 km', '34,5 km', '21,8 kWh/100 km', '42,5 km/h', '1 h 7 min', '–  ·  –']) {
+        assert(labels.includes(label), label);
+    }
     assert(!labels.includes('90 km  ·  20,7 kWh/100 km'));
+});
+
+test('the charging limit follows the fresh BMS status independently of battery temperature', () => {
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    const thermal = { signal: 'statusHighVoltageBattery', status: 'sample', sampledAt: 1000, freshForMs: 15000,
+        fields: { thermalStatusHighVoltageBatteryForFastCharging: 2 } };
+    const data = { energy: [], diagnostics: true, telemetry: [thermal, {
+        signal: 'statusBatteryTemperature', status: 'sample', sampledAt: 1000, freshForMs: 30000,
+        fields: { actualValueTemperatureHighVoltageStorage: 83 }
+    }] };
+    const render = (now) => {
+        labels.length = 0;
+        drawHome(canvas, { selected: 0, article: 0 }, 0, data, () => 1, now);
+    };
+    render(1001);
+    assert(labels.includes('33 °C'));
+    assert(labels.includes('Limitación condicional por frío'));
+    thermal.fields.thermalStatusHighVoltageBatteryForFastCharging = 'NO_THERMAL_LIMITATIONS';
+    render(2000);
+    assert(labels.includes('Sin limitaciones'));
+    render(16000);
+    assert(labels.includes('33 °C'));
+    assert(labels.includes('Sin actualizar'));
+    assert(!labels.includes('Sin limitaciones'));
 });
 
 function tasuReply(did, payload, ecu = 7) {
@@ -373,9 +406,8 @@ test('the battery power probe reads only the SME voltage and signed current and 
             const payload = did === 0xe54d ? [0x9c, 0x40] : currentRaw;
             notify(tasuReply(did, [0, 0, 0, 0], 0x12));
             notify(tasuReply(0xe555, [0, 0, 0, 0]));
-            notify(tasuReply(did, []));
             notify(tasuReply(did, payload));
-            return { TasuErrorEnum: 'NO_ERROR' };
+            return did === 0xe54d ? undefined : { TasuErrorEnum: 'NO_ERROR' };
         }
     };
     const probe = createPowerProbe({
@@ -443,4 +475,40 @@ test('hiding and reopening during a diagnostic request waits for the previous TA
     assert.deepEqual(lifecycle, ['open', 'unsubscribe', 'dispose', 'open']);
     assert.equal(sent, 2);
     assert.equal(probe.snapshot().status, 'error');
+    assert.deepEqual(probe.snapshot().fields, { stage: 'voltage', failure: 'tasu', code: 7 });
+});
+
+test('a negative SME reply identifies the current request and shows the UDS code', async (t) => {
+    let notify;
+    const probe = createPowerProbe({
+        buildAndInitTypedProxy() {
+            return {
+                sendTasuResponse: { subscribe(listener) { notify = listener; }, unsubscribe() {} },
+                sendTasuRequest(request) {
+                    if (request.udsData.readUInt16BE() === 0xe54d) {
+                        notify(tasuReply(0xe54d, [0x9c, 0x40]));
+                    } else {
+                        const reply = tasuReply(0xe561, []);
+                        Buffer.from([0x7f, 0x22, 0x31]).copy(reply.udsResponse, 9);
+                        notify(reply);
+                    }
+                    return { TasuErrorEnum: 'NO_ERROR' };
+                }
+            };
+        }
+    });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    for (let i = 0; i < 25 && probe.snapshot().status !== 'error'; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const record = probe.snapshot();
+    assert.deepEqual(record.fields, { stage: 'current', failure: 'uds', code: 0x31 });
+    const labels = [];
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    drawHome(canvas, { selected: 0, article: 0 }, 0,
+        { energy: [], diagnostics: true, telemetry: [record] }, () => 1, Date.now());
+    assert(labels.includes('Corriente · UDS 0x31'));
 });

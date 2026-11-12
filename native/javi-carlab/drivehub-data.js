@@ -162,8 +162,8 @@ async function loadNews(get = download) {
     return articles;
 }
 
-function loadArtwork() {
-    const raw = zlib.gunzipSync(fs.readFileSync(path.join(__dirname, 'drivehub-art.rgba.gz')));
+function loadArtwork(file = 'drivehub-art.rgba.gz') {
+    const raw = zlib.gunzipSync(fs.readFileSync(path.join(__dirname, file)));
     const start = 4 + raw.readUInt32LE(0);
     const entries = JSON.parse(raw.toString('utf8', 4, start));
     return (name) => {

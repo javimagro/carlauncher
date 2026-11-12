@@ -54,8 +54,9 @@ module.exports = function createSession(gpu, options) {
             provider.showPhoto(item && item.image);
         }
         cv.reset();
-        drawHome(cv, panel.state, panel.position(), data, art, now);
+        const readings = drawHome(cv, panel.state, panel.position(), data, art, now);
         gpu.frame(cv);
+        if (options.cockpit && onScreen) options.cockpit.update(readings, now);
         lastFrame = now;
         dirty = false;
     }
@@ -94,6 +95,7 @@ module.exports = function createSession(gpu, options) {
         reportScreen();
         panel.resetInput();
         tdt.update(Date.now(), false);
+        if (options.cockpit) options.cockpit.close();
     }
     gpu.on('closed', hidden);
     gpu.on('close', () => { area = undefined; hidden(); });
@@ -133,6 +135,7 @@ module.exports = function createSession(gpu, options) {
                 homeGesture = undefined;
                 data.telemetry = null;
                 tdt.update(Date.now(), false);
+                if (options.cockpit) options.cockpit.close();
             }
             panel.resetInput();
             reportScreen();

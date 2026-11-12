@@ -2,6 +2,7 @@
 
 const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
 const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
+const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require('./vehicle-readings.js');
 const background = '#080b0e';
 const primary = '#f2f7fb';
 const secondary = '#a9b8c7';
@@ -46,11 +47,6 @@ const diagnosticEnums = {
     REICHWEITENINFORMATIONEN_EINBLENDEN: 'visible',
     VERBRAUCH_IN_KWH__S__100KM: 'kWh/100 km',
     VERBRAUCH_IN_WH__S__KM: 'Wh/km',
-    NO_THERMAL_LIMITATIONS: 'Sin limitaciones',
-    THERMAL_LIMITATIONS_COLD: 'Batería fría',
-    THERMAL_LIMITATIONS_HOT: 'Batería caliente',
-    CONDITIONAL_THERMAL_LIMITATIONS_COLD: 'Limitación por frío',
-    CONDITIONAL_THERMAL_LIMITATIONS_HOT: 'Limitación por calor',
     SIGNAL_UNBEFUELLT: 'Sin dato'
 };
 
@@ -99,57 +95,27 @@ function diagnosticValue(value) {
     return '–';
 }
 
-function staleSample(record, now) {
-    return Number.isFinite(record.sampledAt) && Number.isFinite(record.freshForMs) &&
-        now - record.sampledAt >= record.freshForMs;
-}
-
-function freshFields(records, signal, now) {
-    const record = records && records.get(signal);
-    return record && record.status === 'sample' && !staleSample(record, now) && record.fields || {};
-}
-
-function vehicleReadings(records, now) {
-    const battery = freshFields(records, 'statusChargeOfBatteryHybrid', now).displayChargingConditionHighVoltageStorage;
-    const range = freshFields(records, 'displayRangeElectricVehicle', now).displayRangeElectricVehicle;
-    const outside = freshFields(records, 'ExteriorTemperature', now).temperatureExterior;
-    const batteryTemperature = freshFields(records, 'statusBatteryTemperature', now).actualValueTemperatureHighVoltageStorage;
-    const valid = (raw, max) => Number.isInteger(raw) && raw >= 0 && raw <= max;
-    return {
-        soc: valid(battery, 200) ? battery / 2 : undefined,
-        range: valid(range, 4094) ? range : undefined,
-        outside: valid(outside, 254) ? outside / 2 - 40 : undefined,
-        batteryTemperature: valid(batteryTemperature, 254) ? batteryTemperature - 50 : undefined
-    };
-}
-
 function withUnit(value, unit, decimals = 0) {
     return Number.isFinite(value) ? number(value, decimals) + unit : 'Sin dato válido';
 }
 
+function liveValue(value, unit, decimals = 0) {
+    return Number.isFinite(value) ? number(value, decimals) + ' ' + unit : '–';
+}
+
 function formatDiagnostic(signal, fields, keys, vehicle) {
     switch (signal) {
-    case 'statusCarSpeed2': {
-        const raw = fields.speedVehicleCentreOfGravity;
-        return Number.isInteger(raw) && raw >= 0 && raw < 65535 ? withUnit(raw / 64, ' km/h', 1) : 'Sin dato válido';
-    }
+    case 'statusCarSpeed2': return withUnit(vehicle.speed, ' km/h', 1);
     case 'statusChargeOfBatteryHybrid': return withUnit(vehicle.soc, ' %', 1);
     case 'displayRangeElectricVehicle': return withUnit(vehicle.range, ' km');
     case 'ExteriorTemperature': return withUnit(vehicle.outside, ' °C', 1);
     case 'statusBatteryTemperature': return withUnit(vehicle.batteryTemperature, ' °C');
+    case 'statusHighVoltageBattery': return thermalStatus(fields.thermalStatusHighVoltageBatteryForFastCharging) || 'Sin dato válido';
     case 'batteryPowerHv': return [withUnit(fields.kw, ' kW', 1), withUnit(fields.volts, ' V', 1),
         withUnit(fields.amps, ' A', 1)].join('  ·  ');
     case 'bcDataAll': {
-        const [period] = keys;
-        const distanceUnit = { 1: ' km', 2: ' mi', KILOMETERS: ' km', MILES: ' mi' }[fields['bcUnits.tachoDigital']];
-        const averageUnit = { 1: ' kWh/100 km', KWH: ' kWh/100 km',
-            5: ' kWh/100 mi', KWH_100MI: ' kWh/100 mi' }[fields['bcUnits.averageConsumptionElectric']];
-        const distance = fields[period + '.counterDistance'];
-        const average = fields[period + '.consumptionElectricAverageDigit'];
-        const valid = (raw) => Number.isInteger(raw) && raw >= 0 && raw < 0xfffffffd;
-        const formattedDistance = distanceUnit && valid(distance) ? number(distance / 10, 1) + distanceUnit : '–';
-        const formattedAverage = averageUnit && valid(average) ? number((average - 65535) / 10, 1) + averageUnit : '–';
-        return formattedDistance + '  ·  ' + formattedAverage;
+        const { distance, distanceUnit, average, averageUnit } = journeyReading(fields, keys[0]);
+        return liveValue(distance, distanceUnit, 1) + '  ·  ' + liveValue(average, averageUnit, 1);
     }
     case 'statusConsumptionAverageElectricVehicle': {
         const unit = fields.unitOfMeasurementConsumptionElectricVehicleBC;
@@ -162,6 +128,22 @@ function formatDiagnostic(signal, fields, keys, vehicle) {
     }
     }
     return keys.map((key) => diagnosticValue(fields[key])).join('  ·  ');
+}
+
+function diagnosticError(record) {
+    const fields = record.fields;
+    if (record.signal === 'batteryPowerHv' && fields && record.phase === 'getter') {
+        const stage = fields.stage === 'voltage' ? 'Tensión' : 'Corriente';
+        const code = Number.isInteger(fields.code) && fields.code >= 0 && fields.code <= 255 ? fields.code : undefined;
+        const reasons = {
+            timeout: 'sin respuesta', format: 'respuesta corta', request: 'fallo de consulta', late: 'muestra tardía',
+            tasu: code === undefined ? 'rechazo TASU' : 'TASU ' + code,
+            uds: code === undefined ? 'rechazo UDS' : 'UDS 0x' + code.toString(16).toUpperCase().padStart(2, '0')
+        };
+        return stage + ' · ' + (reasons[fields.failure] || 'error de lectura');
+    }
+    const phases = { proxy: 'servicio', getter: 'lectura', subscribe: 'suscripción' };
+    return 'Error de ' + (phases[record.phase] || 'lectura');
 }
 
 function diagnostics(cv, records, vehicle, now) {
@@ -188,8 +170,7 @@ function diagnostics(cv, records, vehicle, now) {
             value = formatDiagnostic(signal, fields, keys, vehicle);
             color = primary;
         } else if (record && record.status === 'error') {
-            const phases = { proxy: 'servicio', getter: 'lectura', subscribe: 'suscripción' };
-            value = 'Error de ' + (phases[record.phase] || 'lectura');
+            value = diagnosticError(record);
             color = amber;
         }
         cv.roundRect(x, y, column, rowHeight, 5, '#192734');
@@ -203,45 +184,63 @@ function diagnostics(cv, records, vehicle, now) {
     });
 }
 
-function trip(cv, x, y, w, h, preconditioning, vehicle) {
-    const metrics = [
-        ['Consumo medio', '25,3 kWh/100 km'], ['Consumo medio total', '21,9 kWh/100 km'],
-        ['Distancia recorrida', '50,9 km'], ['Velocidad media', '76 km/h'],
-        ['Energía consumida', '12,9 kWh'], ['Duración', '2 h 15 m']
-    ];
-    const col = (w - 65) / 2;
-    metrics.forEach(([label, value], index) => {
-        const left = x + 29 + (index % 2) * (col + 5);
-        const top = y + 53 + Math.floor(index / 2) * 74;
-        cv.roundRect(left, top, col, 69, 9, [21, 38, 52, 130]);
-        cv.strokeRoundRect(left, top, col, 69, 9, 1, [117, 155, 178, 55]);
-        cv.text(label, left + col / 2, top + 24, 16, secondary, centered);
-        cv.text(value, left + col / 2, top + 55, 21, primary, centered);
-    });
-    const left = x + 29;
-    const altitudeTop = y + 277;
-    const altitudeBottom = y + h - 86;
-    const graphTop = y + 337;
-    cv.roundRect(left, altitudeTop, w - 60, altitudeBottom - altitudeTop, 9, [21, 38, 52, 142]);
-    cv.strokeRoundRect(left, altitudeTop, w - 60, altitudeBottom - altitudeTop, 9, 1, [117, 155, 178, 55]);
-    cv.text('Altura', x + w / 2, y + 299, 16, secondary, centered);
-    cv.text('917 m', x + w - 39, y + 299, 21, primary, right);
-    cv.gradientRect(left + 8, graphTop, w - 76, altitudeBottom - graphTop - 4,
-        [[0, [61, 196, 232, 90]], [1, [61, 196, 232, 0]]]);
-    cv.line(left + 8, graphTop, x + w - 39, graphTop + 1, 2, '#52d9f8');
-    const batteryLabel = typeof preconditioning === 'boolean'
-        ? 'Precalentamiento ' + (preconditioning ? 'activo' : 'inactivo') : 'Batería HV';
-    const outside = vehicle && Number.isFinite(vehicle.outside) ? withUnit(vehicle.outside, ' °C', 1) : '–';
-    const hv = vehicle && Number.isFinite(vehicle.batteryTemperature) ? withUnit(vehicle.batteryTemperature, ' °C') : '–';
-    for (const [index, label, value] of [[0, 'Exterior', outside], [1, batteryLabel, hv]]) {
-        const center = left + col * (index + 0.5) + index * 5;
-        cv.text(label, center, y + h - 60, 13, index && preconditioning ? amber : primary, centered);
-        cv.text(value, center, y + h - 41, 15, primary, centered);
-        const colors = ['#64bfe7', '#3ad674', '#ffce43', '#ff515d'];
-        cv.rampRect(center - 69, y + h - 26, 138, 8, 4, [
-            colors[0], colors[0], colors[1], colors[1], colors[2], colors[3], colors[3]
-        ]);
+function tripDuration(seconds) {
+    if (!Number.isFinite(seconds)) return '–';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor(seconds % 3600 / 60);
+    if (hours) return hours + ' h ' + minutes + ' min';
+    return minutes + ' min ' + seconds % 60 + ' s';
+}
+
+function trip(cv, x, y, w, h, vehicle) {
+    const left = x + 23;
+    const rightEdge = x + w - 23;
+    const column = (rightEdge - left) / 4;
+    const divider = [105, 145, 170, 80];
+    const separator = (at) => cv.line(left, at, rightEdge, at, 1, divider);
+    function metrics(top, entries) {
+        entries.forEach(([label, value], index) => {
+            const center = left + (index + 0.5) * column;
+            cv.text(label, center, top, 14, secondary, centered);
+            fit(cv, value, center, top + 28, 20, column - 8, primary, centered);
+        });
     }
+    metrics(y + 62, [
+        ['Velocidad', liveValue(vehicle.speed, 'km/h', 1)],
+        ['Vel. media', liveValue(vehicle.trip.speed, vehicle.trip.distanceUnit + '/h', 1)],
+        ['Batería', liveValue(vehicle.soc, '%', 1)],
+        ['Autonomía', liveValue(vehicle.range, 'km')]
+    ]);
+
+    const distanceX = left + (rightEdge - left) * 0.58;
+    separator(y + 111);
+    cv.text('Periodo', left, y + 137, 14, secondary);
+    cv.text('Distancia', distanceX, y + 137, 14, secondary, right);
+    cv.text('Consumo medio', rightEdge, y + 137, 14, secondary, right);
+    const periods = [['Inicio de viaje', vehicle.trip], ['Última carga', vehicle.charge],
+        ['Individual', vehicle.individual], ['Desde fábrica', vehicle.factory]];
+    periods.forEach(([label, value], index) => {
+        const at = y + 171 + index * 38;
+        const color = index === 0 ? primary : secondary;
+        cv.text(label, left, at, 17, color);
+        cv.text(liveValue(value.distance, value.distanceUnit, 1), distanceX, at, 18, color, right);
+        cv.text(liveValue(value.average, value.averageUnit, 1), rightEdge, at, 18, color, right);
+        separator(at + 14);
+    });
+
+    metrics(y + 335, [
+        ['Duración', tripDuration(vehicle.trip.duration)],
+        ['Altitud GPS', liveValue(vehicle.altitude, 'm')],
+        ['Exterior', liveValue(vehicle.outside, '°C', 1)],
+        ['Batería HV', liveValue(vehicle.batteryTemperature, '°C')]
+    ]);
+    separator(y + h - 124);
+    cv.text('Carga rápida', left, y + h - 90, 15, secondary);
+    fit(cv, vehicle.thermal || '–', rightEdge, y + h - 90, 17, w - 155, primary, right);
+    cv.text('Precalentamiento', left, y + h - 51, 15, secondary);
+    const state = vehicle.preconditioning;
+    cv.text(typeof state === 'boolean' ? (state ? 'Activo' : 'Inactivo') : '–',
+        rightEdge, y + h - 51, 17, state ? amber : primary, right);
 }
 
 function radio(cv, x, y, w, h, art) {
@@ -431,16 +430,23 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             loading: 'Abriendo la emisión…', error: 'No se ha podido reproducir la emisión',
             unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible'
         }[state.playback];
-        if (message) cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
+        if (message) {
+            const detail = state.playback === 'error' && state.playbackDiagnostic;
+            cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
+            if (detail) cv.text(detail, x + w / 2, top + l.body / 2 + 24, 15, secondary, centered);
+        }
         if (state.playback === 'reconnecting' || state.playback === 'buffering') {
-            cv.roundRect(left + 8, top + 8, 152, 24, 5, [7, 17, 30, 220]);
-            cv.text(state.playback === 'buffering' ? 'Cargando vídeo…' : 'Reconectando…',
-                left + 84, top + 24, 13, primary, centered);
+            const label = state.playback === 'buffering' ? 'Cargando vídeo…' :
+                'Reconectando' + (state.playbackDiagnostic ? ' · ' + state.playbackDiagnostic : '…');
+            const badgeWidth = cv.textWidth(label, 13) + 24;
+            cv.roundRect(left + 8, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
+            cv.text(label, left + 8 + badgeWidth / 2, top + 24, 13, primary, centered);
         }
         const audioError = {
             'audio-unavailable': 'Audio no disponible', 'audio-alsa': 'Audio · ALSA no disponible',
             'audio-open': 'Audio · no se abre la salida', 'audio-format': 'Audio · formato no admitido',
-            'audio-timeout': 'Audio · la salida no arranca', 'audio-stall': 'Audio · salida bloqueada',
+            'audio-timeout': 'Audio · la salida no arranca', 'audio-stall': 'Audio · ALSA sin avance',
+            'audio-pipe': 'Audio · el auxiliar no responde',
             'audio-write': 'Audio · error de escritura'
         }[state.audioStatus];
         if (surface && audioError) {
@@ -551,7 +557,7 @@ function empty(cv, x, y, w, h, status, loading, offline, detail) {
     if (status === 'offline' && detail) fit(cv, detail, x + w / 2, y + h / 2 + 24, 13, w - 36, secondary, centered);
 }
 
-function drawCard(cv, card, x, selected, data, state, art, now, preconditioning, vehicle) {
+function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     const { y, h } = viewport;
     const w = card.w;
     const clipLeft = Math.max(x, viewport.x);
@@ -569,11 +575,10 @@ function drawCard(cv, card, x, selected, data, state, art, now, preconditioning,
     cv.gradientRect(x + w - 3, y + 12, 2, h - 24, [[0, [122, 169, 203, 36]], [0.56, '#cfe9fa'], [1, [122, 169, 203, 10]]]);
     let title = card.title;
     if (card.id === 'weather') title += ' - ' + (data.weather ? data.weather.name : data.city);
-    if (card.id === 'trip' && data.diagnostics) title += ' · DEMO';
     fit(cv, title, x + w / 2, y + 25, 19, w - 35, primary, { align: 'center', spacing: 2 });
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
-    if (card.id === 'trip') trip(cv, x, y, w, h, preconditioning, vehicle);
+    if (card.id === 'trip') trip(cv, x, y, w, h, vehicle);
     if (card.id === 'radio') radio(cv, x, y, w, h, art);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
@@ -614,8 +619,7 @@ function drawHome(cv, state, scroll, data, art, now) {
     cv.roundRect(map.x, map.y, map.w, map.h, 10, '#121c25');
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
     const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
-    const vehicle = (data.diagnostics || records) && vehicleReadings(records, now);
-    const active = freshFields(records, 'statusPredictiveThermalManagement', now).preconditioningActive;
+    const vehicle = vehicleReadings(records, now);
     if (data.diagnostics) diagnostics(cv, records, vehicle, now);
     else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
     if (data.home) {
@@ -628,8 +632,9 @@ function drawHome(cv, state, scroll, data, art, now) {
         if (data.home === 'error') cv.text('No se ha podido volver a iDrive', x - 12, y + 29, 14, primary, right);
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
-        state.selected === index, data, state, art, now, active, vehicle));
-    energy(cv, data.energy, art, vehicle);
+        state.selected === index, data, state, art, now, vehicle));
+    energy(cv, data.energy, art, data.diagnostics || records ? vehicle : undefined);
+    return vehicle;
 }
 
 module.exports = { drawHome };

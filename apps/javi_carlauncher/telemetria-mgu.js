@@ -7,12 +7,12 @@ const { createPowerProbe } = require('./potencia-hv.js');
 const signals = [
     ['de.bmw.infotainment.drivingexcitement.Efficiencytainment2', '1', {
         statusChargeOfBatteryHybrid: ['rs', 'displayChargingConditionHighVoltageStorage'],
-        statusBatteryTemperature: ['r', 'actualValueTemperatureHighVoltageStorage'],
+        statusBatteryTemperature: ['rs', 'actualValueTemperatureHighVoltageStorage'],
         displayPowerDrive: ['s', 'quotaImmediateElectricEngineDriveRecuperation']
     }],
     ['de.bmw.infotainment.drivingexcitement.PredictiveThermalManagement', '1', {
         statusPredictiveThermalManagement: ['rs', 'statusVWM', 'statusRestrictionsVWM', 'statusFeedbackVWM'],
-        statusHighVoltageBattery: ['r', 'thermalStatusHighVoltageBatteryForFastCharging',
+        statusHighVoltageBattery: ['rs', 'thermalStatusHighVoltageBatteryForFastCharging',
             'thermalPreconditioningDurationTempLow', 'thermalPreconditioningDurationTempHigh']
     }],
     ['de.bmw.infotainment.lsc.LSCDataSink', '1', {
@@ -25,15 +25,18 @@ const signals = [
             'consumptionAverageElectricVehicleBC2', 'unitOfMeasurementConsumptionElectricVehicleBC']
     }],
     ['de.bmw.infotainment.navigation.positioning.Positioning', 'Main_Instance', {
-        rawPositionData: ['r', 'fixType', 'position.heightValid', 'position.height.rawLengthMeter']
+        rawPositionData: ['rs', 'fixType', 'position.heightValid', 'position.height.rawLengthMeter',
+            'position.coordinatesValid', 'position.latitude', 'position.longitude']
     }],
     ['de.bmw.infotainment.telematic.journeyhistory.BcPersonal', '1', {
         driveSegment: ['r', 'bcBeDurationDrive', 'bcBeTripDistanceKm', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive']
     }],
     ['de.bmw.infotainment.resetlogic.ResetLogic3', '1', {
-        bcDataAll: ['r', 'bcUnits.tachoDigital', 'bcUnits.averageConsumptionElectric',
+        bcDataAll: ['rs', 'bcUnits.tachoDigital', 'bcUnits.averageConsumptionElectric',
             'bcUnits.currentConsumptionElectric', 'bcData3[].resetOption', 'bcData3[].counterDistance',
-            'bcData3[].consumptionElectricAverageDigit', 'bcData3[].consumptionElectricCurrentDigit']
+            'bcData3[].consumptionElectricAverageDigit', 'bcData3[].consumptionElectricCurrentDigit',
+            'bcData3[].speedAverage', 'bcData3[].dateTimeTrip.day', 'bcData3[].dateTimeTrip.hour',
+            'bcData3[].dateTimeTrip.minute', 'bcData3[].dateTimeTrip.second']
     }],
     ['de.bmw.infotainment.vehicle.Vehicle2', '1', {
         statusCarSpeed2: ['rs', 'speedVehicleCentreOfGravity'],
@@ -119,7 +122,7 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout) {
     }
 
     function observe(attribute, [mode, ...paths], signal) {
-        const period = signal === 'statusCarSpeed2' ? 2000 : 10000;
+        const period = signal === 'statusCarSpeed2' ? 2000 : signal === 'statusHighVoltageBattery' ? 5000 : 10000;
         const readable = mode.includes('r');
         let notifications = 0;
         const receive = (value) => {

@@ -5,20 +5,40 @@ const instance = 'SystemFunctionsInternalTasuInst1';
 const batteryEcu = 0x07;
 const voltageDid = 0xe54d;
 const currentDid = 0xe561;
+const tasuErrors = [
+    'NO_ERROR', 'REQUEST_PENDING', 'TAS_CONNECTION_ERROR', 'TIMEOUT_ERROR', 'DEACTIVATED',
+    'INVALID_REQUEST', 'INVALID_LENGTH', 'APP_REQUEST_TEMPORARILY_NOT_ACCEPTED', 'INVALID_SESSION',
+    'EXCLUSIVE_MODE_REQUESTED', 'EXCLUSIVE_MODE_OCCUPIED', 'EXCLUSIVE_MODE_ACTIVE',
+    'EXCLUSIVE_MODE_PENDING', 'WRONG_IDENTIFIER'
+];
 
-function readValue(event, did) {
-    if (!event || (event.errorCode !== 'NO_ERROR' && event.errorCode !== 0)) return;
-    const bytes = event.udsResponse;
-    if (!Array.isArray(bytes) && !(bytes instanceof Uint8Array)) return;
-    const frame = Buffer.from(bytes);
-    // TASU prepends nine bytes to the ECU's UDS reply.
-    if (frame.length < 14 || frame[2] === 0x7f || frame[6] !== batteryEcu ||
-        frame[9] !== 0x62 || frame.readUInt16BE(10) !== did) return;
-    if (did === voltageDid) return frame.readUInt16BE(12) / 100;
-    if (did === currentDid && frame.length >= 16) return -frame.readInt16BE(14) / 100;
+function tasuCode(value) {
+    if (Number.isInteger(value) && value >= 0 && value < tasuErrors.length) return value;
+    return tasuErrors.indexOf(value);
 }
 
-function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 1500 } = {}) {
+function readReply(event, did) {
+    if (!event) return;
+    const code = tasuCode(event.errorCode);
+    if (code > 1) return { failure: 'tasu', code };
+    const value = event.udsResponse;
+    const bytes = value && value.data ? value.data : value;
+    if (!Array.isArray(bytes) && !(bytes instanceof Uint8Array) && !(bytes instanceof ArrayBuffer)) return;
+    const frame = Buffer.from(bytes);
+    // TASU prepends nine bytes to the ECU's UDS reply.
+    if (frame.length >= 5 && frame[2] === 0x7f) return { failure: 'tasu', code: frame[4] };
+    if (frame.length < 12 || frame[6] !== batteryEcu) return;
+    if (frame[9] === 0x7f && frame[10] === 0x22) {
+        return frame[11] === 0x78 ? { pending: true } : { failure: 'uds', code: frame[11] };
+    }
+    if (frame[9] !== 0x62 || frame.readUInt16BE(10) !== did) return;
+    const valueOffset = did === voltageDid ? 12 : 14;
+    if (frame.length < valueOffset + 2) return { failure: 'format' };
+    const raw = did === voltageDid ? frame.readUInt16BE(valueOffset) : -frame.readInt16BE(valueOffset);
+    return { value: raw / 100, at: Date.now() };
+}
+
+function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 4000 } = {}) {
     const signal = 'batteryPowerHv';
     let record = { signal, status: 'no-sample' };
     let current;
@@ -28,11 +48,19 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
         const data = Buffer.from([did >> 8, did & 0xff]);
         let timer;
         const response = new Promise((resolve) => {
-            job.cancel = () => resolve(null);
-            timer = setTimeout(job.cancel, replyMs);
+            const expire = () => resolve({ failure: 'timeout' });
+            job.cancel = expire;
+            timer = setTimeout(expire, replyMs);
+            let pending = false;
             job.onResponse = (event) => {
-                const value = readValue(event, did);
-                if (value !== undefined) resolve({ value, at: Date.now() });
+                const reply = readReply(event, did);
+                if (!reply) return;
+                if (!reply.pending) resolve(reply);
+                else if (!pending) {
+                    pending = true;
+                    clearTimeout(timer);
+                    timer = setTimeout(expire, 2 * replyMs);
+                }
             };
         });
         try {
@@ -41,15 +69,22 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                 udsDataLength: data.length, udsData: data, deadlockTime: 0
             });
             const verdict = result && typeof result === 'object' ? result.TasuErrorEnum : result;
-            if (verdict !== 'NO_ERROR' && verdict !== 'REQUEST_PENDING' && verdict !== 0 && verdict !== 1) return null;
+            const code = tasuCode(verdict);
+            // Some SDK wrappers resolve without a verdict. In that case the event supplies the result.
+            if (code > 1) return { failure: 'tasu', code };
+            if (verdict != null && code < 0) return { failure: 'request' };
             return await response;
         } catch (_) {
-            return null;
+            return { failure: 'request' };
         } finally {
             clearTimeout(timer);
             job.onResponse = null;
             job.cancel = null;
         }
+    }
+
+    function failedReading(stage, { failure, code }) {
+        record = { signal, status: 'error', phase: 'getter', fields: { stage, failure, code } };
     }
 
     function pause(job, ms) {
@@ -80,16 +115,21 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                 const start = Date.now();
                 const volts = await read(job, proxy, voltageDid);
                 if (job !== current) break;
-                if (volts) await pause(job, 25);
+                if (volts.failure) {
+                    failedReading('voltage', volts);
+                    await pause(job, retryMs);
+                    continue;
+                }
+                await pause(job, 25);
                 if (job !== current) break;
-                const amps = volts && await read(job, proxy, currentDid);
+                const amps = await read(job, proxy, currentDid);
                 if (job !== current) break;
-                const paired = amps && amps.at >= volts.at && amps.at - volts.at <= replyMs;
+                const paired = !amps.failure && amps.at >= volts.at && amps.at - volts.at <= 1000;
                 if (paired) {
                     record = { signal, status: 'sample', sampledAt: amps.at, freshForMs: 3 * periodMs,
                         fields: { kw: volts.value * amps.value / 1000, volts: volts.value, amps: amps.value } };
                 } else {
-                    record = { signal, status: 'error', phase: 'getter' };
+                    failedReading('current', amps.failure ? amps : { failure: 'late' });
                 }
                 const delay = paired ? Math.max(0, periodMs - (Date.now() - start)) : retryMs;
                 await pause(job, delay);

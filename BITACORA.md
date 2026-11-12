@@ -10,6 +10,20 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-12 · 0.2.8 · Trayecto en directo y widget del cuadro
+
+- **Estado térmico.** El usuario observó 33 °C junto a «Limitación por frío». En 0.2.7 ese texto correspondía al estado condicional del catálogo MGU21. Se corrigieron las etiquetas, se añadió la suscripción y se acortó la caducidad. La prueba presenta 33 °C a la vez que el estado 2 y retira la etiqueta cuando la muestra caduca.
+- **Trayecto.** Se sustituyeron los datos de ejemplo por lecturas del coche. El modelo compartido mantiene las unidades, los periodos y la validez de cada muestra. La vista comprobada incluye velocidad, batería, autonomía, distancia y media de los cuatro periodos, duración, altitud GPS, temperaturas y precalentamiento.
+- **Cuadro.** Se reprodujeron el tiempo, la batería y el consumo de Carlinkit en un widget seleccionable de iDrive 8. En Node.js 8.16.2, el cliente publicado de Cluster renderer 0.5.8 envió al servidor local simulado un fotograma RGBA inicial, la banda actualizada al cambiar la potencia y cerró el socket al ocultarse. Se revisaron las imágenes del widget y de Trayecto con datos simulados.
+- **Verificación.** Pasaron 37 pruebas locales, la validación del manifiesto con el catálogo MGU21 y el empaquetado de MGU Store. Queda comprobar el widget en el cuadro del i4, la lectura de potencia HV y los altavoces con la prueba de TDTWorld. [BMWLauncher 0.2.8](https://github.com/javimagro/carlauncher/releases/tag/v0.2.8)
+
+## 2026-11-12 · Prueba de la 0.2.7 en el i4
+
+- **TDTWorld.** El usuario sigue viendo pausas y reconexiones. Después aparece «Audio · salida bloqueada» y la imagen sigue parándose a intervalos. Ese aviso de la 0.2.7 podía indicar tanto que el PCM no avanzaba como que el auxiliar había dejado de responder. Se separaron ambas situaciones, se habilitó escritura no bloqueante tras configurar ALSA y se añadió la causa de reconexión cuando FFmpeg la proporciona.
+- **Emisión real.** Se comprobó con FFmpeg 9.0.2 que la selección anterior tomaba 1280 × 720 en La 2. El código de prueba lee la lista HLS y selecciona el programa de 640 × 360 con su pista de audio. La lista de RTVE declara aproximadamente 3,0 Mb/s y 1,16 Mb/s, respectivamente. En Windows, el reproductor con el proxy local entregó 400 fotogramas con un hueco máximo medido de 91 ms y 3.840.000 bytes PCM a un receptor de prueba. Queda medir fluidez y audio en la MGU. [Selección de programas de FFmpeg](https://raw.githubusercontent.com/FFmpeg/FFmpeg/n9.0.2/libavformat/hls.c)
+- **Potencia HV.** La 0.2.7 muestra «Error de lectura» si falta cualquiera de las dos respuestas. La sonda distingue tensión y corriente, ausencia de respuesta, fallo del método y rechazo TASU o UDS. Da más tiempo a una respuesta pendiente y admite una respuesta válida cuando el SDK no devuelve confirmación del método. Se verificó en pruebas la recepción sin confirmación y el diagnóstico de una negativa UDS de corriente. Falta identificar el motivo real de la lectura fallida en el i4.
+- **Verificación local.** Pasaron 35 pruebas. Se verificaron Node.js 8.16.2, el manifiesto contra el catálogo de la MGU y los paquetes OAP y de herramienta. Los cambios se incorporaron a la 0.2.8.
+
 ## 2026-11-12 · 0.2.7 · Potencia de batería HV
 
 - **Lectura.** Se reprodujo en el OAP el cálculo del perfil OBD de CarLauncher Android. El proxy TASU de la MGU lee al SME con `22 E5 4D` para tensión y `22 E5 61` para corriente. El manifiesto concede acceso al método de envío y al evento selectivo de respuesta. La aplicación solo emite esas dos peticiones de lectura.

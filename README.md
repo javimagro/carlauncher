@@ -4,11 +4,11 @@
 
 ## Pantalla principal de BMWLauncher
 
-El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de energía debajo. En la vista de diagnóstico, las lecturas del coche ocupan el área de proyección. El carrusel de DriveHub ocupa toda la altura del lado derecho. **Ahora** muestra la batería y la autonomía del cuadro cuando llegan muestras válidas. Trayecto muestra las temperaturas exterior y de batería y el estado de precalentamiento. Las previsiones de la ruta, las demás cifras de Trayecto y Radio son de demostración.
+El lado izquierdo reserva espacio para el mapa o Android Auto, con la franja de energía debajo. En la vista de diagnóstico, las lecturas del coche ocupan el área de proyección. El carrusel de DriveHub ocupa toda la altura del lado derecho. **Ahora** muestra la batería y la autonomía del cuadro. **Trayecto** muestra la velocidad, las distancias y los consumos medios por periodo, la duración del viaje, la altitud GPS, las temperaturas y el estado de carga rápida y precalentamiento. Las lecturas se actualizan mientras BMWLauncher está visible. Cuando falta una muestra válida se muestra un guion. Las previsiones de ruta y Radio son de demostración.
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.7**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive tras la actualización. [ZIP de la versión 0.2.7 para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.7)
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** a la versión de prueba **0.2.8**. La actualización conserva el acceso de BMWLauncher e instala el **Motor gráfico de BMWLauncher** de la misma versión con FFmpeg incluido. Para probar el mando, instala también **Captura del mando de BMWLauncher** desde esa fuente. Reinicia iDrive con el coche parado tras la actualización. [ZIP de la versión 0.2.8 para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.8)
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
 
@@ -19,6 +19,14 @@ Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas 
 Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Con la herramienta de captura instalada, inclina el mando a la izquierda y hacia arriba. Comprueba que BMWLauncher mantiene el foco y usa la casita para volver a iDrive. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
 
 Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticias consulta los RSS cada 15 minutos mientras la app está abierta. Si falla la conexión, muestran la última respuesta disponible y reintentan pasados dos minutos.
+
+### Probar el widget en el cuadro
+
+1. En MGU Store, añade la fuente `robertnisipeanu/idrive-apps` en **Releases** si aún no aparece e instala la herramienta **Cluster renderer** 0.5.8 o posterior. Si la instalas después de BMWLauncher, reinicia iDrive con el coche parado para que el motor gráfico detecte el cliente.
+2. Abre BMWLauncher y, en el selector de contenido del cuadro de iDrive, elige **Cluster renderer**. Comprueba que se mantienen visibles la velocidad y los demás indicadores de serie. Elige otra vista del cuadro para volver al contenido habitual.
+3. Con señal GPS y `mgu-uplink` conectado, el widget muestra el tiempo de la posición actual. Compara la temperatura HV y el consumo medio con **Trayecto**. La potencia aparece cuando el coche devuelve un par válido de tensión y corriente.
+
+La integración se ha probado localmente con el cliente 0.5.8 y un servidor simulado. Queda verificar en el i4 la selección del widget y el encuadre físico. [Documentación de Cluster renderer para iDrive 8](https://github.com/robertnisipeanu/idrive-apps/tree/cluster-render%400.5.8/native/cluster-render#idrive-8)
 
 ### Probar el mando con 0.2.4 desde USB
 

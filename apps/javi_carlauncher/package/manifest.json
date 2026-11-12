@@ -72,7 +72,7 @@
       "instances": ["1"],
       "attributes": {
         "statusChargeOfBatteryHybrid": "rs",
-        "statusBatteryTemperature": "r",
+        "statusBatteryTemperature": "rs",
         "displayPowerDrive": "s"
       }
     },
@@ -80,7 +80,7 @@
       "instances": ["1"],
       "attributes": {
         "statusPredictiveThermalManagement": "rs",
-        "statusHighVoltageBattery": "r"
+        "statusHighVoltageBattery": "rs"
       }
     },
     "de.bmw.infotainment.lsc.LSCDataSink": {
@@ -100,7 +100,7 @@
     "de.bmw.infotainment.navigation.positioning.Positioning": {
       "instances": ["Main_Instance"],
       "attributes": {
-        "rawPositionData": "r"
+        "rawPositionData": "rs"
       }
     },
     "de.bmw.infotainment.telematic.journeyhistory.BcPersonal": {
@@ -112,7 +112,7 @@
     "de.bmw.infotainment.resetlogic.ResetLogic3": {
       "instances": ["1"],
       "attributes": {
-        "bcDataAll": "r"
+        "bcDataAll": "rs"
       }
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {

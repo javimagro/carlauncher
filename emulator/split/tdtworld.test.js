@@ -170,11 +170,14 @@ test('video continues through audio backpressure and keeps its last frame while 
     const audioWrites = [];
     const states = [];
     const diagnostics = [];
+    const videoDiagnostics = [];
     let attachment;
     let sink;
     const player = createPlayer({ video(id, file) { attachment = file; } }, {
         directory,
         bufferSeconds: 0,
+        get: async () => Buffer.from('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nhi.m3u8\n'
+            + '#EXT-X-STREAM-INF:BANDWIDTH=1100000,RESOLUTION=640x360,AUDIO="aac"\nlo.m3u8\n'),
         audio: { command: 'sink', args: [], handshake: true },
         log: { warn() {} },
         spawnProcess(command, args) {
@@ -188,6 +191,8 @@ test('video continues through audio backpressure and keeps its last frame while 
                 child.stdin.write = (bytes) => { audioWrites.push(bytes); return false; };
             } else {
                 assert(args.includes('pipe:3'));
+                assert(args.includes('0:p:1:v:0'));
+                assert(args.includes('0:p:1:a:0'));
                 child.stdio = [null, child.stdout, child.stderr, new PassThrough()];
                 decoders.push(child);
             }
@@ -198,7 +203,7 @@ test('video continues through audio backpressure and keeps its last frame while 
     player.ready({ video: true });
     player.start(first.sources, (status, diagnostic) => {
         states.push(status);
-        if (diagnostic) diagnostics.push(diagnostic);
+        if (diagnostic) (status.startsWith('audio-') ? diagnostics : videoDiagnostics).push(diagnostic);
     });
     await new Promise((resolve) => setImmediate(resolve));
     const frame = Buffer.alloc(640 * 360 * 3 / 2);
@@ -218,10 +223,12 @@ test('video continues through audio backpressure and keeps its last frame while 
     sink.emit('close', 5);
     assert(states.includes('audio-format'));
     assert.deepEqual(diagnostics, ['format=-22']);
+    decoder.stderr.write('Server returned 503 Service Unavailable\n');
     decoder.emit('close', 1);
     assert.equal(states[states.length - 1], 'reconnecting');
     assert.deepEqual(player.frame(), { id: 1 });
     assert.equal(attachment, file);
+    assert.deepEqual(videoDiagnostics, ['HTTP 503']);
     for (let i = 0; i < 50 && decoders.length < 2; i++) await delay(40);
     assert.equal(decoders.length, 2);
     decoders[1].stdout.write(frame);

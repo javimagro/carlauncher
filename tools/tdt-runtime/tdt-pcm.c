@@ -23,6 +23,7 @@ int main(int argc, char **argv)
 
     int (*open_pcm)(snd_pcm_t **, const char *, int, int) = dlsym(alsa, "snd_pcm_open");
     int (*setup)(snd_pcm_t *, int, int, unsigned, unsigned, int, unsigned) = dlsym(alsa, "snd_pcm_set_params");
+    int (*nonblock)(snd_pcm_t *, int) = dlsym(alsa, "snd_pcm_nonblock");
     pcm_result (*write_pcm)(snd_pcm_t *, const void *, pcm_frames) = dlsym(alsa, "snd_pcm_writei");
     int (*recover)(snd_pcm_t *, int, int) = dlsym(alsa, "snd_pcm_recover");
     int (*close_pcm)(snd_pcm_t *) = dlsym(alsa, "snd_pcm_close");
@@ -40,6 +41,8 @@ int main(int argc, char **argv)
         close_pcm(pcm);
         return 5;
     }
+    // Keep writes interruptible once the output is configured.
+    if (nonblock) nonblock(pcm, 1);
     puts("ready");
     fflush(stdout);
 
@@ -74,7 +77,11 @@ int main(int argc, char **argv)
                     break;
                 }
             }
-            if (++retries >= 100) { status = 8; break; }
+            if (++retries >= 100) {
+                fprintf(stderr, "tdt-pcm: stall=%ld\n", count);
+                status = 8;
+                break;
+            }
             const struct timespec pause = { 0, 10000000 };
             nanosleep(&pause, NULL);
         }

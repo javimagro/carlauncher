@@ -65,6 +65,16 @@ if (telemetry === 'telemetry') {
             dataRangeDisplayElectric: 254, unitRangeDisplay: 'KILOMETER', fadeoutRangeDisplayElectric: 0
         },
         driveSegment: { bcBeTripDistanceKm: 310, bcBeDurationDrive: 2150, bcBeConsElectricVisible: 2700, bcBeSpeedAvgDrive: 2750 },
+        bcDataAll: {
+            'bcUnits.tachoDigital': 'KILOMETERS', 'bcUnits.averageConsumptionElectric': 'KWH',
+            'trip.counterDistance': 345, 'trip.consumptionElectricAverageDigit': 65753, 'trip.speedAverage': 425,
+            'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 1, 'trip.dateTimeTrip.minute': 7,
+            'trip.dateTimeTrip.second': 0, 'charge.counterDistance': 523, 'charge.consumptionElectricAverageDigit': 65763,
+            'individual.counterDistance': 4567, 'individual.consumptionElectricAverageDigit': 65741,
+            'factory.counterDistance': 450340, 'factory.consumptionElectricAverageDigit': 65718
+        },
+        rawPositionData: { 'position.heightValid': true, 'position.height.rawLengthMeter': 635 },
+        statusHighVoltageBattery: { thermalStatusHighVoltageBatteryForFastCharging: 2 },
         statusPredictiveThermalManagement: { preconditioningActive: true, statusVWM: 1 },
         isVideoStreaming: { value: false },
         statusCarSpeed2: { speedVehicleCentreOfGravity: 1280 }

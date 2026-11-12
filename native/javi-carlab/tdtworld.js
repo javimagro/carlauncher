@@ -267,6 +267,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         state.playback = 'idle';
         state.audioStatus = '';
         state.audioDiagnostic = '';
+        state.playbackDiagnostic = '';
         state.overlayUntil = 0;
         state.playerChoice = undefined;
     }
@@ -293,7 +294,10 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                     change();
                     return;
                 }
-                if (status !== 'frame') state.playback = status;
+                if (status !== 'frame') {
+                    state.playback = status;
+                    state.playbackDiagnostic = diagnostic || '';
+                }
                 if (status === 'playing') {
                     state.overlayUntil = now() + prefs.seconds * 1000;
                     if (prefs.last[prefs.country] !== item.id) {

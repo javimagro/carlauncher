@@ -1,7 +1,7 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "title": "Motor gráfico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
@@ -182,6 +182,26 @@
     {
       "path": "drivehub-view.js",
       "from": "drivehub-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vehicle-readings.js",
+      "from": "vehicle-readings.js",
+      "mode": "0644"
+    },
+    {
+      "path": "cockpit.js",
+      "from": "cockpit.js",
+      "mode": "0644"
+    },
+    {
+      "path": "cockpit-view.js",
+      "from": "cockpit-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "cockpit-weather.rgba.gz",
+      "from": "cockpit-weather.rgba.gz",
       "mode": "0644"
     },
     {
