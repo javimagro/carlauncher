@@ -255,15 +255,16 @@ test('the dashboard shows diagnostics and a live thermal status alongside clearl
     const state = { selected: 0, article: 0 };
     drawHome(canvas, state, 0, {
         city: 'Madrid', energy: [{ label: 'Ahora', soc: 64, range: 248 }], diagnostics: true,
+        cockpitStatus: 'Cluster renderer no responde',
         telemetry: [
             { signal: 'statusPredictiveThermalManagement', status: 'sample', fields: { preconditioningActive: true, statusVWM: 1 } },
             { signal: 'isVideoStreaming', status: 'sample', fields: { value: false } },
             { signal: 'statusChargeOfBatteryHybrid', status: 'error', phase: 'getter' }
         ]
     }, () => 1, 0);
-    for (const label of ['Activo', 'Sí  ·  1', 'Android Auto · vídeo', 'No',
+    for (const label of ['Sí  ·  1', 'Android Auto · vídeo', 'No', 'Cluster renderer no responde',
         'Error de lectura', 'TRAYECTO', 'Ruta de ejemplo']) assert(labels.includes(label), label);
-    for (const label of ['25,3 kWh/100 km', '50,9 km', '917 m']) assert(!labels.includes(label), label);
+    for (const label of ['25,3 kWh/100 km', '50,9 km', '917 m', 'Activo', 'Periodo']) assert(!labels.includes(label), label);
     assert(!labels.includes('64%'));
     assert(!labels.includes('248 km'));
 });
@@ -289,7 +290,7 @@ test('the dashboard converts validated readings and never substitutes demo value
     for (const label of ['91%', '91 %', '431 km', '16 °C', '19 °C', '17,0  ·  – kWh/100 km', '24%', 'Ruta de ejemplo']) {
         assert(labels.includes(label), label);
     }
-    assert.equal(labels.filter((label) => label === '431 km').length, 3);
+    assert.equal(labels.filter((label) => label === '431 km').length, 2);
     labels.length = 0;
     drawHome(canvas, state, 0, data, () => 1, 30000);
     for (const label of ['91%', '431 km', '16 °C', '19 °C', '64%', '248 km']) assert(!labels.includes(label), label);
@@ -351,10 +352,18 @@ test('the trip probe maps periods by reset option and presents scaled distances 
     drawHome(canvas, { selected: 0, article: 0 }, 0,
         { energy: [], diagnostics: true, telemetry: probe.snapshot() }, () => 1, Date.now());
     for (const label of ['34,5 km  ·  21,8 kWh/100 km', '52,3 km  ·  22,8 kWh/100 km',
-        '45034 km  ·  18,3 kWh/100 km', '34,5 km', '21,8 kWh/100 km', '42,5 km/h', '1 h 7 min', '–  ·  –']) {
+        '45034 km  ·  18,3 kWh/100 km', '34,5 km', '21,8 kWh/100 km', '18,3 kWh/100 km',
+        '43 km/h', '1 h 07 m', '7,5 kWh aprox.', '–  ·  –']) {
         assert(labels.includes(label), label);
     }
     assert(!labels.includes('90 km  ·  20,7 kWh/100 km'));
+    labels.length = 0;
+    drawHome(canvas, { selected: 0, article: 0 }, 0,
+        { energy: [], telemetry: probe.snapshot() }, () => 1, Date.now());
+    for (const label of ['Consumo medio', 'Consumo medio total', 'Distancia recorrida', 'Velocidad media',
+        'Energía consumida', 'Duración', 'Altura', 'Exterior', 'Batería HV']) assert(labels.includes(label), label);
+    for (const label of ['Inicio de viaje', 'Última carga', 'Individual', 'Desde fábrica',
+        'Velocidad', 'Batería', 'Autonomía', 'Carga rápida', 'Precalentamiento']) assert(!labels.includes(label), label);
 });
 
 test('the charging limit follows the fresh BMS status independently of battery temperature', () => {

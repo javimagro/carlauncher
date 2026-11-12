@@ -20,6 +20,7 @@ module.exports = function createSession(gpu, options) {
     let homeGesture;
     let lastFrame = 0;
     let lastArticle;
+    let cockpit;
     const player = options.tdtPlayback && createPlayer(gpu, options.tdtPlayback);
     const tdt = createTdt(Object.assign({}, options, { tdtPlayer: player }), () => { dirty = true; });
     const panel = createDriveHub(() => { dirty = true; }, Date.now, tdt);
@@ -34,6 +35,7 @@ module.exports = function createSession(gpu, options) {
     const data = provider.data;
     data.tdt = tdt;
     data.diagnostics = options.diagnostics;
+    data.altitudeHistory = { values: [] };
     panel.setArticleCount((data.news || []).length);
 
     function reportScreen() {
@@ -54,9 +56,10 @@ module.exports = function createSession(gpu, options) {
             provider.showPhoto(item && item.image);
         }
         cv.reset();
+        if (options.loadCockpit) data.cockpitStatus = cockpit ? cockpit.status(now) : 'Falta Cluster renderer';
         const readings = drawHome(cv, panel.state, panel.position(), data, art, now);
         gpu.frame(cv);
-        if (options.cockpit && onScreen) options.cockpit.update(readings, now);
+        if (cockpit && onScreen) cockpit.update(readings, now);
         lastFrame = now;
         dirty = false;
     }
@@ -95,7 +98,7 @@ module.exports = function createSession(gpu, options) {
         reportScreen();
         panel.resetInput();
         tdt.update(Date.now(), false);
-        if (options.cockpit) options.cockpit.close();
+        if (cockpit) cockpit.close();
     }
     gpu.on('closed', hidden);
     gpu.on('close', () => { area = undefined; hidden(); });
@@ -134,9 +137,10 @@ module.exports = function createSession(gpu, options) {
                 confirmedOnScreen = false;
                 homeGesture = undefined;
                 data.telemetry = null;
+                data.altitudeHistory = { values: [] };
                 tdt.update(Date.now(), false);
-                if (options.cockpit) options.cockpit.close();
-            }
+                if (cockpit) cockpit.close();
+            } else if (options.loadCockpit && !cockpit) cockpit = options.loadCockpit();
             panel.resetInput();
             reportScreen();
             present();

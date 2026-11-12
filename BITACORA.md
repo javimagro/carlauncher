@@ -10,6 +10,12 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Corrección y verificación.** Anota el cambio, el comando o prueba, el entorno y el resultado.
 - **Pendiente.** Indica la comprobación que falta y enlaza evidencia sin datos privados.
 
+## 2026-11-12 · 0.2.9 · Réplica de Trayecto y diagnóstico del cuadro
+
+- **Trayecto.** Tras probar la 0.2.8, el usuario indicó que sobraban lecturas en la tarjeta. Se recuperaron los seis indicadores, la gráfica de altura y las dos temperaturas del diseño Carlinkit con las lecturas del coche. La energía se etiqueta como aproximada y la gráfica se dibuja con muestras GPS válidas. Los campos adicionales siguen en Lecturas del coche.
+- **Cockpit.** Con BMWLauncher abierto, el usuario no encontró «Cluster renderer» en Contenido del cuadro. El motivo concreto sigue pendiente. Se añadió una fila de diagnóstico para distinguir una herramienta ausente, falta de respuesta, destino incompatible, capa rechazada o widget visible. Se documentó la selección desde el mando del volante.
+- **Verificación.** Pasaron 37 pruebas locales. Se revisó la captura de Trayecto, se comprobaron los mensajes de selección y visibilidad y se volvió a probar el protocolo con el cliente 0.5.8. Falta verificar el widget en el cuadro del i4. [BMWLauncher 0.2.9](https://github.com/javimagro/carlauncher/releases/tag/v0.2.9)
+
 ## 2026-11-12 · 0.2.8 · Trayecto en directo y widget del cuadro
 
 - **Estado térmico.** El usuario observó 33 °C junto a «Limitación por frío». En 0.2.7 ese texto correspondía al estado condicional del catálogo MGU21. Se corrigieron las etiquetas, se añadió la suscripción y se acortó la caducidad. La prueba presenta 33 °C a la vez que el estado 2 y retira la etiqueta cuando la muestra caduca.

@@ -65,12 +65,8 @@ function vehicleReadings(records, now) {
         altitude: position['position.heightValid'] === true ? position['position.height.rawLengthMeter'] : undefined,
         location: position['position.coordinatesValid'] === true && Number.isFinite(lat) && Math.abs(lat) <= 90 &&
             Number.isFinite(lon) && Math.abs(lon) <= 180 ? { latitude: lat, longitude: lon } : undefined,
-        preconditioning: field('statusPredictiveThermalManagement').preconditioningActive,
-        thermal: thermalStatus(field('statusHighVoltageBattery').thermalStatusHighVoltageBatteryForFastCharging),
         power: field('batteryPowerHv').kw,
         trip: journeyReading(journey, 'trip'),
-        charge: journeyReading(journey, 'charge'),
-        individual: journeyReading(journey, 'individual'),
         factory: journeyReading(journey, 'factory')
     };
 }

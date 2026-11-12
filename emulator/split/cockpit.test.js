@@ -8,8 +8,10 @@ const { width, height } = require('../../native/javi-carlab/cockpit-view.js');
 
 test('the cockpit publishes a selectable ID8 widget and updates telemetry and local weather by band', async () => {
     const calls = [];
+    let client;
     class Renderer extends EventEmitter {
         connect() {
+            client = this;
             this.ready = true;
             this.backend = 'id8';
             this.targets = 'map:874x749,widget:2240x896,popup:2240x896';
@@ -41,6 +43,13 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert.deepEqual(calls[0], { target: 'widget', klass: 'overlay', contend: false,
         x: 820, y: 185, w: 600, h: 500, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
     assert.deepEqual(calls[1], { rects: null, size: width * height * 4 });
+    assert.equal(cockpit.status(2000), 'Widget en espera');
+    client.emit('target', 'widget', 'parked');
+    assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');
+    client.emit('layer', 99, 'shown');
+    assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');
+    client.emit('layer', 1, 'shown');
+    assert.equal(cockpit.status(2000), 'Widget visible');
     cockpit.update({ ...readings, power: -5 }, 3000);
     assert.deepEqual(calls[2], { rects: [{ x: 0, y: 278, w: width, h: 122 }], size: width * 122 * 4 });
     assert.equal(requests.length, 0);

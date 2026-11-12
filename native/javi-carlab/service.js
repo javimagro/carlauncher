@@ -34,19 +34,20 @@ let exitFailed = false;
 
 function releaseController() { lease(false); }
 
-let cockpit;
-if (fs.existsSync(clusterClient)) {
+function loadCockpit() {
+    if (!fs.existsSync(clusterClient)) return undefined;
     try {
         const { ClusterRender } = require(clusterClient);
-        if (typeof ClusterRender === 'function') cockpit = createCockpit(ClusterRender, downloadAsApp);
+        if (typeof ClusterRender === 'function') return createCockpit(ClusterRender, downloadAsApp);
     } catch (_) { console.warn('BMWLauncher: cliente de cockpit no disponible'); }
+    return undefined;
 }
 
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
     diagnostics: true,
     useOap: true,
-    cockpit,
+    loadCockpit,
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
         if (!confirmed) releaseController();

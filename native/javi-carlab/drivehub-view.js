@@ -40,7 +40,8 @@ const diagnosticRows = [
         'energyDischargeHighVoltageStoragePresentDynamic', 'energyDischargeHighVoltageStorageMaximalDynamic'],
     ['Estado térmico para carga rápida', 'statusHighVoltageBattery', 'thermalStatusHighVoltageBatteryForFastCharging'],
     ['Android Auto · vídeo', 'isVideoStreaming', 'value'],
-    ['Velocidad del coche', 'statusCarSpeed2', 'speedVehicleCentreOfGravity']
+    ['Velocidad del coche', 'statusCarSpeed2', 'speedVehicleCentreOfGravity'],
+    ['Cockpit · Cluster renderer']
 ];
 const diagnosticEnums = {
     KILOMETER: 'km', MEILEN: 'mi',
@@ -146,7 +147,7 @@ function diagnosticError(record) {
     return 'Error de ' + (phases[record.phase] || 'lectura');
 }
 
-function diagnostics(cv, records, vehicle, now) {
+function diagnostics(cv, records, vehicle, now, cockpitStatus) {
     const margin = 23;
     const gap = 4;
     const firstRow = 69;
@@ -161,9 +162,11 @@ function diagnostics(cv, records, vehicle, now) {
         const record = records && records.get(signal);
         const fields = record && record.fields;
         const stale = record && record.status === 'sample' && staleSample(record, now);
-        let value = !records ? 'Esperando conexión…' : 'Sin muestra';
+        let value = !signal ? (cockpitStatus || 'No disponible') : !records ? 'Esperando conexión…' : 'Sin muestra';
         let color = secondary;
-        if (stale) {
+        if (!signal) {
+            color = primary;
+        } else if (stale) {
             value = 'Sin actualizar';
             color = amber;
         } else if (fields && record.status === 'sample') {
@@ -188,59 +191,72 @@ function tripDuration(seconds) {
     if (!Number.isFinite(seconds)) return '–';
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor(seconds % 3600 / 60);
-    if (hours) return hours + ' h ' + minutes + ' min';
-    return minutes + ' min ' + seconds % 60 + ' s';
+    return hours ? hours + ' h ' + String(minutes).padStart(2, '0') + ' m' : minutes + ' m';
 }
 
-function trip(cv, x, y, w, h, vehicle) {
-    const left = x + 23;
-    const rightEdge = x + w - 23;
-    const column = (rightEdge - left) / 4;
-    const divider = [105, 145, 170, 80];
-    const separator = (at) => cv.line(left, at, rightEdge, at, 1, divider);
-    function metrics(top, entries) {
-        entries.forEach(([label, value], index) => {
-            const center = left + (index + 0.5) * column;
-            cv.text(label, center, top, 14, secondary, centered);
-            fit(cv, value, center, top + 28, 20, column - 8, primary, centered);
-        });
+function sampleAltitude(history, altitude, now) {
+    if (!Number.isFinite(altitude)) {
+        history.values.length = 0;
+        history.lastAt = undefined;
+    } else if (history.lastAt === undefined || now - history.lastAt >= 60000) {
+        history.lastAt = now;
+        history.values.push(altitude);
+        if (history.values.length > 360) history.values.shift();
     }
-    metrics(y + 62, [
-        ['Velocidad', liveValue(vehicle.speed, 'km/h', 1)],
-        ['Vel. media', liveValue(vehicle.trip.speed, vehicle.trip.distanceUnit + '/h', 1)],
-        ['Batería', liveValue(vehicle.soc, '%', 1)],
-        ['Autonomía', liveValue(vehicle.range, 'km')]
-    ]);
+}
 
-    const distanceX = left + (rightEdge - left) * 0.58;
-    separator(y + 111);
-    cv.text('Periodo', left, y + 137, 14, secondary);
-    cv.text('Distancia', distanceX, y + 137, 14, secondary, right);
-    cv.text('Consumo medio', rightEdge, y + 137, 14, secondary, right);
-    const periods = [['Inicio de viaje', vehicle.trip], ['Última carga', vehicle.charge],
-        ['Individual', vehicle.individual], ['Desde fábrica', vehicle.factory]];
-    periods.forEach(([label, value], index) => {
-        const at = y + 171 + index * 38;
-        const color = index === 0 ? primary : secondary;
-        cv.text(label, left, at, 17, color);
-        cv.text(liveValue(value.distance, value.distanceUnit, 1), distanceX, at, 18, color, right);
-        cv.text(liveValue(value.average, value.averageUnit, 1), rightEdge, at, 18, color, right);
-        separator(at + 14);
+function trip(cv, x, y, w, h, vehicle, heights) {
+    const { trip: current, factory } = vehicle;
+    const compatible = (current.distanceUnit === 'km' && current.averageUnit === 'kWh/100 km') ||
+        (current.distanceUnit === 'mi' && current.averageUnit === 'kWh/100 mi');
+    const energy = compatible ? Math.max(0, current.average * current.distance / 100) : undefined;
+    const metrics = [
+        ['Consumo medio', liveValue(current.average, current.averageUnit, 1)],
+        ['Consumo medio total', liveValue(factory.average, factory.averageUnit, 1)],
+        ['Distancia recorrida', liveValue(current.distance, current.distanceUnit, 1)],
+        ['Velocidad media', liveValue(current.speed, current.distanceUnit + '/h')],
+        ['Energía consumida', Number.isFinite(energy) ? liveValue(energy, 'kWh', 1) + ' aprox.' : '–'],
+        ['Duración', tripDuration(current.duration)]
+    ];
+    const left = x + 29;
+    const col = (w - 65) / 2;
+    const box = (bx, by, bw, bh, fill) => {
+        cv.roundRect(bx, by, bw, bh, 9, fill);
+        cv.strokeRoundRect(bx, by, bw, bh, 9, 1, [117, 155, 178, 55]);
+    };
+    metrics.forEach(([label, value], index) => {
+        const bx = left + (index % 2) * (col + 5);
+        const by = y + 53 + Math.floor(index / 2) * 74;
+        box(bx, by, col, 69, index === 1 ? [18, 46, 61, 175] : [21, 38, 52, 130]);
+        cv.text(label, bx + col / 2, by + 24, 16, secondary, centered);
+        fit(cv, value, bx + col / 2, by + 55, 21, col - 12, primary, { align: 'center', font: 'bold' });
     });
 
-    metrics(y + 335, [
-        ['Duración', tripDuration(vehicle.trip.duration)],
-        ['Altitud GPS', liveValue(vehicle.altitude, 'm')],
-        ['Exterior', liveValue(vehicle.outside, '°C', 1)],
-        ['Batería HV', liveValue(vehicle.batteryTemperature, '°C')]
-    ]);
-    separator(y + h - 124);
-    cv.text('Carga rápida', left, y + h - 90, 15, secondary);
-    fit(cv, vehicle.thermal || '–', rightEdge, y + h - 90, 17, w - 155, primary, right);
-    cv.text('Precalentamiento', left, y + h - 51, 15, secondary);
-    const state = vehicle.preconditioning;
-    cv.text(typeof state === 'boolean' ? (state ? 'Activo' : 'Inactivo') : '–',
-        rightEdge, y + h - 51, 17, state ? amber : primary, right);
+    const graphBottom = y + h - 91;
+    box(left, y + 277, w - 60, h - 363, [21, 38, 52, 142]);
+    cv.text('Altura', x + w / 2, y + 299, 16, secondary, centered);
+    cv.text(liveValue(vehicle.altitude, 'm'), x + w - 39, y + 299, 21, primary, right);
+    if (heights.length > 1) {
+        const low = Math.min(...heights);
+        const high = Math.max(...heights);
+        const padding = Math.max(10, high - low) * 0.15;
+        const points = heights.map((value, i) => [left + 8 + i * (w - 76) / (heights.length - 1),
+            graphBottom - (value - low + padding) / (high - low + 2 * padding) * (graphBottom - y - 315)]);
+        cv.fillUnder(points, graphBottom, [61, 196, 232, 58]);
+        cv.polyline(points, 2, '#52d9f8');
+    }
+    for (const [index, label, value, max] of [[0, 'Exterior', vehicle.outside, 50], [1, 'Batería HV', vehicle.batteryTemperature, 70]]) {
+        const center = left + col * (index + 0.5) + index * 5;
+        const barY = y + h - 26;
+        cv.text(label, center, y + h - 60, 13, secondary, centered);
+        cv.text(liveValue(value, '°C'), center, y + h - 41, 17, primary, centered);
+        cv.rampRect(center - 69, barY, 138, 8, 4,
+            ['#64bfe7', '#64bfe7', '#3ad674', '#3ad674', '#ffce43', '#ff515d', '#ff515d']);
+        if (Number.isFinite(value)) {
+            const marker = center - 69 + 138 * Math.max(0, Math.min(1, value / max));
+            cv.line(marker, barY - 3, marker, barY + 11, 2, primary);
+        }
+    }
 }
 
 function radio(cv, x, y, w, h, art) {
@@ -578,7 +594,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     fit(cv, title, x + w / 2, y + 25, 19, w - 35, primary, { align: 'center', spacing: 2 });
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
-    if (card.id === 'trip') trip(cv, x, y, w, h, vehicle);
+    if (card.id === 'trip') trip(cv, x, y, w, h, vehicle, data.altitudeHistory ? data.altitudeHistory.values : []);
     if (card.id === 'radio') radio(cv, x, y, w, h, art);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
@@ -620,7 +636,8 @@ function drawHome(cv, state, scroll, data, art, now) {
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
     const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
     const vehicle = vehicleReadings(records, now);
-    if (data.diagnostics) diagnostics(cv, records, vehicle, now);
+    if (data.altitudeHistory) sampleAltitude(data.altitudeHistory, vehicle.altitude, now);
+    if (data.diagnostics) diagnostics(cv, records, vehicle, now, data.cockpitStatus);
     else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
     if (data.home) {
         const { x, y, w, h } = home;

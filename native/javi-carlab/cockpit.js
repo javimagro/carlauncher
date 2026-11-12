@@ -9,6 +9,14 @@ const refreshMs = 10 * 60 * 1000;
 const retryMs = 60 * 1000;
 const movementKm = 5;
 const bands = [[0, 192], [192, 86], [278, 122]];
+const layerStatus = {
+    shown: 'Widget visible',
+    waiting: 'Widget en espera',
+    suspended: 'Otra capa ocupa el cuadro',
+    stalled: 'Esperando imagen',
+    hidden: 'Widget oculto',
+    error: 'Cluster renderer rechazó la capa'
+};
 
 function distance(a, b) {
     const latitude = (a.latitude + b.latitude) * Math.PI / 360;
@@ -30,6 +38,9 @@ function createCockpit(Client, get, log = console) {
     let renderer;
     let layer;
     let frameKeys;
+    let supported = false;
+    let status;
+    let connectingSince;
     let weather;
     let requested;
     let retryAt = 0;
@@ -38,14 +49,40 @@ function createCockpit(Client, get, log = console) {
     const cv = new Recorder(width, height);
     const surface = new Canvas(width, height);
 
-    function open() {
+    function open(now) {
         const client = new Client('javi_bmwlauncher');
         renderer = client;
+        connectingSince = now;
         client.on('ready', () => {
-            if (renderer !== client || layer || client.backend !== 'id8' ||
-                !client.targets.split(',').includes('widget:2240x896')) return;
+            if (renderer !== client) return;
+            supported = client.backend === 'id8' && typeof client.targets === 'string' &&
+                client.targets.split(',').includes('widget:2240x896');
+            if (!supported) {
+                status = 'Widget incompatible con esta versión';
+                return;
+            }
+            status = layerStatus.waiting;
+            if (layer) return;
             layer = client.image({ target: 'widget', klass: 'overlay', contend: false,
                 x: 820, y: 185, w: 600, h: 500, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
+        });
+        client.on('layer', (ref, state) => {
+            if (renderer === client && ref === layer) status = layerStatus[state] || status;
+        });
+        client.on('target', (target, state) => {
+            if (renderer !== client || target !== 'widget') return;
+            if (state === 'parked') status = 'Selecciona Cluster renderer en el cuadro';
+            if (state === 'unavailable') status = 'El cuadro no admite el widget';
+        });
+        client.on('refused', (op, ref, reason) => {
+            if (renderer !== client || ref !== layer) return;
+            status = layerStatus.error;
+            log.warn('BMWLauncher: cluster-render: ' + op + ' · ' + reason);
+        });
+        client.on('disconnected', () => {
+            if (renderer !== client) return;
+            status = undefined;
+            connectingSince = Date.now();
         });
         client.on('error', (error) => {
             log.warn('BMWLauncher: cluster-render: ' + (error && error.code || 'protocolo'));
@@ -73,9 +110,13 @@ function createCockpit(Client, get, log = console) {
     }
 
     return {
+        status(now) {
+            if (status) return status;
+            return now - connectingSince >= 5000 ? 'Cluster renderer no responde' : 'Conectando al cuadro…';
+        },
         update(readings, now) {
-            if (!renderer) open();
-            if (!renderer.ready || !layer) return;
+            if (!renderer) open(now);
+            if (!renderer.ready || !supported || !layer) return;
             requestWeather(readings.location, now);
             const currentWeather = readings.location && weather &&
                 now - weather.request.at < 2 * refreshMs &&
@@ -101,6 +142,8 @@ function createCockpit(Client, get, log = console) {
             renderer = undefined;
             layer = undefined;
             frameKeys = undefined;
+            status = undefined;
+            connectingSince = undefined;
         }
     };
 }
