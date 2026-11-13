@@ -3,6 +3,8 @@
 const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
 const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
 const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require('./vehicle-readings.js');
+const { drawNavigation, drawToggle } = require('./navigation-view.js');
+const { drawRadio } = require('./radio-view.js');
 const background = '#080b0e';
 const primary = '#f2f7fb';
 const secondary = '#a9b8c7';
@@ -41,7 +43,9 @@ const diagnosticRows = [
     ['Estado térmico para carga rápida', 'statusHighVoltageBattery', 'thermalStatusHighVoltageBatteryForFastCharging'],
     ['Android Auto · vídeo', 'isVideoStreaming', 'value'],
     ['Velocidad del coche', 'statusCarSpeed2', 'speedVehicleCentreOfGravity'],
-    ['Cockpit · Cluster renderer']
+    ['Cockpit · Cluster renderer', null, 'cockpitStatus'],
+    ['Mando · captura exclusiva', null, 'controllerStatus'],
+    ['TDT · fotogramas / cola / pausas', null, 'playbackStats']
 ];
 const diagnosticEnums = {
     KILOMETER: 'km', MEILEN: 'mi',
@@ -147,7 +151,7 @@ function diagnosticError(record) {
     return 'Error de ' + (phases[record.phase] || 'lectura');
 }
 
-function diagnostics(cv, records, vehicle, now, cockpitStatus) {
+function diagnostics(cv, records, vehicle, now, system) {
     const margin = 23;
     const gap = 4;
     const firstRow = 69;
@@ -162,7 +166,11 @@ function diagnostics(cv, records, vehicle, now, cockpitStatus) {
         const record = records && records.get(signal);
         const fields = record && record.fields;
         const stale = record && record.status === 'sample' && staleSample(record, now);
-        let value = !signal ? (cockpitStatus || 'No disponible') : !records ? 'Esperando conexión…' : 'Sin muestra';
+        let value = !signal ? (system[keys[0]] || 'No disponible') : !records ? 'Esperando conexión…' : 'Sin muestra';
+        if (!signal && keys[0] === 'playbackStats') {
+            const stats = system.playbackStats;
+            value = stats ? stats.presented + ' / ' + stats.queued + ' / ' + stats.underruns + ' · máx. ' + stats.maxGapMs + ' ms' : 'Sin reproducción';
+        }
         let color = secondary;
         if (!signal) {
             color = primary;
@@ -177,13 +185,13 @@ function diagnostics(cv, records, vehicle, now, cockpitStatus) {
             color = amber;
         }
         cv.roundRect(x, y, column, rowHeight, 5, '#192734');
-        cv.text(label, x + 10, y + 12, 12, secondary);
+        cv.text(label, x + 10, y + 10, 10, secondary);
         if (fields && record.status === 'sample' && Number.isFinite(record.sampledAt)) {
             const seconds = Math.max(0, Math.floor((now - record.sampledAt) / 1000));
             const age = seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min';
-            cv.text(age, x + column - 10, y + 12, 12, secondary, right);
+            cv.text(age, x + column - 10, y + 10, 10, secondary, right);
         }
-        fit(cv, value, x + 10, y + rowHeight - 4, 16, column - 20, color);
+        fit(cv, value, x + 10, y + rowHeight - 2, 14, column - 20, color);
     });
 }
 
@@ -256,23 +264,6 @@ function trip(cv, x, y, w, h, vehicle, heights) {
             const marker = center - 69 + 138 * Math.max(0, Math.min(1, value / max));
             cv.line(marker, barY - 3, marker, barY + 11, 2, primary);
         }
-    }
-}
-
-function radio(cv, x, y, w, h, art) {
-    const left = x + 26;
-    cv.text('Onda Cero', left, y + 70, 22, amber);
-    cv.text('Por fin', left, y + 100, 16, primary);
-    cv.text('15:00', left, y + 127, 13, primary);
-    cv.text('19:00', x + w - 26, y + 127, 13, primary, right);
-    cv.roundRect(left + 45, y + 121, w - 144, 4, 2, '#1a2b3c');
-    cv.fillRect(left + 45, y + 119, 12, 8, turquoise);
-    cv.line(left, y + 142, x + w - 26, y + 142, 1, '#364957');
-    cv.image(art('radio'), x + (w - 120) / 2, y + 209, 120, 120, 10);
-    for (let i = 0; i < 56; i++) {
-        const amplitude = 4 + 26 * Math.abs(Math.sin(i * 1.77) * Math.cos(i * 0.24));
-        const at = x + 53 + i * (w - 106) / 55;
-        cv.line(at, y + h - 39 - amplitude, at, y + h - 39 + amplitude, 1.2, turquoise);
     }
 }
 
@@ -595,7 +586,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
     if (card.id === 'trip') trip(cv, x, y, w, h, vehicle, data.altitudeHistory ? data.altitudeHistory.values : []);
-    if (card.id === 'radio') radio(cv, x, y, w, h, art);
+    if (card.id === 'radio') drawRadio(cv, x, y, w, h, data.radio, now);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
             'El tiempo no está disponible', data.weatherDetail);
@@ -609,12 +600,13 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     cv.noclip();
 }
 
-function energy(cv, readings, art, vehicle) {
+function energy(cv, readings, art, vehicle, navigation) {
     const { x, y, w, h } = energyBar;
     cv.roundRect(x, y, w, h, 8, '#05080b');
     const column = (w - 100) / readings.length;
     readings.forEach(({ label, soc, range }, index) => {
         const left = x + index * column + 9;
+        if (navigation && index) { soc = undefined; range = undefined; }
         if (!index && vehicle) ({ soc, range } = vehicle);
         if (index) cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
         cv.text(label, left, y + 12, 10, secondary);
@@ -627,7 +619,7 @@ function energy(cv, readings, art, vehicle) {
         if (Number.isFinite(range)) cv.image(art('range'), left + 81, y + 17, 18, 18);
         cv.text(Number.isFinite(range) ? range + ' km' : '–', left + 102, y + 34, 18, primary, bold);
     });
-    cv.text(vehicle ? 'Ruta de ejemplo' : 'Demostración', x + w - 13, y + 24, 10, secondary, right);
+    cv.text(navigation ? 'Sin previsión' : vehicle ? 'Ruta de ejemplo' : 'Demostración', x + w - 13, y + 24, 10, secondary, right);
 }
 
 function drawHome(cv, state, scroll, data, art, now) {
@@ -637,8 +629,8 @@ function drawHome(cv, state, scroll, data, art, now) {
     const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
     const vehicle = vehicleReadings(records, now);
     if (data.altitudeHistory) sampleAltitude(data.altitudeHistory, vehicle.altitude, now);
-    if (data.diagnostics) diagnostics(cv, records, vehicle, now, data.cockpitStatus);
-    else cv.text('Mapa', map.x + map.w / 2, map.y + map.h / 2 + 7, 20, secondary, centered);
+    if (data.diagnostics) { diagnostics(cv, records, vehicle, now, data); drawToggle(cv); }
+    else drawNavigation(cv, data.navigation, vehicle, data.mapZoom, now, data.navigationUi);
     if (data.home) {
         const { x, y, w, h } = home;
         const color = data.home === 'ready' ? primary : secondary;
@@ -650,7 +642,7 @@ function drawHome(cv, state, scroll, data, art, now) {
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, vehicle));
-    energy(cv, data.energy, art, data.diagnostics || records ? vehicle : undefined);
+    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, !!data.navigationUi);
     return vehicle;
 }
 

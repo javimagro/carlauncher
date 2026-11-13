@@ -35,7 +35,7 @@ function download(url, limit, lookup, redirects = 3) {
         }
         const request = https.get({
             hostname: address.hostname, path: address.pathname + address.search, lookup,
-            headers: { 'User-Agent': 'BMWLauncher/0.2', 'Accept-Encoding': 'identity' }
+            headers: { 'User-Agent': 'BMWLauncher/0.2 (+https://github.com/javimagro/carlauncher)', 'Accept-Encoding': 'identity' }
         }, (res) => {
             if (redirects && [301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
                 res.resume();

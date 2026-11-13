@@ -1,8 +1,8 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.9",
-  "title": "Motor gráfico de BMWLauncher",
+  "version": "0.2.10",
+  "title": "Motor gr\u00c3\u00a1fico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
     "ID8"
@@ -257,6 +257,76 @@
     {
       "path": "vendor/LICENSE-sax.md",
       "from": "vendor/LICENSE-sax.md",
+      "mode": "0644"
+    },
+    {
+      "path": "photo-loader.js",
+      "from": "photo-loader.js",
+      "mode": "0644"
+    },
+    {
+      "path": "photo-worker.js",
+      "from": "photo-worker.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-audio.js",
+      "from": "tdt-audio.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-process.js",
+      "from": "tdt-process.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-worker.js",
+      "from": "tdt-worker.js",
+      "mode": "0644"
+    },
+    {
+      "path": "installation.js",
+      "from": "installation.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-model.js",
+      "from": "navigation-model.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-view.js",
+      "from": "navigation-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-map.js",
+      "from": "navigation-map.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-ui.js",
+      "from": "navigation-ui.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-panels.js",
+      "from": "navigation-panels.js",
+      "mode": "0644"
+    },
+    {
+      "path": "radio-model.js",
+      "from": "radio-model.js",
+      "mode": "0644"
+    },
+    {
+      "path": "radio-ui.js",
+      "from": "radio-ui.js",
+      "mode": "0644"
+    },
+    {
+      "path": "radio-view.js",
+      "from": "radio-view.js",
       "mode": "0644"
     }
   ],

@@ -10,18 +10,44 @@ const green = '#7bd88f';
 const yellow = '#f2cf6c';
 const orange = '#ffa45b';
 const red = '#ff6b73';
+const preconditioningIconWidth = 41;
 const centered = { align: 'center' };
 const bold = { align: 'center', font: 'bold' };
 const text = (value, decimals = 0) => Number.isFinite(value)
     ? value.toFixed(decimals).replace('.', ',') : '–';
 
-function battery(cv, value) {
+function preconditioningIcon(cv, x, y) {
+    const bodyWidth = preconditioningIconWidth - 4;
+    cv.strokeRoundRect(x, y, bodyWidth, 24, 3, 2, blue);
+    cv.fillRect(x + bodyWidth, y + 8, 4, 8, blue);
+    const cx = x + 18;
+    const cy = y + 12;
+    const blade = [[-0.5, -2], [-3.7, -5.1], [-2.9, -8.1], [2.2, -7.2]];
+    for (let i = 0; i < 3; i++) {
+        const angle = i * 2 * Math.PI / 3;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        cv.quad(blade.map(([dx, dy]) => [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]), blue);
+    }
+    cv.circle(cx, cy, 2.1, blue);
+}
+
+function battery(cv, value, preconditioning) {
     const known = Number.isFinite(value);
     const tint = !known ? '#8da3b5' : value < 10 || value > 50 ? red :
         value < 25 || (value > 40 && value <= 45) ? yellow : value > 45 ? orange : green;
-    cv.text(text(value) + ' °C', center, 234, 42, tint, bold);
-    cv.strokeRoundRect(center + 76, 205, 20, 27, 3, 2, foreground);
-    cv.fillRect(center + 82, 201, 8, 4, foreground);
+    const label = text(value) + ' °C';
+    const labelWidth = cv.textWidth(label, 42, bold);
+    const iconGap = 12;
+    const batteryWidth = 20;
+    const preconditioningSpace = preconditioning === true ? preconditioningIconWidth + iconGap : 0;
+    const rowWidth = preconditioningSpace + batteryWidth + iconGap + labelWidth;
+    const left = center - rowWidth / 2;
+    const batteryX = left + preconditioningSpace;
+    if (preconditioning === true) preconditioningIcon(cv, left, 206);
+    cv.strokeRoundRect(batteryX, 205, batteryWidth, 27, 3, 2, foreground);
+    cv.fillRect(batteryX + 6, 201, 8, 4, foreground);
+    cv.text(label, batteryX + batteryWidth + iconGap + labelWidth / 2, 234, 42, tint, bold);
 
     const stops = [[0, red], [10, yellow], [25, green], [40, green], [45, yellow], [50, orange], [70, red]];
     const point = (t) => [65 + 350 * t, 261 - 31 * Math.pow(t, 7)];
@@ -69,7 +95,7 @@ function drawCockpit(cv, readings, weather, art) {
         cv.text('Tiempo de la ubicación actual', center, 34, 19, foreground, centered);
         cv.text('– °C', center, 130, 49, '#8da3b5', centered);
     }
-    battery(cv, readings.batteryTemperature);
+    battery(cv, readings.batteryTemperature, readings.preconditioning);
     const power = Math.abs(readings.power) < 0.05 ? 0 : readings.power;
     const powerColor = !Number.isFinite(power) ? foreground : power < 0 ? '#70c5f1' :
         power >= 80 ? '#e65059' : power >= 30 ? yellow : green;

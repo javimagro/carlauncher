@@ -34,7 +34,7 @@ const dailyChart = { x: 36, y: 281, w: wide - 57, h: viewport.h - 315 };
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const contains = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
 
-function createDriveHub(invalidate, now = Date.now, tdt) {
+function createDriveHub(invalidate, now = Date.now, tdt, radio) {
     const state = { selected: 0, weatherPage: 'summary', weatherDay: 0, article: 0 };
     let targetPage = 0;
     let scroll = 0;
@@ -121,6 +121,8 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
             select(start.index, start.page);
             if (tdt && cards[start.index].id === 'tdtworld') {
                 tdt.touch(x - viewport.x, y - viewport.y, viewport.w, viewport.h, Math.sign(dy));
+            } else if (radio && cards[start.index].id === 'radio') {
+                radio.touch(x - viewport.x - cards[start.index].x + position(), y - viewport.y, cards[start.index].w, viewport.h, Math.sign(dy));
             } else interact(start.index, Math.sign(dy));
         } else if (Math.max(Math.abs(dx), Math.abs(dy)) < 15 && contains(viewport, x, y) && start.index >= 0) {
             const localX = x - viewport.x - cards[start.index].x + position();
@@ -130,6 +132,7 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
             }
             select(start.index, start.page);
             if (tdt && cards[start.index].id === 'tdtworld') tdt.touch(localX, y - viewport.y, viewport.w, viewport.h);
+            if (radio && cards[start.index].id === 'radio') radio.touch(localX, y - viewport.y, cards[start.index].w, viewport.h);
         } else {
             select(state.selected, start.page);
         }
@@ -164,12 +167,17 @@ function createDriveHub(invalidate, now = Date.now, tdt) {
             const delta = (event.knob - knob + knobRange + halfKnobRange) % knobRange - halfKnobRange;
             if (delta && Math.abs(delta) <= 64) {
                 if (tdt && cards[state.selected].id === 'tdtworld') tdt.rotate(delta);
+                else if (radio && cards[state.selected].id === 'radio') radio.rotate(delta);
                 else moveCard(delta);
             }
             knob = event.knob;
             const deflected = direction && direction !== tilt;
             if (deflected && (direction === 'left' || direction === 'right')) {
-                moveCard(direction === 'left' ? -1 : 1);
+                if (!(radio && cards[state.selected].id === 'radio' && radio.tilt(direction))) moveCard(direction === 'left' ? -1 : 1);
+            } else if (radio && cards[state.selected].id === 'radio') {
+                if (event.press === 2 && pressed !== 2) radio.press(true);
+                if (!down && pressed === 1) radio.press(false);
+                if (deflected) radio.tilt(direction);
             } else if (tdt && cards[state.selected].id === 'tdtworld') {
                 if (event.press === 2 && pressed !== 2) tdt.press(true);
                 if (!down && pressed === 1) tdt.press(false);

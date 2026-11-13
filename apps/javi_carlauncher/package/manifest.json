@@ -65,11 +65,17 @@
     "de.bmw.infotainment.hmi.resourcemanagement2.StringBundle2": "*",
     "de.bmw.infotainment.hmi.usecasemanagement.UseCaseContext": "*",
     "de.bmw.infotainment.controlelements.FrontCCU": {
-      "instances": ["1"],
-      "attributes": { "statusRotaryEncoderState": "rs" }
+      "instances": [
+        "1"
+      ],
+      "attributes": {
+        "statusRotaryEncoderState": "rs"
+      }
     },
     "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "statusChargeOfBatteryHybrid": "rs",
         "statusBatteryTemperature": "rs",
@@ -77,64 +83,88 @@
       }
     },
     "de.bmw.infotainment.drivingexcitement.PredictiveThermalManagement": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "statusPredictiveThermalManagement": "rs",
         "statusHighVoltageBattery": "rs"
       }
     },
     "de.bmw.infotainment.lsc.LSCDataSink": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "displayConditionHybrid": "s",
         "dataRangeDisplay": "s"
       }
     },
     "de.bmw.infotainment.KombiIF": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "displayRangeElectricVehicle": "rs",
         "statusConsumptionAverageElectricVehicle": "r"
       }
     },
     "de.bmw.infotainment.navigation.positioning.Positioning": {
-      "instances": ["Main_Instance"],
+      "instances": [
+        "Main_Instance"
+      ],
       "attributes": {
         "rawPositionData": "rs"
       }
     },
     "de.bmw.infotainment.telematic.journeyhistory.BcPersonal": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "driveSegment": "r"
       }
     },
     "de.bmw.infotainment.resetlogic.ResetLogic3": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "bcDataAll": "rs"
       }
     },
     "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
-      "instances": ["SystemFunctionsInternalTasuInst1"],
-      "methods": ["sendTasuRequest"],
-      "broadcasts": ["sendTasuResponse"]
+      "instances": [
+        "SystemFunctionsInternalTasuInst1"
+      ],
+      "methods": [
+        "sendTasuRequest"
+      ],
+      "broadcasts": [
+        "sendTasuResponse"
+      ]
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "statusCarSpeed2": "rs",
         "highVoltageStorageInfoToExternal": "s"
       }
     },
     "de.bmw.infrastructure.EnvironmentalInformation": {
-      "instances": ["1"],
+      "instances": [
+        "1"
+      ],
       "attributes": {
         "ExteriorTemperature": "s"
       }
     },
     "de.bmw.infotainment.sdi.aap.androidautoprojectedmanager.AndroidAutoProjectedManager": {
-      "instances": ["AndroidAutoProjectedManagerInst1"],
+      "instances": [
+        "AndroidAutoProjectedManagerInst1"
+      ],
       "attributes": {
         "isVideoStreaming": "rs"
       }
@@ -145,6 +175,145 @@
       ],
       "methods": [
         "genericMethod"
+      ]
+    },
+    "de.bmw.infotainment.navigation.guiding.Guidance": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "attributes": {
+        "guidanceState": "rs",
+        "currentRoute": "rs",
+        "allDestinationsInfo": "rs",
+        "conclusiveDart": "rs",
+        "currentRoad": "rs"
+      },
+      "methods": [
+        "startGuidance",
+        "stopGuidance"
+      ]
+    },
+    "de.bmw.infotainment.navigation.routing.Routing": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "methods": [
+        "exportActiveRoute",
+        "createRoutingSession",
+        "deleteSession",
+        "calculateRoute",
+        "getTripDefinition",
+        "requestRouteInfoUpdate",
+        "stopRouteInfoUpdate"
+      ],
+      "broadcasts": [
+        "routeExported",
+        "routeInfoUpdate"
+      ],
+      "attributes": {
+        "userCommonOptions": "r",
+        "routeSummary": "r"
+      }
+    },
+    "de.bmw.infotainment.navigation.routing2.Routing2": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "attributes": {
+        "currentTrips": "rs",
+        "eRoutesOn": "rs"
+      }
+    },
+    "de.bmw.infotainment.navigation.mapsettings.MapSettings": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "attributes": {
+        "dayNightMode": "rs"
+      }
+    },
+    "de.bmw.infotainment.navigation.freetextsearch.FreeTextSearch": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "methods": [
+        "createSession",
+        "deleteSession",
+        "setCCPLocation",
+        "startSearch",
+        "cancelSearch",
+        "getValidatedLocation",
+        "createViewByIndex",
+        "destroyView"
+      ],
+      "broadcasts": [
+        "resultList",
+        "searchStatus"
+      ]
+    },
+    "de.bmw.infotainment.navigation.poisearch.POISearch": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "methods": [
+        "createPOISearchSession",
+        "deletePOISearchSession",
+        "setCCPLocation",
+        "setCategories",
+        "setSearchConfiguration",
+        "startPOISearch",
+        "cancelPOISearch",
+        "getPOIDetail",
+        "createViewByIndex",
+        "destroyView"
+      ],
+      "broadcasts": [
+        "resultList",
+        "searchStatus"
+      ]
+    },
+    "de.bmw.infotainment.navigation.poicategorytree.POICategoryTree": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "attributes": {
+        "specialCategoryList": "r"
+      }
+    },
+    "de.bmw.infotainment.vehicle.Vehicle": {
+      "instances": [
+        "1"
+      ],
+      "attributes": {
+        "statusDayNightChangeOver": "rs"
+      }
+    },
+    "de.bmw.infotainment.tuner.fmamdab.tunerfmamdab.TunerFmAmDab": {
+      "instances": [
+        "1"
+      ],
+      "attributes": {
+        "currentStationFmDab": "rs",
+        "epgReferenceTime": "rs"
+      },
+      "methods": [
+        "getStationListMetaData",
+        "selectStation"
+      ],
+      "broadcasts": [
+        "dataStationList"
+      ]
+    },
+    "de.bmw.infotainment.entertainment.mediasource.MediaSource": {
+      "instances": [
+        "1"
+      ],
+      "attributes": {
+        "sources": "rs",
+        "activeSourceId": "rs"
+      },
+      "methods": [
+        "selectSource"
       ]
     }
   },

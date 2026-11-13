@@ -5,9 +5,11 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createCockpit } = require('../../native/javi-carlab/cockpit.js');
 const { width, height } = require('../../native/javi-carlab/cockpit-view.js');
+const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
 
 test('the cockpit publishes a selectable ID8 widget and updates telemetry and local weather by band', async () => {
     const calls = [];
+    const frames = [];
     let client;
     class Renderer extends EventEmitter {
         connect() {
@@ -21,6 +23,7 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
         pixels(ref, rects, data) {
             assert.equal(ref, 1);
             calls.push({ rects, size: data.length });
+            frames.push(Buffer.from(data));
             return true;
         }
         close() { calls.push('closed'); }
@@ -66,6 +69,17 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert.deepEqual(calls[4], weatherBand);
     await new Promise(setImmediate);
     assert.equal(requests.length, 1);
+    const preconditioning = new Map([['statusPredictiveThermalManagement', {
+        status: 'sample', fields: { preconditioningActive: true }, sampledAt: 7000, freshForMs: 30000
+    }]]);
+    const batteryBand = { rects: [{ x: 0, y: 192, w: width, h: 86 }], size: width * 86 * 4 };
+    const batteryWithoutIcon = frames[0].subarray(192 * width * 4, 278 * width * 4);
+    cockpit.update({ ...moving, location: undefined, preconditioning: vehicleReadings(preconditioning, 7000).preconditioning }, 7000);
+    assert.deepEqual(calls[5], batteryBand);
+    assert(!frames[4].equals(batteryWithoutIcon), 'a fresh active sample draws the icon');
+    cockpit.update({ ...moving, location: undefined, preconditioning: vehicleReadings(preconditioning, 37000).preconditioning }, 37000);
+    assert.deepEqual(calls[6], batteryBand);
+    assert(frames[5].equals(batteryWithoutIcon), 'the icon disappears when the sample expires');
     cockpit.close();
-    assert.equal(calls[5], 'closed');
+    assert.equal(calls[7], 'closed');
 });

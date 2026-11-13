@@ -61,6 +61,7 @@ function vehicleReadings(records, now) {
         range: valid(range, 4094) ? range : undefined,
         outside: valid(outside, 254) ? outside / 2 - 40 : undefined,
         batteryTemperature: valid(batteryTemperature, 254) ? batteryTemperature - 50 : undefined,
+        preconditioning: field('statusPredictiveThermalManagement').preconditioningActive === true,
         speed: valid(speed, 0xfffe) ? speed / 64 : undefined,
         altitude: position['position.heightValid'] === true ? position['position.height.rawLengthMeter'] : undefined,
         location: position['position.coordinatesValid'] === true && Number.isFinite(lat) && Math.abs(lat) <= 90 &&

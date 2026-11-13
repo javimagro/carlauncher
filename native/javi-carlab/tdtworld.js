@@ -49,7 +49,7 @@ function save(file, value) {
     }
 }
 
-function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Date.now }, change) {
+function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Date.now, photo = loadPhoto }, change) {
     const file = (name) => tdtDirectory && path.join(tdtDirectory, 'tdt-' + name);
     const store = loadJson(file('settings.json'), {});
     const prefs = {
@@ -217,11 +217,11 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             .find((item) => item.logo && item.logo.startsWith('https://') && !logos.has(item.logo));
         if (!channel) return;
         pendingLogo = true;
-        loadPhoto(channel.logo, get, 31, 31, true).then((image) => {
+        photo(channel.logo, get, 31, 31, true, () => !closed && active && state.mode === 'browse').then((image) => {
             if (closed) { dropImage(image); return; }
             logos.set(channel.logo, image);
             change();
-        }, () => { if (!closed) logos.set(channel.logo, null); }).then(() => {
+        }, (error) => { if (!closed && error.code !== 'IMAGE_CANCELLED') logos.set(channel.logo, null); }).then(() => {
             pendingLogo = false;
             if (logos.size > 40) {
                 const first = logos.keys().next().value;
@@ -249,7 +249,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             for (const url of urls) {
                 if (job !== pendingArt) return;
                 try {
-                    const image = await loadPhoto(url, get);
+                    const image = await photo(url, get, 528, 297, false, () => !closed && job === pendingArt && state.mode !== 'player');
                     if (job !== pendingArt) { dropImage(image); return; }
                     state.art = image;
                     change();
@@ -278,6 +278,9 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         stop();
         const request = tuning;
         state.mode = 'player';
+        clearTimeout(artTimer);
+        pendingArt = undefined;
+        artUrl = undefined;
         state.playback = 'loading';
         state.overlayUntil = Infinity;
         change();
@@ -417,7 +420,8 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         if (index === 5) setMode('browse');
     }
 
-    readCountry();
+    let countryLoaded = false;
+    if (fixture) { readCountry(); countryLoaded = true; }
     return {
         state, selected, programs, program,
         logo: (item) => logos.get(item.logo),
@@ -459,13 +463,14 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             }
             active = focused;
             if (!active) return;
+            if (!countryLoaded) { readCountry(); countryLoaded = true; }
             refresh(time);
             if (startup && (state.channels.length || state.status === 'offline')) {
                 startup = false;
                 const last = prefs.last[prefs.country];
                 if (prefs.resume && last && selected() && last === selected().id && state.mode === 'browse') play();
             }
-            showArt(time);
+            if (state.mode !== 'player') showArt(time);
             loadLogo();
         },
         rotate(delta) {

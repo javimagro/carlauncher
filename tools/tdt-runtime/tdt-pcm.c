@@ -24,6 +24,7 @@ int main(int argc, char **argv)
     int (*open_pcm)(snd_pcm_t **, const char *, int, int) = dlsym(alsa, "snd_pcm_open");
     int (*setup)(snd_pcm_t *, int, int, unsigned, unsigned, int, unsigned) = dlsym(alsa, "snd_pcm_set_params");
     int (*nonblock)(snd_pcm_t *, int) = dlsym(alsa, "snd_pcm_nonblock");
+    int (*state_pcm)(snd_pcm_t *) = dlsym(alsa, "snd_pcm_state");
     pcm_result (*write_pcm)(snd_pcm_t *, const void *, pcm_frames) = dlsym(alsa, "snd_pcm_writei");
     int (*recover)(snd_pcm_t *, int, int) = dlsym(alsa, "snd_pcm_recover");
     int (*close_pcm)(snd_pcm_t *) = dlsym(alsa, "snd_pcm_close");
@@ -42,7 +43,14 @@ int main(int argc, char **argv)
         return 5;
     }
     // Keep writes interruptible once the output is configured.
-    if (nonblock) nonblock(pcm, 1);
+    if (nonblock) {
+        error = nonblock(pcm, 1);
+        if (error < 0) {
+            fprintf(stderr, "tdt-pcm: nonblock=%d\n", error);
+            close_pcm(pcm);
+            return 5;
+        }
+    }
     puts("ready");
     fflush(stdout);
 
@@ -72,12 +80,14 @@ int main(int argc, char **argv)
             if (count && count != -EAGAIN) {
                 error = recover(pcm, (int)count, 1);
                 if (error < 0) {
+                    if (state_pcm) fprintf(stderr, "tdt-pcm: state=%d\n", state_pcm(pcm));
                     fprintf(stderr, "tdt-pcm: write=%ld\ntdt-pcm: recover=%d\n", count, error);
                     status = 7;
                     break;
                 }
             }
             if (++retries >= 100) {
+                if (state_pcm) fprintf(stderr, "tdt-pcm: state=%d\n", state_pcm(pcm));
                 fprintf(stderr, "tdt-pcm: stall=%ld\n", count);
                 status = 8;
                 break;

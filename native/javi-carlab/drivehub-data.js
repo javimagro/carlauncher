@@ -6,8 +6,6 @@ const zlib = require('zlib');
 const { URL } = require('url');
 const download = require('./drivehub-network.js');
 const sax = require('./vendor/sax.js');
-const decodeJpeg = require('./vendor/jpeg-decoder.js');
-const png = require('./vendor/kit_png.js');
 const { makeImage, dropImage } = require('./vendor/kit_record.js');
 
 const defaultLocation = { name: 'Madrid', latitude: 40.4168, longitude: -3.7038 };
@@ -177,35 +175,14 @@ function loadArtwork(file = 'drivehub-art.rgba.gz') {
     };
 }
 
-async function loadPhoto(url, get, w = 528, h = 297, contain = false) {
+async function loadPhoto(url, get, w = 528, h = 297, contain = false, current = () => true) {
     const address = new URL(url);
     if (address.hostname === 'imagenes.elpais.com' && address.pathname.startsWith('/resizer/v2/')) {
         address.searchParams.set('width', '640');
     }
     const bytes = await get(address.href, 3 * 1024 * 1024);
-    let image;
-    if (bytes.toString('hex', 0, 8) === '89504e470d0a1a0a') {
-        image = await new Promise((resolve, reject) =>
-            png.decodeAsync(bytes, (err, value) => err ? reject(err) : resolve(value)));
-    } else {
-        const jpg = decodeJpeg(bytes, { maxResolutionInMP: 10, maxMemoryUsageInMB: 48 });
-        image = { w: jpg.width, h: jpg.height, data: jpg.data };
-    }
-    const scale = contain ? Math.min(w / image.w, h / image.h) : Math.max(w / image.w, h / image.h);
-    const left = (image.w - w / scale) / 2;
-    const top = (image.h - h / scale) / 2;
-    const pixels = Buffer.alloc(w * h * 4);
-    for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-            const sourceX = Math.floor(left + (x + 0.5) / scale);
-            const sourceY = Math.floor(top + (y + 0.5) / scale);
-            if (sourceX < 0 || sourceY < 0 || sourceX >= image.w || sourceY >= image.h) continue;
-            const source = (sourceY * image.w + sourceX) * 4;
-            const target = (y * w + x) * 4;
-            for (let channel = 0; channel < 4; channel++) pixels[target + channel] = image.data[source + channel];
-        }
-    }
-    return makeImage(w, h, pixels);
+    if (!current()) throw Object.assign(new Error('IMAGE_CANCELLED'), { code: 'IMAGE_CANCELLED' });
+    return makeImage(w, h, await require('./photo-worker.js')(bytes, w, h, contain));
 }
 
 function readJson(file) {
@@ -225,7 +202,7 @@ function networkDetail(code) {
     return 'Fuente temporalmente no disponible';
 }
 
-function createData({ cacheFile, configFile, fixture, get = download }, changed) {
+function createData({ cacheFile, configFile, fixture, get = download, photo = loadPhoto }, changed) {
     const config = readJson(configFile);
     const location = config && config.location;
     const valid = location && typeof location.name === 'string' && location.name.trim()
@@ -297,7 +274,7 @@ function createData({ cacheFile, configFile, fixture, get = download }, changed)
             const request = ++photoRequest;
             if (data.photo) { dropImage(data.photo); data.photo = null; }
             if (!url) return;
-            loadPhoto(url, get).then((image) => {
+            photo(url, get, 528, 297, false, () => !closed && request === photoRequest).then((image) => {
                 if (closed || request !== photoRequest) { dropImage(image); return; }
                 data.photo = image;
                 changed('photo');

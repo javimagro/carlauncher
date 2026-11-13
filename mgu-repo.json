@@ -10,7 +10,8 @@
         "ID8"
       ],
       "requires": {
-        "javi-carlab": "0.2.9"
+        "javi-carlab": "0.2.10",
+        "javi-ccu-gate": "1.0.0"
       }
     },
     {
@@ -25,10 +26,14 @@
       "version": "1.0.0",
       "title": "Captura del mando de BMWLauncher",
       "description": "Entrega el mando a BMWLauncher mientras está visible en iDrive 8.",
-      "mguHmi": ["ID8"],
+      "mguHmi": [
+        "ID8"
+      ],
       "optional": true,
       "uninstallable": true,
-      "requires": { "javi-carlab": "0.2.4" },
+      "requires": {
+        "javi-carlab": "0.2.4"
+      },
       "preload": {
         "library": "javi-ccu-gate.so",
         "unit": "hmi.service",

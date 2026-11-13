@@ -121,7 +121,8 @@ function createCockpit(Client, get, log = console) {
             const currentWeather = readings.location && weather &&
                 now - weather.request.at < 2 * refreshMs &&
                 distance(weather.request.location, readings.location) < movementKm ? weather.value : undefined;
-            const keys = [JSON.stringify(currentWeather), readings.batteryTemperature,
+            const keys = [JSON.stringify(currentWeather),
+                JSON.stringify([readings.batteryTemperature, readings.preconditioning === true]),
                 JSON.stringify([readings.power, readings.trip.average, readings.trip.averageUnit])];
             if (frameKeys && keys.every((key, i) => key === frameKeys[i])) return;
             cv.reset();

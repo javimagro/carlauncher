@@ -21,6 +21,8 @@ El paquete comunitario declara ID7 y carga el filtro en `HmiMain3D`. La unidad i
 
 ## Salida desde la casita
 
+La auditoría del 13-11-2026 corrigió la distribución: BMWLauncher requiere ahora el filtro, que antes era solo una herramienta opcional sin dependencia desde la app. Actualizar la app anterior no demostraba que estuviera instalado. El servicio comprueba su carga de forma asíncrona y muestra «Mando · captura exclusiva» en el diagnóstico. Un temporizador de 200 ms mantiene la lease únicamente con contexto reciente (800 ms como máximo) y las demás condiciones válidas; la lease nativa sigue venciendo a 700 ms. [Medidas, correcciones y comprobaciones pendientes](AUDITORIA-RUNTIME.md)
+
 - **Mando.** `javi-ccu-gate` congela la rueda, centra la inclinación y suelta la pulsación central en `0x8002`. En `0x8001` entrega a `Hmi8` los ocho botones frontales en reposo, incluidos Menú y Atrás. El filtro se limita a las notificaciones de la instancia 1 con las longitudes comprobadas. El permiso de `/run/javi-carlab/frontccu.lease` caduca tras 700 ms.
 - **Toque.** BMWLauncher reclama toda su área de contenido porque el renderizador cierra una capa si la pulsación empieza fuera de su área reclamada. La casita responde al toque que comienza y termina dentro del botón.
 - **Retorno a iDrive.** `CHmiFwStateManager::openHomeState` (`0x4258520`) lee el estado registrado en `this + 0x570` y lo pasa a `requestStateInternal` en `0x42586f5`. BMWLauncher guarda el contexto anterior que devuelve `hmictl ctx` y usa `hmictl open` para volver a ese estado y applet. El servicio espera la transición antes de ocultar la capa. Si falta un contexto válido o falla la salida, iDrive conserva el mando.

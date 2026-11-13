@@ -7,9 +7,12 @@ const { fitArea } = require('./layout.js');
 const record = require('./vendor/kit_record.js');
 const createSession = require('./drivehub-session.js');
 const { listen } = require('./controller-input.js');
-const { createLease, gateLoaded } = require('./controller-lease.js');
+const { createLease, createGateProbe, captureReason } = require('./controller-lease.js');
+const { createInstallation } = require('./installation.js');
 const { parseContext, isLauncher, openContext } = require('./home-context.js');
 const { consume: consumeTelemetry } = require('./telemetry-input.js');
+const { consume: consumeRadio } = require('./radio-model.js');
+const { consume: consumeNavigation } = require('./navigation-model.js');
 const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
 const { createCockpit } = require('./cockpit.js');
@@ -31,8 +34,28 @@ let returnContext;
 let homeRequest = false;
 let homeDeadline = 0;
 let exitFailed = false;
+let contextAt = 0;
+let gate = false;
+let gateCheckedAt = 0;
+let gatePending = false;
+const inspectGate = createGateProbe();
+const installation = createInstallation(directory, launcherId);
 
 function releaseController() { lease(false); }
+
+function renewController() {
+    const now = Date.now();
+    if (!gatePending && now - gateCheckedAt >= 2000) {
+        gatePending = true;
+        inspectGate().then((loaded) => { gate = loaded; }, () => { gate = false; }).then(() => {
+            gateCheckedAt = Date.now();
+            gatePending = false;
+        });
+    }
+    const reason = captureReason({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, now);
+    lease(reason === 'Captura activa');
+    session.setController(reason);
+}
 
 function loadCockpit() {
     if (!fs.existsSync(clusterClient)) return undefined;
@@ -45,8 +68,11 @@ function loadCockpit() {
 
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
-    diagnostics: true,
+    diagnostics: false,
     useOap: true,
+    radioCommand(command) { return radio.send(JSON.stringify(command) + '\n'); },
+    radioFile: path.join(dataDirectory, 'radio.json'),
+    navigationCommand(command) { return navigation.send(JSON.stringify(command) + '\n'); },
     loadCockpit,
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
@@ -59,6 +85,9 @@ const session = createSession(gpu, {
     },
     configFile: path.join(dataDirectory, 'drivehub.json'),
     cacheFile: path.join(dataDirectory, 'drivehub-cache.json'),
+    navigationFile: path.join(dataDirectory, 'navigation.json'),
+    mapDirectory: path.join(dataDirectory, 'map-cache'),
+    mapTemplate: process.env.BMWLAUNCHER_MAP_TILES,
     tdtDirectory: dataDirectory,
     tdtPlayback: {
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
@@ -86,6 +115,12 @@ const input = listen('/run/javi-carlab/controller.sock', (event) => {
 const telemetry = listen('/run/javi-carlab/telemetry.sock', session.telemetry,
     (err) => console.warn('BMWLauncher: telemetría OAP: ' + err.code),
     consumeTelemetry, () => session.telemetry(null));
+const navigation = listen('/run/javi-carlab/navigation.sock', session.navigation,
+    (err) => console.warn('BMWLauncher: navegación OAP: ' + err.code),
+    consumeNavigation, () => session.navigation(null));
+
+const radio = listen('/run/javi-carlab/radio.sock', session.radio,
+    (err) => console.warn('BMWLauncher: radio OAP: ' + err.code), consumeRadio, () => session.radio(null));
 
 function networkError(code) {
     return Object.assign(new Error(code), { code });
@@ -138,35 +173,29 @@ const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl'
     releaseController();
     input.close();
     telemetry.close();
+    navigation.close();
+    radio.close();
     session.close();
     process.exit(1);
 });
 
-function launcherApplet() {
-    for (const name of fs.readdirSync(directory)) {
-        if (!/^oap_\d+$/.test(name)) continue;
-        try {
-            const file = path.join(directory, name, 'rhmiData', 'application.json');
-            const app = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')).application;
-            if (app.name === launcherId && Number.isInteger(app.appletId)) return app.appletId;
-        } catch (_) { /* The directory can belong to a non-OAP resource. */ }
-    }
-    return undefined;
-}
-
 async function poll() {
     try {
-        const id = launcherApplet();
+        const installed = await installation();
+        const id = installed.applet;
         const context = parseContext(await request('ctx'));
         const visible = isLauncher(context, id);
         if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
+        contextAt = Date.now();
         if (visible) {
             if (!launcherVisible) returnContext = lastContext && !isLauncher(lastContext, id) ? lastContext : null;
             try {
-                const uid = appUid(directory, launcherId);
+                const uid = installed.uid;
                 if (uid) {
                     input.setOwner(uid);
                     telemetry.setOwner(uid);
+                    navigation.setOwner(uid);
+                    radio.setOwner(uid);
                 }
             }
             catch (_) { /* The touch renderer remains available during OAP registration. */ }
@@ -187,7 +216,7 @@ async function poll() {
         }
         launcherVisible = visible;
         session.show(visible);
-        lease(visible && !!returnContext && !exitFailed && ccuReady && screenConfirmed && gateLoaded());
+        renewController();
     } catch (err) {
         console.warn(err.message);
         launcherVisible = false;
@@ -209,11 +238,15 @@ function failExit() {
 
 gpu.connect();
 poll();
+const controllerTimer = setInterval(renewController, 200);
 
 process.once('SIGTERM', () => {
+    clearInterval(controllerTimer);
     releaseController();
     input.close();
     telemetry.close();
+    navigation.close();
+    radio.close();
     session.close();
     process.exit(0);
 });

@@ -4,12 +4,17 @@ const OnlineApp = require('oap-sdk/src/core/OnlineApp.js');
 const someipBuilders = require('oap-sdk/src/someip/someipBuilders');
 const { observe } = require('./controller.js');
 const { report } = require('./telemetria-mgu.js');
+const { report: reportNavigation } = require('./navegacion-bmw.js');
+
+const { report: reportRadio } = require('./radio-bmw.js');
 
 function truth(value) { return value === true || value === 1 || value === '1'; }
 
 module.exports = function run() {
     const app = new OnlineApp();
     const telemetry = report(someipBuilders);
+    const navigation = reportNavigation(someipBuilders);
+    const radio = reportRadio(someipBuilders);
     let controller;
     let entry;
     let ready = false;
@@ -22,6 +27,8 @@ module.exports = function run() {
         if (controller) controller.show(visible);
         if (!ready) return;
         telemetry.show(visible);
+        navigation.show(visible);
+        radio.show(visible);
         const reports = visible ? [app.registerActive(), app.registerHmiVisible()] : [app.unregisterHmiVisible(), app.registerInactive()];
         Promise.all(reports).catch((err) => console.warn(err.message));
     }
@@ -57,6 +64,8 @@ module.exports = function run() {
             controller = observe(someipBuilders);
             controller.show(visible);
             telemetry.show(visible);
+            navigation.show(visible);
+            radio.show(visible);
             if (visible) await app.registerHmiVisible();
             await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
@@ -64,6 +73,8 @@ module.exports = function run() {
     app.on('shutdown', () => {
         if (controller) controller.close();
         telemetry.show(false);
+        navigation.show(false);
+        radio.show(false);
         Promise.resolve(app.destroyBundles()).then(() => process.exit(0), () => process.exit(0));
     });
     app.start().catch((err) => console.error('CarLab: ' + err.message));

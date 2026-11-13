@@ -24,3 +24,13 @@ https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/musl
 https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.23-stable/main/ca-certificates
 
 The PCM helper is MIT-licensed. It loads the MGU's own ALSA library.
+
+Local runtime audit, 2026-11-13: the PCM helper was rebuilt from
+tools/tdt-runtime/tdt-pcm.c in this checkout with Zig 0.14.1:
+zig cc -target x86_64-linux-gnu.2.27 -std=c11 -Wall -Wextra -Werror -O2 -s
+  tools/tdt-runtime/tdt-pcm.c -ldl
+  -Wl,--dynamic-linker=/lib/ld-linux-x86-64.so.2 -o tdt-pcm
+SHA-256: ca661eec5f32594b130fe1a8bca717821168a7a5a7e8b4d073970319bc783456
+Source SHA-256 (LF): ecbd312c48a78a566c4e4c654c1f0ffa80f42f8d67b13972279b5e3df010512d
+ELF and symbol versions were inspected on Windows; this new helper has not
+yet been executed with the car's ALSA/SmartX. The FFmpeg binary is unchanged.

@@ -53,6 +53,11 @@ function listen(endpoint, receive, stopped, readFrom = consume, disconnected = (
         try { restrict(); } catch (err) { stopped(err); }
     });
     return {
+        send(message) {
+            if (!peer || peer.destroyed || peer.bufferSize || typeof message !== 'string' || Buffer.byteLength(message) > 65536) return false;
+            peer.write(message, 'utf8');
+            return true;
+        },
         setOwner(uid) {
             if (uid === owner) return;
             owner = uid;
