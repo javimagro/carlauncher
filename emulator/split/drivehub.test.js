@@ -7,7 +7,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
 const { createDriveHub, width, height, cards, map, home, energyBar, viewport, dailyChart } = require('../../native/javi-carlab/drivehub-state');
-const { channels, visibleChannels } = require('../../native/javi-carlab/tdtworld-data');
+const { previewChannels, visibleChannels } = require('../../native/javi-carlab/tdtworld-data');
 const { createTdt } = require('../../native/javi-carlab/tdtworld');
 const { fitArea } = require('../../native/javi-carlab/layout');
 const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = require('../../native/javi-carlab/drivehub-data');
@@ -56,6 +56,7 @@ test('horizontal swipe tracks the finger and snaps to the paired and full-width 
 
 test('the full-width TDTWorld page uses rotation for channel focus and horizontal swipe for cards', () => {
     const { drive, television, settle, swipe, wheel } = panel();
+    const channels = previewChannels('es');
     const news = cards.findIndex((card) => card.id === 'news');
     const tdt = cards.findIndex((card) => card.id === 'tdtworld');
     assert.equal(cards[tdt].w, cards[news].w);
@@ -162,7 +163,8 @@ test('Open-Meteo groups hourly precipitation by its local calendar day', () => {
 
 test('packaged artwork and font cover the dashboard states and Spanish glyphs', () => {
     const art = loadArtwork();
-    for (const name of ['weather-rain', 'icon-rain', 'news', 'radio', 'battery-low', 'battery-mid', 'battery-high', 'range']) {
+    assert.equal(art('news'), null);
+    for (const name of ['weather-rain', 'icon-rain', 'radio', 'battery-low', 'battery-mid', 'battery-high', 'range']) {
         assert.ok(art(name).data.length > 0, name);
     }
     const sample = 'Energía, precipitación, próximo, día, ñ, Á, ¿qué?';

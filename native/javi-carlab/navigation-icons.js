@@ -62,9 +62,10 @@ function icon(cv, name, x, y, ink, surface, scale) {
         cv.quad([[x, y - 16 * scale], [x, y + 6 * scale], [x - 11 * scale, y + 12 * scale], [x, y - 16 * scale]], '#7F9FC6');
     } else if (name === 'fit') {
         [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => path([[a * 5, b * 13], [a * 13, b * 13], [a * 13, b * 5]]));
-    } else if (name === 'audio') {
+    } else if (name === 'audio' || name === 'audio-muted') {
         path([[-12, -5], [-6, -5], [1, -11], [1, 11], [-6, 5], [-12, 5], [-12, -5]]);
-        cv.arc(x + 2 * scale, y, 7 * scale, 9 * scale, -55, 55, ink); cv.arc(x + 2 * scale, y, 12 * scale, 14 * scale, -55, 55, ink);
+        if (name === 'audio-muted') { path([[6, -4], [14, 4]]); path([[6, 4], [14, -4]]); }
+        else { cv.arc(x + 2 * scale, y, 7 * scale, 9 * scale, -55, 55, ink); cv.arc(x + 2 * scale, y, 12 * scale, 14 * scale, -55, 55, ink); }
     } else if (name === 'assistant') {
         cv.strokeRoundRect(x - 5 * scale, y - 14 * scale, 10 * scale, 20 * scale, 5 * scale, 2 * scale, ink);
         path([[-10, 0], [-10, 5], [-5, 11], [5, 11], [10, 5], [10, 0]]); path([[0, 11], [0, 16]]);

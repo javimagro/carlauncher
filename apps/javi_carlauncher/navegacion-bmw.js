@@ -227,7 +227,12 @@ function report(builders, endpoint = '/run/javi-carlab/navigation.sock') {
         }
     }
     return { show(on) {
-        if (on && !probe) { probe = createProbe(builders); actions = createActions(builders); displays = createDisplays(builders); timer = setInterval(send, 1000); send(); }
+        if (on && !probe) {
+            probe = createProbe(builders);
+            displays = createDisplays(builders);
+            actions = createActions(builders, { onGuidanceSetting: displays.confirmSetting });
+            timer = setInterval(send, 1000); send();
+        }
         else if (!on && probe) { clearInterval(timer); probe.stop(); actions.stop(); displays.stop(); probe = actions = displays = null; if (socket) socket.destroy(); socket = null; }
     } };
 }

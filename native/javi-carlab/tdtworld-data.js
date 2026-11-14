@@ -28,4 +28,17 @@ const channels = [
         summary: 'Los momentos destacados de la jornada y el calendario de las próximas competiciones.' }
 ];
 
-module.exports = { channels, visibleChannels: 8 };
+const regionalChannels = {
+    pt: ['RTP 1', 'RTP 2', 'SIC', 'TVI', 'RTP Notícias'],
+    de: ['Das Erste', 'ZDF', 'arte', '3sat', 'tagesschau24'],
+    fr: ['TF1', 'France 2', 'France 3', 'M6', 'France 24'],
+    it: ['Rai 1', 'Rai 2', 'Rai 3', 'Canale 5', 'Rai News 24'],
+    uk: ['BBC One', 'BBC Two', 'ITV1', 'Channel 4', 'BBC News']
+};
+
+function previewChannels(country) {
+    const listings = country === 'es' ? channels : (regionalChannels[country] || []).map((name) => ({ name }));
+    return listings.map((entry, index) => Object.assign({ id: 'preview-' + country + '-' + index, sources: [] }, entry));
+}
+
+module.exports = { previewChannels, visibleChannels: 8 };

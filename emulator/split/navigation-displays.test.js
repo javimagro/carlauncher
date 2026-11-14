@@ -41,12 +41,13 @@ test('HUD observer reads original display options and distinguishes announced IC
         const state = r.observer.snapshot();
         assert.deepEqual(state.hud, { ready: true, layout: 'all', mapSelected: true });
         assert.equal(state.options.signboardPopupsEnabled, true);
+        assert.equal(state.options.voiceGuidanceEnabled, true);
         assert.deepEqual(state.views.map((v) => [v.target, v.type, v.preview, v.consistent]), [['HUD', 'HIGH_GUIDING', false, true], ['IC', 'HIGH_GUIDING', false, true]]);
         assert(!JSON.stringify(state).includes('ramsesSceneId')); assert(!JSON.stringify(state).includes('associatedEvent'));
         assert.equal(state.available, true);
         assert(services.rendered.methods.every((m) => m.indexOf('get') === 0));
     } finally { await r.observer.stop(); }
-    assert.equal(r.disposed.length, 3); assert.equal(r.unsubscribed.length, 8);
+    assert.equal(r.disposed.length, 3); assert.equal(r.unsubscribed.length, 9);
     assert.equal(r.observer.snapshot().available, false);
 });
 test('display observations expire and invalid HUD enums never become enabled', async () => {

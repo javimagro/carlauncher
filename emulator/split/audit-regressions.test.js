@@ -47,7 +47,7 @@ test('a hidden news photo is cancelled before decoding and the same URL is retri
 test('key save keeps the masked draft on failure and closes only after successful persistence', async () => {
     let finish, changes = 0;
     const ui = { state: { panel: 'assistant-edit', stack: [{}], assistantEditor: { kind: 'key', draft: fakeKey } },
-        assistant: { state: { message: 'No se pudo guardar' }, configure: () => new Promise((resolve) => { finish = resolve; }) } };
+        assistant: { state: { config: { provider: 'openai' }, message: 'No se pudo guardar' }, configure: () => new Promise((resolve) => { finish = resolve; }) } };
     const action = () => panel.action(ui, 'assistant:save', () => {}, () => changes++);
     action(); assert.equal(ui.state.panel, 'assistant-edit'); assert.equal(ui.state.assistantEditor.draft, fakeKey);
     finish(false); await delay(0); assert.equal(ui.state.assistantEditor.draft, fakeKey); assert(ui.state.assistantEditor.error);
@@ -57,7 +57,7 @@ test('key save keeps the masked draft on failure and closes only after successfu
 test('closing a pending editor cannot reopen it, and rejected text submission preserves the draft', async () => {
     let finish;
     const ui = { state: { panel: 'assistant-edit', stack: [{}], assistantEditor: { kind: 'key', draft: fakeKey } },
-        assistant: { state: {}, configure: () => new Promise((resolve) => { finish = resolve; }), submit: () => false } };
+        assistant: { state: { config: { provider: 'openai' } }, configure: () => new Promise((resolve) => { finish = resolve; }), submit: () => false } };
     panel.action(ui, 'assistant:save', () => {}); ui.state.assistantEditor = null; ui.state.panel = 'none';
     finish(true); await delay(0); assert.equal(ui.state.panel, 'none');
     ui.state.panel = 'assistant-edit'; ui.state.assistantEditor = { kind: 'text', draft: 'Pon la radio' };
@@ -65,7 +65,7 @@ test('closing a pending editor cannot reopen it, and rejected text submission pr
 });
 
 test('invalid incomplete keys never reach storage and are not discarded', () => {
-    const ui = { state: { assistantEditor: { kind: 'key', draft: 'short' } }, assistant: { state: {}, configure() { assert.fail('invalid key persisted'); } } };
+    const ui = { state: { assistantEditor: { kind: 'key', draft: 'short' } }, assistant: { state: { config: { provider: 'openai' } }, configure() { assert.fail('invalid key persisted'); } } };
     panel.action(ui, 'assistant:save', () => {}); assert.equal(ui.state.assistantEditor.draft, 'short'); assert(ui.state.assistantEditor.error);
 });
 test('a successful background key save preserves a later sidebar navigation', async () => {
@@ -128,12 +128,16 @@ test('microphone chunks preserve PCM across IPC bounds and odd-byte splits', () 
 test('TV commands lazily load a cached catalogue before first visit, and offline is not not_found', async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bmw-audit-tdt-'));
     const channel = { id: 'la1', name: 'La 1', group: 'Generalistas', sources: ['https://example.test/live.m3u8'] };
-    fs.writeFileSync(path.join(dir, 'tdt-es-channels.json'), JSON.stringify([channel]));
+    // The old Spanish cache included international channels. It must not be reused.
+    fs.writeFileSync(path.join(dir, 'tdt-es-channels.json'), JSON.stringify([
+        Object.assign({}, channel, { id: 'foreign', name: 'Foreign channel' })
+    ]));
+    fs.writeFileSync(path.join(dir, 'tdt-es-domestic-channels.json'), JSON.stringify([channel]));
     const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); } }, () => {});
     t.after(() => { tdt.close(); fs.rmSync(dir, { recursive: true }); });
     const cards = [], commands = createCommands({ tdt, panel: { selectCard: (i) => cards.push(i) } });
     assert.equal(tdt.state.channels.length, 0);
-    assert.equal((await commands('list_tv_channels', {}, () => true)).channels[0], 'La 1'); assert.equal(cards.length, 0);
+    assert.deepEqual((await commands('list_tv_channels', {}, () => true)).channels, ['La 1']); assert.equal(cards.length, 0);
     assert.equal((await commands('play_tv_channel', { channel: 'La 1' }, () => true)).status, 'requested'); assert.deepEqual(cards, [4]);
     const offline = createTdt({ get: async () => { throw new Error('offline'); } }, () => {}); t.after(() => offline.close());
     const query = createCommands({ tdt: offline }); assert.equal((await query('list_tv_channels', {}, () => true)).status, 'unavailable');
@@ -157,8 +161,9 @@ test('retrying an offline TV catalogue waits for the new response', async (t) =>
     now += 61000; retry = true; let completed = false;
     const result = tdt.prepareChannels(() => true).then((status) => { completed = true; return status; });
     await delay(20); assert.equal(completed, false); assert.equal(tdt.state.status, 'loading');
-    release(Buffer.from(JSON.stringify({ countries: [{ ambits: [{ name: 'Generalistas', channels: [{ name: 'La 1', epg_id: 'La1.TV', options: [{ format: 'm3u8', url: 'https://example.test/live.m3u8' }] }] }] }] })));
+    release(Buffer.from(JSON.stringify({ countries: [{ name: 'Spain', ambits: [{ name: 'Generalistas', channels: [{ name: 'La 1', epg_id: 'La1.TV', options: [{ format: 'm3u8', url: 'https://example.test/live.m3u8' }] }] }] }] })));
     assert.equal(await result, 'ready');
+    assert.equal(tdt.state.channels[0].name, 'La 1');
 });
 
 test('radio cache invalidates on native lists, local overrides, external filters and expiration', () => {

@@ -193,7 +193,8 @@
         "visualizationInKombiNonNaviEnabled": "rsw",
         "additionalInformationEnabled": "rsw",
         "guidingPopupsEnabled": "rsw",
-        "signboardPopupsEnabled": "rsw"
+        "signboardPopupsEnabled": "rsw",
+        "voiceGuidanceEnabled": "rsw"
       },
       "methods": [
         "startGuidance",

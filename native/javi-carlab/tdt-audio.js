@@ -4,7 +4,7 @@
 function playAudio(pcm, changed, queue, audio, spawn, log) {
     const stats = { receivedBytes: 0, submittedBytes: 0, droppedBytes: 0, backpressure: 0, failures: 0 };
     let sink, ready = false, blocked = false, stopped = false;
-    let timer, stalled, retry;
+    let timer, stalled, retry, draining;
     let failures = 0;
     let tail = Buffer.alloc(0);
     const retryMs = audio.retryMs || 2000;
@@ -13,6 +13,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
     function release() {
         clearTimeout(timer);
         clearTimeout(stalled);
+        draining = undefined;
         timer = stalled = undefined;
         const old = sink;
         sink = null;
@@ -41,7 +42,14 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         let diagnostic = '', stderr = '', reply = '';
         const failure = (reason) => fail(peer, reason, diagnostic);
         peer.on('error', () => failure('unavailable'));
-        peer.on('close', (code) => failure({ 3: 'alsa', 4: 'open', 5: 'format', 7: 'write', 8: 'stall' }[code] || 'unavailable'));
+        peer.on('close', (code) => {
+            if (sink === peer && draining && code === 0) {
+                const done = draining;
+                sink = null;
+                release();
+                done();
+            } else failure({ 3: 'alsa', 4: 'open', 5: 'format', 7: 'write', 8: 'stall' }[code] || 'unavailable');
+        });
         peer.stderr.on('data', (chunk) => {
             stderr = (stderr + String(chunk)).slice(-512);
             const found = /(?:^|\n)tdt-pcm: ((?:open|format|write|recover|stall|state|nonblock)=-?\d{1,6})\r?\n/g;
@@ -94,6 +102,13 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
     pcm.on('error', () => { if (sink) fail(sink, 'unavailable'); });
     return {
         write,
+        drain(done) {
+            if (!sink || !ready) { done(); return; }
+            const peer = sink;
+            draining = done;
+            timer = setTimeout(() => fail(peer, 'stall'), 4000);
+            peer.stdin.end();
+        },
         stats: () => Object.assign({}, stats, { ready, blocked }),
         close() { stopped = true; clearTimeout(retry); release(); }
     };

@@ -7,6 +7,7 @@ const net = require('node:net');
 const path = require('node:path');
 const home = process.argv.includes('--drivehub');
 const live = process.argv.includes('--live');
+if (home && process.argv.includes('--tall')) process.env.JAVI_DRIVEHUB_TALL = '1';
 const [requestedPort, kitPath, storePath] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
 const { width, height } = home ? require('../../native/javi-carlab/drivehub-state') : require('../launcher-view');
 
@@ -32,6 +33,7 @@ const renderer = {
 const names = new Map([['javi_carlauncher_preview', 'launcher'], ['javi_panel_radio_demo', 'panel']]);
 const layers = new Map();
 const viewers = new Set();
+let homeSession;
 let gesture;
 let knob = 0;
 let sequence = 0;
@@ -166,6 +168,12 @@ const web = http.createServer(async (req, res) => {
         }
         return;
     }
+    if (home && req.method === 'POST' && req.url === '/open') {
+        if (!homeSession?.connected) { res.writeHead(503).end(); return; }
+        homeSession.send('open');
+        res.writeHead(204).end();
+        return;
+    }
     if (req.method === 'POST' && req.url === '/input') {
         if (req.headers['content-type'] !== 'application/json' || !(Number(req.headers['content-length']) <= 256)) {
             res.writeHead(400).end();
@@ -202,7 +210,7 @@ const web = http.createServer(async (req, res) => {
             .replace('Pantalla de CarLauncher', 'Pantalla de BMWLauncher')
             .replace('max-width: 1600px', `max-width: ${width}px`)
             .replace('1600 / 520', `${width} / ${height}`)
-            .replace(/width="1600"/g, `width="${width}"`)
+            .replace(/width="1600" height="520"/g, `width="${width}" height="${height}"`)
             .replace(/<p>Pulsa <strong>Radio<\/strong>.*?<\/p>/,
                 '<p>Desliza horizontalmente o usa la rueda para recorrer las tarjetas. Usa ↑/↓ o desliza en vertical para cambiar de vista en Tiempo o de noticia.</p>'));
     } else fs.createReadStream(filename).pipe(res);
@@ -212,7 +220,7 @@ for (const [filename] of files.values()) fs.accessSync(filename, fs.constants.R_
 web.listen(port, '127.0.0.1', () => {
     daemon.listen(pipe, () => {
         if (home) {
-            const launcher = fork(path.join(__dirname, 'drivehub.js'), [
+            const launcher = homeSession = fork(path.join(__dirname, 'drivehub.js'), [
                 pipe, store, live ? 'live' : 'fixture', process.argv.includes('--telemetry') ? 'telemetry' : ''
             ]);
             launcher.on('exit', (code) => process.exit(code || 1));

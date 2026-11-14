@@ -7,6 +7,7 @@
   <style>
     body { margin: 24px auto; max-width: 1600px; padding: 0 16px; color: #e7eff7; background: #101820; font: 16px system-ui, sans-serif; }
     h1 { margin: 0 0 12px; font-size: 22px; }
+    #reopen { margin-bottom: 12px; padding: 8px 16px; border: 1px solid #52718b; border-radius: 6px; color: inherit; background: #213e56; font: inherit; }
     #stage { display: grid; aspect-ratio: 1600 / 520; background: #080b0e; outline-offset: 4px; touch-action: none; }
     canvas { grid-area: 1 / 1; width: 100%; height: 100%; min-width: 0; pointer-events: none; }
     #panel { z-index: 0; }
@@ -16,6 +17,7 @@
 </head>
 <body>
   <h1>CarLauncher · Prueba de panel derecho</h1>
+  <button id="reopen" type="button" hidden>Abrir BMWLauncher</button>
   <div id="stage" tabindex="0" aria-label="Pantalla de CarLauncher">
     <canvas id="panel" width="1600" height="520"></canvas>
     <canvas id="launcher" width="1600" height="520"></canvas>

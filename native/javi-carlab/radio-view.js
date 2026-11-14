@@ -59,13 +59,12 @@ function drawRadio(cv, x, y, w, h, ui, now) {
         });
         if (!rows.length) {
             fit(cv, data.loading ? 'Buscando emisoras BMW…' : state.filters.length ? 'No hay emisoras en este filtro' : 'No hay emisoras disponibles', x + w / 2, y + 230, 17, w - 36, white, center);
-            fit(cv, data.listError || (state.filters.length ? 'Pulsa el filtro para quitarlo' : 'Pulsa Actualizar para consultar BMW'), x + w / 2, y + 256, 13, w - 36, muted, center);
+            const detail = data.listError || (state.filters.length ? 'Pulsa el filtro para quitarlo' : '');
+            if (detail) fit(cv, detail, x + w / 2, y + 256, 13, w - 36, muted, center);
         }
         fit(cv, state.message || (rows.length + ' emisoras · FM/DAB'), x + 18, y + h - 58, 12, w - 36, muted);
-        cv.roundRect(x + 16, y + h - 47, (w - 40) / 2, 34, 6, '#21495c');
-        cv.roundRect(x + 24 + (w - 40) / 2, y + h - 47, (w - 40) / 2, 34, 6, '#21495c');
-        cv.text('Volver', x + w / 4, y + h - 24, 15, white, center);
-        cv.text('Actualizar', x + 3 * w / 4, y + h - 24, 15, white, center);
+        cv.roundRect(x + 16, y + h - 47, w - 32, 34, 6, '#21495c');
+        cv.text('Volver', x + w / 2, y + h - 24, 15, white, center);
         return;
     }
     fit(cv, current ? current.name : 'Radio BMW', x + 26, y + 70, 22, w - 52, current && ui.favorite(current) ? gold : white);

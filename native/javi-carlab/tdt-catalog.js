@@ -51,7 +51,9 @@ function channel(name, epg, group, logo, sources) {
 
 function parseCatalog(text) {
     const entries = [];
-    for (const country of JSON.parse(text).countries) {
+    const countries = JSON.parse(text).countries;
+    const domestic = countries.filter((country) => /^(spain|espana)$/.test(key(country.name)));
+    for (const country of domestic) {
         for (const ambit of country.ambits) {
             for (const item of ambit.channels) {
                 const sources = (item.options || []).filter((option) =>
@@ -67,6 +69,7 @@ function parseMarkdown(text) {
     const entries = [];
     let group = '';
     for (const line of text.split(/\r?\n/)) {
+        if (/^## Int\./i.test(line)) break;
         if (/^##+ /.test(line)) group = line.replace(/^#+ /, '');
         if (!line.startsWith('| ')) continue;
         const [, name, links, , logo, epg] = line.split('|').map((part) => part.trim());
@@ -138,7 +141,14 @@ async function resolveSources(item, get) {
         if (data.drm || data.geoblocked || data.rightsBroadcast === false) break;
         const live = (Array.isArray(data.sourcesLive) ? data.sourcesLive : []).filter((source) =>
             !source.drm && !source.licenseUrl && !source.keySystems).map((source) => mediaUrl(source.src)).filter(Boolean);
-        if (live.length) return live;
+        if (live.length) {
+            // Atres lists legacy HLS before DASH, including duplicate URLs.
+            // On MGU those HLS sources restart repeatedly before reaching the
+            // DASH relay that plays continuously. Keep HLS as a fallback.
+            const sources = Array.from(new Set(live));
+            const dash = (source) => /\.mpd(?:[?#]|$)/i.test(source);
+            return sources.filter(dash).concat(sources.filter((source) => !dash(source)));
+        }
         const row = (Array.isArray(data.itemRows) ? data.itemRows : []).find((item) =>
             !item.geoblocked && item.rightsBroadcast !== false && item.link && item.link.href);
         const link = data.urlVideo || data.rowLive || (row && row.link.href) || (data.linkLive && data.linkLive.href);

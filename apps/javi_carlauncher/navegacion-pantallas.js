@@ -3,7 +3,7 @@
 // Read-only MGU21 declarations. Announced RAMSES content is not proof of visible HUD pixels.
 const prefix = 'de.bmw.infotainment.navigation.';
 const flags = ['junction3dViewInKombiEnabled', 'visualizationInKombiNonNaviEnabled',
-    'additionalInformationEnabled', 'guidingPopupsEnabled', 'signboardPopupsEnabled'];
+    'additionalInformationEnabled', 'guidingPopupsEnabled', 'signboardPopupsEnabled', 'voiceGuidanceEnabled'];
 const services = {
     guidance: { name: prefix + 'guiding.Guidance', attributes: flags },
     hud: { name: 'de.bmw.infotainment.KombiIF', instance: '1', attributes: ['statusHUDSelection'] },
@@ -94,8 +94,9 @@ function createDisplays(builders, options) {
         if (!attribute || typeof attribute.getValue !== 'function' || typeof attribute.subscribe !== 'function') return;
         const reader = () => enqueue(attribute, async () => {
             const revision = notifications;
+            const before = records[name];
             const value = await attribute.getValue();
-            if (!stopped && revision === notifications) changed(name, value);
+            if (!stopped && revision === notifications && records[name] === before) changed(name, value);
         });
         // Subscribe before polling; an event received during a getter wins over that response.
         await safe(() => subscribe(attribute, (value) => { notifications++; changed(name, value); }));
@@ -131,6 +132,7 @@ function createDisplays(builders, options) {
     }
     tick(); const timer = every(tick, 5000);
     return {
+        confirmSetting(name, value) { if (flags.includes(name)) changed(name, value); },
         snapshot() {
             const result = { options: {}, hud: { ready: null, layout: null, mapSelected: null }, views: [], available: false };
             const read = (name) => !stopped && fresh(records[name]) ? records[name].value : null;

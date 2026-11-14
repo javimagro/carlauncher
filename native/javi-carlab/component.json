@@ -1,8 +1,8 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.13",
-  "title": "Motor grÃ¡fico de BMWLauncher",
+  "version": "0.2.14",
+  "title": "Motor gráfico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
     "ID8"

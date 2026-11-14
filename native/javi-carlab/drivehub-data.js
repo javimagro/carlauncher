@@ -210,11 +210,10 @@ function createData({ cacheFile, fixture, get = download, photo = loadPhoto, now
     const data = { energy: mockEnergy, city: fixture && fixture.weather ? fixture.weather.name : 'Ubicación actual',
         weather: fixture ? fixture.weather : undefined,
         news: fixture ? fixture.news : cache.news && cache.news.value,
-        weatherStatus: fixture ? 'ready' : 'location', newsStatus: 'loading', photo: null };
+        weatherStatus: fixture ? 'ready' : 'location', newsStatus: 'loading', photo: null, photoStatus: 'unavailable' };
     const next = { news: 0 };
     let photoUrl;
     let photoRequest = 0;
-    let photoPending = false;
     let closed = false;
     const weather = createWeather({ get, parse: parseWeather, url: weatherUrl, now: clock, cache: cache.weather,
         store(item) { cache.weather = item; save(); }
@@ -272,21 +271,25 @@ function createData({ cacheFile, fixture, get = download, photo = loadPhoto, now
         weatherSnapshot: weather.snapshot,
         suspend() {
             weather.suspend();
-            if (photoPending) { photoRequest++; photoPending = false; photoUrl = undefined; }
+            if (data.photoStatus === 'loading') { photoRequest++; photoUrl = undefined; data.photoStatus = 'unavailable'; }
         },
         showPhoto(url) {
             if (closed || fixture || url === photoUrl) return;
             photoUrl = url;
             const request = ++photoRequest;
             if (data.photo) { dropImage(data.photo); data.photo = null; }
-            photoPending = !!url;
+            data.photoStatus = url ? 'loading' : 'unavailable';
             if (!url) return;
             photo(url, get, 528, 297, false, () => !closed && request === photoRequest).then((image) => {
                 if (closed || request !== photoRequest) { dropImage(image); return; }
-                photoPending = false;
                 data.photo = image;
+                data.photoStatus = 'ready';
                 changed('photo');
-            }).catch(() => { if (request === photoRequest) photoPending = false; });
+            }).catch(() => {
+                if (closed || request !== photoRequest) return;
+                data.photoStatus = 'unavailable';
+                changed('photo');
+            });
         },
         close() {
             closed = true;

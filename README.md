@@ -1,10 +1,14 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.13 de prueba** reúne la corrección de continuidad de TDTWorld de la 0.2.12, la nueva espera de tensión/corriente HV y el consumo instantáneo publicado por BMW. La espera de respuesta del SME empieza después de que TASU acepte la consulta; una llamada bloqueada vence y libera la suscripción antes de reintentarlo. Esto corrige una carrera reproducida en local, pero todavía hay que comprobar que el i4 devuelve ambas lecturas.
+La **0.2.14 de prueba** corrige la selección de fuente de La Sexta al cambiar de canal, la recepción de tensión/corriente HV a través del contexto JavaScript de iDrive e integra los cambios visuales y de interacción que faltaban en 0.2.13.
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.13**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.13). Pasan **204 pruebas locales**. En **Datos**, compara **Batería HV · potencia · tensión · corriente** con el OBD2 y **Consumo instantáneo BMW** con iDrive; son lecturas diferentes y mantienen sus propias unidades. Si falla HV, anota el mensaje de la etapa de tensión o corriente.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.14**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14). Pasan **216 pruebas locales**, comprobaciones Node 8.16.2 y contratos de la MGU.
 
-El cambio de vídeo es el mismo que mantuvo 90 segundos continuos en el ensayo del i4. **El audio aún tiene microcortes y pierde la salida; sigue pendiente.** El mapa BMW de la izquierda tampoco se da por resuelto. Para volver atrás, instala app y motor de la 0.2.12.
+La Sexta comienza por DASH, evitando recorrer primero varias fuentes HLS que reiniciaban el vídeo. La prueba local completa mantuvo un intento y cero reconexiones durante 30 segundos; hay que repetir el cambio de canal en la app instalada. La sonda corregida ya recibió tensión y corriente reales en la MGU y calculó kW; falta contrastar la pantalla instalada y el signo con OBD2. El consumo instantáneo BMW continúa separado de la potencia HV.
+
+Los cambios de interfaz incluyen listas/configuración de TDT, Noticias, Radio, navegación, asistente, voz de maniobras y avisos centrados. El perfil alto sigue siendo optativo y no cambia por sí solo el área global del renderer.
+
+**El audio TDT y el mapa BMW izquierdo siguen pendientes.** No se afirma sonido continuo por los altavoces. No se modifica el mapa del cockpit. Para volver atrás, instala ambos componentes de la 0.2.13.
 
 ## Referencia de la versión anterior
 

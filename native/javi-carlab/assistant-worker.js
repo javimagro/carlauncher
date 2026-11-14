@@ -7,7 +7,7 @@ const { validKey, providers } = require('./assistant-config');
 const { validArguments } = require('./assistant-tools');
 function start(config, emit, dependencies) {
     dependencies = dependencies || {};
-    if (!config || !Object.prototype.hasOwnProperty.call(providers, config.provider) || !validKey(config.key) || !providers[config.provider].voices.includes(config.voice)) throw new Error('CONFIG');
+    if (!config || !Object.prototype.hasOwnProperty.call(providers, config.provider) || !validKey(config.key, config.provider) || !providers[config.provider].voices.includes(config.voice)) throw new Error('CONFIG');
     const connect = protocol.connection(config), WS = dependencies.WebSocket || WebSocket;
     const socket = new WS(connect.url, { headers: connect.headers, lookup: dependencies.lookup,
         handshakeTimeout: 12000, maxPayload: 256 * 1024, perMessageDeflate: false, followRedirects: false });
@@ -32,7 +32,13 @@ function start(config, emit, dependencies) {
         else emit({ type: 'turn' });
     }
     socket.on('open', () => send(protocol.setup(config)));
-    socket.on('error', () => fail('NETWORK_OR_AUTH'));
+    socket.on('error', (error) => {
+        const code = error.code || '';
+        if (/^(?:ENOTFOUND|ENODATA|EAI_AGAIN|ESERVFAIL)$/.test(code)) fail('DNS');
+        else if (/^(?:ERR_TLS_|CERT_|UNABLE_TO_|SELF_SIGNED_|DEPTH_ZERO_)/.test(code)) fail('TLS');
+        else if (/^UPLINK/.test(code)) fail('UPLINK');
+        else fail('NETWORK');
+    });
     socket.on('unexpected-response', (_, response) => { const code = response.statusCode; response.resume(); fail(code === 401 || code === 403 ? 'AUTH' : code === 429 ? 'QUOTA' : 'HTTP_' + code); });
     socket.on('close', () => fail('DISCONNECTED'));
     socket.on('message', (bytes) => {

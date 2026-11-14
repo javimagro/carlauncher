@@ -7,7 +7,10 @@ const path = require('path');
 const crypto = require('crypto');
 const dns = require('dns');
 const catalog = require('../native/javi-carlab/tdt-catalog');
-const get = require('../native/javi-carlab/drivehub-network');
+const download = require('../native/javi-carlab/drivehub-network');
+// The player passes a timeout as argument 3; download's argument 3 is a DNS
+// lookup function. Match the production adapter rather than forwarding it.
+const get = (url, limit) => download(url, limit);
 const { createIsolatedPlayer } = require('../native/javi-carlab/tdt-process');
 const startProxy = require('../native/javi-carlab/tdt-proxy');
 

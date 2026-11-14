@@ -24,6 +24,12 @@ La versión 0.2.0 usa Node.js 8 para el código que se ejecuta en la MGU, un acc
 
 JavaScript es la opción para lógica de producto, eventos y E/S. C y C++ se reservan para bibliotecas existentes y rutas de CPU o GPU que los necesiten. Para introducir un proceso nativo, documenta el requisito y mide la implementación de referencia. En vídeo mide el ritmo y las pérdidas de fotogramas, en interacción la latencia hasta el primer fotograma, y en ambos CPU y memoria. Repite la misma carga tras el cambio. Reutiliza un componente comunitario si ofrece la interfaz y el comportamiento necesarios. [Bucle de eventos de Node.js](https://nodejs.org/learn/asynchronous-work/dont-block-the-event-loop) · [Documentación de FFmpeg](https://ffmpeg.org/doxygen/trunk/md_README.html)
 
+## Contratos de integración comprobados en 0.2.14
+
+- El runner OAP ejecuta el bundle en otra VM. En respuestas binarias SOME/IP, validar Buffer con `Buffer.isBuffer` antes de usar `instanceof` de constructores del contexto. El cierre del SDK instalado es `shutdown()`; esperar su finalización antes de crear un cliente sustituto.
+- La selección de fuentes por proveedor pertenece al catálogo. Atres prioriza DASH para usar el adaptador MGU validado; mantiene HLS como alternativa y resuelve sus URL temporales de nuevo al cambiar de canal. La vista no decide transportes ni guarda sus credenciales.
+- TDT reproduce por toque/OK y conserva navegación del foco con la rueda; sus listas comparten EPG/progreso. Configuración contiene país, duración de información y último canal. Los avisos de navegación/asistente/preacondicionamiento comparten el toast del panel izquierdo. El perfil alto es optativo, con dibujo y toque del renderer en la misma área; el perfil normal sigue siendo el predeterminado.
+
 ## Límites entre componentes
 
 - **Entrada y vista.** `drivehub-state.js` recibe gestos y eventos del mando. `drivehub-view.js` dibuja la pantalla y `drivehub-session.js` los conecta al renderizador. En ID8 el OAP observa FrontCCU y envía la entrada a la sesión por un socket local accesible por su UID. El giro y las inclinaciones laterales cambian de tarjeta. En TDTWorld el giro cambia el canal y las inclinaciones verticales recorren la programación. Las inclinaciones verticales también actúan en Tiempo y Noticias. La sesión reclama el área de contenido para gestionar los toques y ofrece una casita para volver al contexto anterior de iDrive. [Protocolo de dibujo, toque y mando](https://github.com/robertnisipeanu/mgu-store/blob/main/native/mgu-render/PROTOCOL.md)

@@ -26,6 +26,42 @@ test('private credentials survive restart, never occur in snapshots or ciphertex
     } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('the map microphone starts and cancels listening in place; voice preview stays in settings', async (t) => {
+    const config = createConfig(); await config.update({ key: fakeKey });
+    const { createNavigationUI } = require('../../native/javi-carlab/navigation-ui');
+    let receive, audioEvent;
+    const sent = [], calls = [];
+    const assistant = createAssistant({ config, assistantAudio: { capture: {}, playback: {} },
+        assistantConnect(credentials, callback) {
+            assert.equal(credentials.audio, true); receive = callback;
+            return { send(event) { sent.push(event); }, close() { calls.push('close'); } };
+        }, assistantAudioFactory(options, callback) {
+            audioEvent = callback;
+            return { listen() { calls.push('listen'); }, pcm() { calls.push('pcm'); }, finish() { calls.push('finish'); }, close() {} };
+        } }, async () => ({}));
+    const ui = createNavigationUI({}, () => {});
+    t.after(() => { ui.close(); assistant.close(); });
+    await assistant.ready; assistant.setVisible(true); ui.assistant = assistant;
+    ui.activate('assistant');
+    assert.equal(ui.state.panel, 'none'); assert.equal(assistant.state.indicator, 'connecting');
+    receive({ type: 'ready' }); assert.equal(assistant.state.indicator, 'listening');
+    audioEvent({ type: 'capture', data: 'AAAA', speaking: true });
+    audioEvent({ type: 'capture-end', samples: 3200 }); assert.equal(assistant.state.indicator, 'processing');
+    receive({ type: 'audio', data: 'AAAA' }); assert.equal(assistant.state.indicator, 'speaking');
+    receive({ type: 'turn' });
+    audioEvent({ type: 'audio-status', finished: true }); assert.equal(assistant.state.indicator, 'listening');
+    ui.activate('assistant'); assert.equal(assistant.state.indicator, '');
+    assert.deepEqual(calls, ['listen', 'pcm', 'finish', 'listen', 'close']);
+    ui.activate('assistant:settings'); ui.activate('assistant:preview');
+    assert.equal(ui.state.panel, 'assistant-settings');
+    receive({ type: 'ready' }); assert.equal(sent[sent.length - 1].op, 'text');
+    receive(protocol.events('openai', { error: { code: 'credit_balance_exhausted', message: fakeKey } })[0]);
+    assert.equal(ui.state.panel, 'assistant-settings');
+    assert.match(assistant.state.message, /saldo de la API agotado/i);
+    assert(!assistant.state.message.includes(fakeKey));
+    await assistant.configure({ voice: 'cedar' }); assert.equal(assistant.state.message, '');
+});
+
 test('missing wrapping key or corrupted ciphertext never silently overwrites existing credentials', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-assistant-corrupt-'));
     try {
@@ -204,8 +240,10 @@ test('private import rejects Android ciphertext and imports explicit plaintext o
     const { main } = require('../../tools/Importar-Asistente');
     try {
         const source = path.join(root, 'export.json'), destination = path.join(root, 'private');
-        await fs.writeFile(source, JSON.stringify({ provider: 'gemini', keys: { gemini: fakeKey }, voices: { gemini: 'Kore' } }));
-        await main(source, destination); const config = createConfig(destination); await config.ready; assert.equal(config.credentials().key, fakeKey);
+        const geminiKey = 'AQ.' + fakeKey;
+        await fs.writeFile(source, JSON.stringify({ provider: 'gemini', keys: { gemini: geminiKey }, voices: { gemini: 'Kore' } }));
+        await main(source, destination); const config = createConfig(destination); await config.ready; assert.equal(config.credentials().key, geminiKey);
+        await fs.writeFile(source, JSON.stringify({ keys: { openai: geminiKey } })); await assert.rejects(main(source, destination));
         await fs.writeFile(source, JSON.stringify({ keys: { openai: 'base64/encrypted==' } })); await assert.rejects(main(source, destination));
         await assert.rejects(main(source, path.resolve('assistant-private')));
     } finally { await fs.rm(root, { recursive: true, force: true }); }

@@ -1,7 +1,7 @@
 'use strict';
 
 const width = 1960;
-const height = 520;
+const height = process.env.JAVI_DRIVEHUB_TALL === '1' ? 572 : 520;
 const inset = 4;
 const formerSidebarWidth = 84;
 const split = 966 + formerSidebarWidth;

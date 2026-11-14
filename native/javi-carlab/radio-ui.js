@@ -210,7 +210,7 @@ function createRadioUI(options, invalidate) {
                 if (y >= 112 && y < 448) {
                     state.index = state.top + Math.floor((y - 112) / 84); clamp();
                     if (x > w - 60) toggleFavorite(rows()[state.index]); else tune(rows()[state.index]);
-                } else if (y >= h - 54) { if (x < w / 2) { state.mode = 'playing'; invalidate(); } else send('refresh'); }
+                } else if (x >= 16 && x < w - 16 && y >= h - 47 && y < h - 13) state.mode = 'playing';
             } else if (y >= 175 && y < 350) tune(state.frame.current);
             else if (y >= h - 54 && x > w - 65) toggleFavorite(state.frame.current);
             else open();

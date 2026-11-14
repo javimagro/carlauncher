@@ -10,7 +10,7 @@ const contracts = {
     trips: { name: ns + 'routing2.Routing2', attributes: { currentTrips: 'r' } },
     guidance: { name: ns + 'guiding.Guidance', methods: ['startGuidance', 'stopGuidance'], attributes: {
         junction3dViewInKombiEnabled: 'rw', visualizationInKombiNonNaviEnabled: 'rw',
-        additionalInformationEnabled: 'rw', guidingPopupsEnabled: 'rw', signboardPopupsEnabled: 'rw'
+        additionalInformationEnabled: 'rw', guidingPopupsEnabled: 'rw', signboardPopupsEnabled: 'rw', voiceGuidanceEnabled: 'rw'
     } }
 };
 const clean = (s) => typeof s === 'string' ? s.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 140) : '';
@@ -338,8 +338,10 @@ function createActions(builders, options) {
                     if (!attribute || typeof attribute.setValue !== 'function') throw new Error('BMW_GUIDANCE_SETTING_UNAVAILABLE');
                     // Explicit individual preference change. No startup writes, batch enabling or retry.
                     await attribute.setValue(command.enabled); alive(token);
-                    if (await attribute.getValue() !== command.enabled) throw new Error('BMW_GUIDANCE_SETTING_REJECTED');
+                    const value = await attribute.getValue();
                     alive(token);
+                    if (typeof value === 'boolean' && options.onGuidanceSetting) options.onGuidanceSetting(command.setting, value);
+                    if (value !== command.enabled) throw new Error('BMW_GUIDANCE_SETTING_REJECTED');
                 } else if (action === 'search' || action === 'chargers') {
                     selected = null;
                     update({ query: action === 'chargers' ? 'Cargadores cercanos' : clean(command.query), results: [], selected: null });
@@ -374,7 +376,7 @@ function createActions(builders, options) {
                     await clearPlan(); update({ status: 'idle', plan: null, stops: [] }); stops = [];
                 } else { await clearSearch(); await clearPlan(); update({ status: 'idle', results: [], plan: null }); }
             } catch (error) {
-                update({ status: 'error', error: clean(error.message) });
+                update({ status: action === 'guidance-setting' ? state.status : 'error', error: clean(error.message) });
                 if (action === 'search' || action === 'chargers') await clearSearch();
                 if (['route', 'add-stop', 'recalculate'].includes(action)) await clearPlan();
             } finally {

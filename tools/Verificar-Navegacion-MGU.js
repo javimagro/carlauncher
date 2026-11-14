@@ -57,6 +57,9 @@ assert.strictEqual(types[ns + 'POISearchTypes.SpecialCategoryType'].items.CHARGI
 assert.strictEqual(member(ns + 'POISearchTypes.POIResultList', 'poiResultElement'), ns + 'POISearchTypes.POIResultElement');
 assert.strictEqual(types['de.bmw.infotainment.util.ListTypes.ListKey'].dataRef, 'UInt32');
 const rendered = catalog.interfaces[displayServices.rendered.name], gt = ns + 'GuidingTypes.';
+const voice = catalog.interfaces[contracts.guidance.name].fields.voiceGuidanceEnabled;
+assert.strictEqual(voice.dataRef, 'Bool');
+assert.deepStrictEqual([voice.getter.id, voice.setter.id, voice.notifier.id, voice.notifier.eventgroups], [18, 19, 32784, [16]]);
 assert.deepStrictEqual(types[gt + 'DisplayType'].items, { CID: 1, HUD: 3, IC: 2, NONE: 0 });
 const nativeTypes = require('../native/javi-carlab/navigation-displays').types;
 Object.keys(nativeTypes).forEach((name, index) => assert.strictEqual(types[gt + 'RenderedContentType'].items[name], index));

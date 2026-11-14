@@ -7,11 +7,19 @@ const restrictions = { NO_RESTRICTIONS: 0, INSUFFICIENT_RANGE: 1, CHARGING_PROCE
 const code = (value, names, max) => Number.isInteger(value) && value >= 0 && value <= max ? value :
     typeof value === 'string' && Object.prototype.hasOwnProperty.call(names, value) ? names[value] : null;
 const safe = (fn) => Promise.resolve().then(fn).catch(() => undefined);
+function failureReason(error) {
+    const value = [error && error.code, error && error.message].filter((part) => typeof part === 'string').join(' ');
+    if (/\b(EACCES|EPERM|PERMISSION_DENIED|UNAUTHORIZED|ACCESS_DENIED)\b|permission denied|access denied/i.test(value)) return 'permission';
+    if (/\b(ETIMEDOUT|TIMEOUT|E_TIMEOUT)\b|timed?\s*out|timeout/i.test(value)) return 'no-response';
+    if (/\b(ECONNRESET|ECONNREFUSED|ENOTCONN|NOT_AVAILABLE|E_NOT_REACHABLE|UNKNOWN_SERVICE)\b|not (available|connected|reachable)/i.test(value)) return 'service';
+    if (/\b(E_NOT_OK|REMOTE_ERROR)\b|reject/i.test(value)) return 'rejected';
+    return 'unknown';
+}
 function createPreconditioning(builders, options) {
     options = options || {};
     const now = options.now || Date.now, every = options.every || setInterval, cancel = options.cancel || clearInterval;
     let proxy, subscription, stopped = false, connecting = false, reading = false, writing = false, writeStalled = false;
-    let nextConnect = 0, serial = 0, sampledAt = 0, state = null, pending = null, result = null, requestId = null;
+    let nextConnect = 0, serial = 0, sampledAt = 0, state = null, pending = null, result = null, requestId = null, failure = null;
     const seen = new Set();
     function fresh() { return !stopped && !writeStalled && !!proxy && state && now() - sampledAt < 15000; }
     function receive(value) {
@@ -65,6 +73,7 @@ function createPreconditioning(builders, options) {
                 typeof command.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(command.id) || seen.has(command.id) || writing || pending) return false;
             seen.add(command.id); if (seen.size > 32) seen.delete(seen.values().next().value);
             requestId = command.id;
+            failure = null;
             if (!fresh() || state.mode === null || state.active === null) { result = 'unavailable'; return false; }
             if (command.enabled && state.restriction !== 0) { result = 'restricted'; return false; }
             // Hmi8 calcOperationCommandVWM: manual=2, automatic=1, both=3.
@@ -78,15 +87,19 @@ function createPreconditioning(builders, options) {
                 await proxy.operationMode.setValue({ operationModeVWM: mode });
                 if (!stopped) read();
                 return !stopped;
-            } catch (_) {
-                if (!stopped && pending) { pending = null; result = 'error'; }
+            } catch (error) {
+                if (!stopped && pending) {
+                    pending = null;
+                    result = 'error'; failure = failureReason(error);
+                    read();
+                }
                 return false;
             } finally { writing = false; writeStalled = false; }
         },
         snapshot() {
             const valid = fresh() && state.mode !== null && state.active !== null;
             return { available: !!valid, active: valid ? state.active : null, mode: valid ? state.mode : null,
-                restriction: valid ? state.restriction : null, pending: !stopped && !writeStalled && (writing || !!pending), requestId, result };
+                restriction: valid ? state.restriction : null, pending: !stopped && !writeStalled && (writing || !!pending), requestId, result, failure };
         },
         stop() {
             if (stopped) return; stopped = true; cancel(timer); pending = null;

@@ -372,7 +372,24 @@ function timeAgo(date, now) {
     return 'Hace ' + Math.floor(minutes / 1440) + ' d';
 }
 
-function news(cv, x, y, w, h, data, index, art, now) {
+function newsPhoto(cv, x, y, w, h, loading, now) {
+    cv.card(x, y, w, h, 12, [[0, '#1b3346'], [1, '#0a1521']]);
+    cv.strokeRoundRect(x, y, w, h, 12, 1, '#365267');
+    const center = x + w / 2, middle = y + h / 2;
+    cv.strokeRoundRect(center - 24, middle - 42, 48, 34, 5, 2, '#7799ae');
+    cv.circle(center + 11, middle - 32, 3, '#8bd6d2');
+    cv.line(center - 18, middle - 14, center - 7, middle - 26, 2, '#7799ae');
+    cv.line(center - 7, middle - 26, center + 4, middle - 14, 2, '#7799ae');
+    cv.line(center + 4, middle - 14, center + 10, middle - 21, 2, '#7799ae');
+    cv.line(center + 10, middle - 21, center + 18, middle - 14, 2, '#7799ae');
+    cv.text(loading ? 'Cargando imagen…' : 'Imagen no disponible', center, middle + 22, 15, primary, centered);
+    if (loading) {
+        const step = Math.floor(now / 240) % 3;
+        for (let i = 0; i < 3; i++) cv.circle(center + (i - 1) * 13, middle + 40, 2.5, i === step ? '#8bd6d2' : '#426278');
+    }
+}
+
+function news(cv, x, y, w, h, data, index, now) {
     const items = data.news || [];
     const item = items[index];
     if (!item) return empty(cv, x, y, w, h, data.newsStatus, 'Cargando noticias…', 'Noticias no disponibles', data.newsDetail);
@@ -383,8 +400,8 @@ function news(cv, x, y, w, h, data, index, art, now) {
     const photoTop = y + 64;
     const photoWidth = x + w - 30 - photoX;
     const photoHeight = Math.round(photoWidth * 9 / 16);
-    cv.roundRect(photoX, photoTop, photoWidth, photoHeight, 12, '#101b26');
-    cv.image(data.photo || art('news'), photoX, photoTop, photoWidth, photoHeight, 12);
+    if (data.photo) cv.image(data.photo, photoX, photoTop, photoWidth, photoHeight, 12);
+    else newsPhoto(cv, photoX, photoTop, photoWidth, photoHeight, data.photoStatus === 'loading', now);
     const source = [item.source, item.date ? timeAgo(item.date, now) : ''].filter(Boolean).join(' · ');
     fit(cv, source, left, y + 78, 13, photoX - left - 89, amber);
     cv.text((index + 1) + ' / ' + items.length, photoX - 17, y + 78, 13, primary, right);
@@ -405,6 +422,33 @@ function programmeTimes(tdt, item) {
     return item.startLabel ? [item.startLabel, item.endLabel] : [tdt.time(item.start), tdt.time(item.end)];
 }
 
+function tdtChannels(cv, tdt, l, left, top, first, focus, now) {
+    tdt.state.channels.slice(first, first + visibleChannels).forEach((channel, index) => {
+        const at = top + index * l.rowHeight;
+        const selected = first + index === focus;
+        const info = tdt.program(channel, now, false);
+        const [start, end] = programmeTimes(tdt, info);
+        const progress = info ? (info.progress === undefined
+            ? Math.min(1, Math.max(0, (now - info.start) / (info.end - info.start))) : info.progress) : 0;
+        cv.card(left, at, l.listWidth, l.rowHeight - 4, 7, selected
+            ? [[0, '#19374e'], [1, '#112940']] : [[0, '#132638'], [1, '#0e1b2a']]);
+        if (selected) cv.strokeRoundRect(left, at, l.listWidth, l.rowHeight - 4, 7, 1.5, '#6a8aa4');
+        cv.roundRect(left + 7, at + 10, 31, 31, 3, channel.color || '#214969');
+        const logo = tdt.logo(channel);
+        if (logo) cv.image(logo, left + 7, at + 10, 31, 31, 3);
+        else cv.text(channel.badge || channel.name.slice(0, 2).toUpperCase(), left + 22.5, at + 31, 14, primary,
+            { align: 'center', font: 'bold' });
+        const textX = left + 46;
+        const endX = left + l.listWidth - 8;
+        fit(cv, channel.name, textX, at + 19, 17, endX - textX, primary);
+        cv.roundRect(textX, at + 24, endX - textX, 3, 1, '#223549');
+        if (progress > 0) cv.roundRect(textX, at + 24, (endX - textX) * progress, 3, 1, '#49c5b6');
+        cv.text(start, textX, at + 44, 11, primary);
+        cv.text(end, endX, at + 44, 11, primary, right);
+        fit(cv, info ? info.title : 'Sin EPG', (textX + endX) / 2, at + 44, 11, endX - textX - 74, secondary, centered);
+    });
+}
+
 function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
     const l = tdtLayout(w, h);
     const { state } = tdt;
@@ -414,29 +458,29 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
     const detailRight = detailX + l.detailWidth;
     const item = tdt.selected();
     const programme = tdt.program(item, now, true);
-    const action = state.mode === 'browse' ? 'Menú' : 'Volver';
-    cv.roundRect(x + l.actionX, y + 7, 92, 23, 5, '#173043');
-    cv.text(action, x + l.actionX + 46, y + 23, 13, primary, centered);
+    const action = state.mode === 'browse' ? 'Configuración' : 'Volver';
+    cv.roundRect(x + l.actionX, y + 7, l.actionWidth, 23, 5, '#173043');
+    cv.text(action, x + l.actionX + l.actionWidth / 2, y + 23, 13, primary, centered);
     if (state.mode === 'player') {
         cv.roundRect(left, y + 7, 96, 23, 5, '#173043');
         cv.text('Canales', left + 48, y + 23, 13, primary, centered);
     } else if (state.status === 'cached') cv.text('Catálogo sin conexión', left, y + 23, 13, secondary);
     cv.fillRect(left, top, w - 18, l.body, '#07111e');
 
-    if (['menu', 'settings', 'filters'].includes(state.mode)) {
-        const rows = {
-            menu: () => tdt.menu().map((label) => ({ label })), settings: tdt.settings, filters: tdt.filters
-        }[state.mode]();
-        rows.forEach(({ label, value }, index) => {
-            const row = y + l.menuTop + index * l.menuRow;
-            cv.roundRect(x + l.menuX, row, w - 2 * l.menuX, l.menuRow - 5, 6,
+    if (state.mode === 'settings') {
+        tdt.settings().forEach(({ label, value }, index) => {
+            const row = y + l.settingsTop + index * l.settingsRow;
+            cv.roundRect(x + l.settingsX, row, w - 2 * l.settingsX, l.settingsRow - 5, 6,
                 state.option === index ? '#183751' : '#0e1b2a');
-            cv.text(label, x + l.menuX + 14, row + 29, 18, primary);
-            if (value) cv.text(value + '  ›', x + w - l.menuX - 14, row + 29, 17, turquoise, right);
+            cv.text(label, x + l.settingsX + 14, row + 29, 18, primary);
+            cv.text(value + '  ›', x + w - l.settingsX - 14, row + 29, 17, turquoise, right);
         });
         return;
     }
     if (state.mode === 'player') {
+        const listOpen = state.playerChoice !== undefined;
+        const playerLeft = listOpen ? detailX : left;
+        const playerWidth = detailRight - playerLeft;
         const surface = tdt.video();
         if (surface && surface.image) {
             const width = Math.min(w - 18, l.body * surface.image.w / surface.image.h);
@@ -449,15 +493,15 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         }[state.playback];
         if (message) {
             const detail = state.playback === 'error' && state.playbackDiagnostic;
-            cv.text(message, x + w / 2, top + l.body / 2, 20, primary, centered);
-            if (detail) cv.text(detail, x + w / 2, top + l.body / 2 + 24, 15, secondary, centered);
+            fit(cv, message, playerLeft + playerWidth / 2, top + l.body / 2, 20, playerWidth - 24, primary, centered);
+            if (detail) fit(cv, detail, playerLeft + playerWidth / 2, top + l.body / 2 + 24, 15, playerWidth - 24, secondary, centered);
         }
         if (state.playback === 'reconnecting' || state.playback === 'buffering') {
             const label = state.playback === 'buffering' ? 'Cargando vídeo…' :
                 'Reconectando' + (state.playbackDiagnostic ? ' · ' + state.playbackDiagnostic : '…');
             const badgeWidth = cv.textWidth(label, 13) + 24;
-            cv.roundRect(left + 8, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
-            cv.text(label, left + 8 + badgeWidth / 2, top + 24, 13, primary, centered);
+            cv.roundRect(playerLeft + 8, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
+            cv.text(label, playerLeft + 8 + badgeWidth / 2, top + 24, 13, primary, centered);
         }
         const audioError = {
             'audio-unavailable': 'Audio no disponible', 'audio-alsa': 'Audio · ALSA no disponible',
@@ -473,75 +517,28 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             cv.roundRect(x + w - badgeWidth - 18, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
             cv.text(label, x + w - badgeWidth / 2 - 18, top + 24, 13, primary, centered);
         }
-        if (state.overlayUntil > now) {
-            cv.fillRect(left, top + l.body - 57, w - 18, 57, [7, 17, 30, 225]);
-            fit(cv, item.name, left + 15, top + l.body - 31, 21, w - 50, primary, bold);
-            if (programme) fit(cv, programme.title, left + 15, top + l.body - 11, 15, w - 50, secondary);
+        if (item && state.overlayUntil > now) {
+            cv.fillRect(playerLeft, top + l.body - 57, playerWidth, 57, [7, 17, 30, 225]);
+            fit(cv, item.name, playerLeft + 15, top + l.body - 31, 21, playerWidth - 32, primary, bold);
+            if (programme) fit(cv, programme.title, playerLeft + 15, top + l.body - 11, 15, playerWidth - 32, secondary);
         }
-        if (state.playerChoice !== undefined) {
-            const first = tdt.playerStart();
-            state.channels.slice(first, first + visibleChannels).forEach((channel, index) => {
-                const at = top + index * l.rowHeight;
-                cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 6,
-                    first + index === state.playerChoice ? '#183751' : [7, 17, 30, 226]);
-                fit(cv, channel.name, left + 12, at + 32, 18, l.listWidth - 24, primary);
-            });
+        if (listOpen) {
+            cv.fillRect(left, top, l.detailX - 9, l.body, '#07111e');
+            tdtChannels(cv, tdt, l, left, top, tdt.playerStart(), state.playerChoice, now);
         }
         return;
     }
 
-    if (state.mode === 'guide') {
-        const rows = tdt.programs();
-        const first = tdt.guideStart(now);
-        rows.slice(first, first + visibleChannels).forEach((entry, index) => {
-            const at = top + index * l.rowHeight;
-            cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 6, entry === programme ? '#183751' : '#0e1b2a');
-            fit(cv, entry.title, left + 9, at + 22, 16, l.listWidth - 18, primary);
-            cv.text(programmeTimes(tdt, entry).join(' – '), left + 9, at + 43, 13, secondary);
-        });
-    } else {
-        state.channels.slice(state.firstChannel, state.firstChannel + visibleChannels).forEach((channel, index) => {
-            const at = top + index * l.rowHeight;
-            const selected = index + state.firstChannel === state.channel && focused;
-            const info = tdt.program(channel, now, false);
-            const [start, end] = programmeTimes(tdt, info);
-            const progress = info ? (info.progress === undefined
-                ? Math.min(1, Math.max(0, (now - info.start) / (info.end - info.start))) : info.progress) : 0;
-            cv.roundRect(left, at, l.listWidth, l.rowHeight - 4, 7, selected ? '#112940' : '#0e1b2a');
-            if (selected) cv.strokeRoundRect(left, at, l.listWidth, l.rowHeight - 4, 7, 1.5, '#6a8aa4');
-            cv.roundRect(left + 7, at + 10, 31, 31, 3, channel.color || '#214969');
-            const logo = tdt.logo(channel);
-            if (logo) cv.image(logo, left + 7, at + 10, 31, 31, 3);
-            else cv.text(channel.badge || channel.name.slice(0, 2).toUpperCase(), left + 22.5, at + 31, 14, primary,
-                { align: 'center', font: 'bold' });
-            const textX = left + 46;
-            const endX = left + l.listWidth - 8;
-            fit(cv, channel.name, textX, at + 19, 17, endX - textX, primary);
-            cv.roundRect(textX, at + 24, endX - textX, 3, 1, '#223549');
-            if (progress > 0) cv.roundRect(textX, at + 24, (endX - textX) * progress, 3, 1, '#49c5b6');
-            cv.text(start, textX, at + 44, 11, primary);
-            cv.text(end, endX, at + 44, 11, primary, right);
-            fit(cv, info ? info.title : 'Sin EPG', (textX + endX) / 2, at + 44, 11, endX - textX - 74, secondary, centered);
-        });
-    }
-
+    tdtChannels(cv, tdt, l, left, top, state.firstChannel, focused ? state.channel : -1, now);
     if (!item) {
         const status = { loading: 'Cargando canales…', offline: 'No se ha podido descargar el catálogo' }[state.status];
         cv.text(status || 'No hay canales en esta lista', x + w / 2, top + l.body / 2, 20, primary, centered);
         return;
     }
-    if (state.mode === 'order') {
-        const actions = ['Subir canal', 'Bajar canal', 'Restaurar orden del catálogo', 'Orden alfabético'];
-        actions.forEach((label, index) => {
-            const at = top + index * l.menuRow;
-            cv.roundRect(detailX, at, l.detailWidth, l.menuRow - 5, 6, '#173043');
-            cv.text(label, detailX + 14, at + 29, 17, primary);
-        });
-        return;
-    }
     const detailLeft = Math.max(detailX, clipLeft);
     const visibleRight = Math.min(detailRight, clipRight);
     if (visibleRight <= detailLeft) return;
+    cv.noclip();
     cv.clip(detailLeft, top, visibleRight - detailLeft, l.body);
     if (state.art && programme) {
         const imageWidth = Math.max(l.detailWidth, l.body * state.art.w / state.art.h);
@@ -562,11 +559,7 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         cv.roundRect(textX, top + 69, descriptionWidth, lines.length * 21 + 15, 7, [7, 17, 30, 185]);
         lines.forEach((line, row) => fit(cv, line, textX + 10, top + 93 + row * 21, 16, descriptionWidth - 20, primary));
     }
-    if (state.mode !== 'guide') {
-        cv.roundRect(detailRight - 137, y + h - 49, 122, 30, 5, '#173f51');
-        cv.text('Ver en directo', detailRight - 76, y + h - 29, 14, primary, centered);
-    }
-    cv.clip(clipLeft, y, clipRight - clipLeft, h);
+    cv.noclip();
 }
 
 function empty(cv, x, y, w, h, status, loading, offline, detail) {
@@ -604,7 +597,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
         else if (state.weatherPage === 'rain') weatherRain(cv, x, y, w, h, data.weather, state.weatherDay, art);
         else weatherSummary(cv, x, y, w, h, data.weather, art);
     }
-    if (card.id === 'news') news(cv, x, y, w, h, data, state.article, art, now);
+    if (card.id === 'news') news(cv, x, y, w, h, data, state.article, now);
     if (card.id === 'tdtworld' && data.tdt) tdtworld(cv, x, y, w, h, data.tdt, selected, clipLeft, clipRight, now);
     const freshness = data[card.id + 'Status'];
     if (freshness === 'offline' && data[card.id]) cv.text('Sin conexión', x + w - 9, y + h - 6, 9, primary, right);
@@ -634,6 +627,20 @@ function energy(cv, readings, art, vehicle, navigation) {
     cv.text(navigation ? 'Sin previsión' : vehicle ? 'Ruta de ejemplo' : 'Demostración', x + w - 13, y + 24, 10, secondary, right);
 }
 
+function drawToast(cv, message, night) {
+    const maxWidth = map.w - 112;
+    const lines = wrap(cv, message, 17, () => maxWidth - 48);
+    const boxWidth = Math.min(maxWidth, Math.max(240, Math.ceil(Math.max(...lines.map((line) => cv.textWidth(line, 17))) + 48)));
+    const boxHeight = 38 + (lines.length - 1) * 22;
+    const x = Math.round(map.x + (map.w - boxWidth) / 2);
+    const y = energyBar.y - 4 - boxHeight;
+    cv.roundRect(x, y + 3, boxWidth, boxHeight, 7, [0, 0, 0, 56]);
+    cv.roundRect(x, y, boxWidth, boxHeight, 7, night ? '#293747' : '#ffffff');
+    cv.strokeRoundRect(x, y, boxWidth, boxHeight, 7, 1, night ? '#466079' : '#c8d5e1');
+    lines.forEach((line, index) => fit(cv, line, x + boxWidth / 2, y + 25 + 22 * index, 17, boxWidth - 32,
+        night ? '#f0f4f8' : '#17212c', centered));
+}
+
 function drawHome(cv, state, scroll, data, art, now) {
     cv.clear(background);
     cv.roundRect(map.x, map.y, map.w, map.h, 10, '#121c25');
@@ -653,11 +660,11 @@ function drawHome(cv, state, scroll, data, art, now) {
         cv.line(x + 15, y + 23, x + 28, y + 12, 2.5, color);
         cv.line(x + 28, y + 12, x + 41, y + 23, 2.5, color);
         cv.strokeRoundRect(x + 20, y + 22, 16, 14, 2, 2, color);
-        if (data.home === 'error') cv.text('No se ha podido volver a iDrive', x - 12, y + 29, 14, primary, right);
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, vehicle));
     energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, !!data.navigationUi);
+    if (data.toast && now < data.toast.until) drawToast(cv, data.toast.message, night);
     return vehicle;
 }
 

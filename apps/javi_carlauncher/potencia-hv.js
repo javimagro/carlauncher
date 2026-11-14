@@ -24,7 +24,10 @@ function readReply(event, did) {
     if (code > 1) return { failure: 'tasu', code };
     const value = event.udsResponse;
     const bytes = value && value.data ? value.data : value;
-    if (!Array.isArray(bytes) && !(bytes instanceof Uint8Array) && !(bytes instanceof ArrayBuffer)) return;
+    // runner.js executes the OAP bundle in a new VM context. SOME/IP Buffers
+    // originate in Node's native context and fail the app's instanceof check.
+    if (!Buffer.isBuffer(bytes) && !Array.isArray(bytes) &&
+        !(bytes instanceof Uint8Array) && !(bytes instanceof ArrayBuffer)) return;
     const frame = Buffer.from(bytes);
     // TASU prepends nine bytes to the ECU's UDS reply.
     if (frame.length >= 5 && frame[2] === 0x7f) return { failure: 'tasu', code: frame[4] };
@@ -164,8 +167,11 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
             if (subscription !== undefined) {
                 await Promise.resolve().then(() => proxy.sendTasuResponse.unsubscribe(subscription)).catch(() => {});
             }
-            if (proxy && typeof proxy.dispose === 'function') {
-                await Promise.resolve().then(() => proxy.dispose()).catch(() => {});
+            // The installed OAP SDK owns native subscriptions through shutdown().
+            // Keep dispose as a fallback for older adapters, never call both.
+            const closeProxy = proxy && (proxy.shutdown || proxy.dispose);
+            if (typeof closeProxy === 'function') {
+                await Promise.resolve().then(() => closeProxy.call(proxy)).catch(() => {});
             }
         }
     }

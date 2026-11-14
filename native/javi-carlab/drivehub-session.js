@@ -19,7 +19,7 @@ const { createCommands } = require('./assistant-drivehub');
 
 module.exports = function createSession(gpu, options) {
     const photos = createPhotoLoader();
-    options = Object.assign({}, options, { photo: photos.load });
+    options = Object.assign({}, options, { photo: photos.load, notify });
     const cv = new Recorder(width, height);
     const art = loadArtwork();
     let dirty = true;
@@ -33,7 +33,7 @@ module.exports = function createSession(gpu, options) {
     let mapGesture;
     const navigation = createNavigation();
     const navigationUi = createNavigationUI(options, () => { dirty = true; });
-    const preconditioning = createPreconditioningUI(options.preconditioningCommand, () => { dirty = true; });
+    const preconditioning = createPreconditioningUI(options.preconditioningCommand, () => { dirty = true; }, notify);
     let lastFrame = 0;
     let lastArticle;
     let cockpit;
@@ -61,6 +61,12 @@ module.exports = function createSession(gpu, options) {
         vehicle: currentVehicle, weather: () => provider.weatherSnapshot(Date.now()) }), () => { dirty = true; });
     navigationUi.assistant = assistant;
     panel.setArticleCount((data.news || []).length);
+
+    function notify(message, now = Date.now()) {
+        if (!shown || !onScreen || !message) return;
+        data.toast = { message, until: now + 4000 };
+        dirty = true;
+    }
 
     function reportScreen() {
         if (options.onCaptureScreen) options.onCaptureScreen(!!(shown && area && touchAvailable && confirmedOnScreen));
@@ -143,6 +149,7 @@ module.exports = function createSession(gpu, options) {
     }
     gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
     function hidden() {
+        data.toast = undefined;
         assistant.setVisible(false);
         provider.suspend();
         onScreen = false;
@@ -171,10 +178,13 @@ module.exports = function createSession(gpu, options) {
     const timer = setInterval(() => {
         if (!shown || !area) return;
         const now = Date.now();
+        if (data.toast && now >= data.toast.until) { data.toast = undefined; dirty = true; }
         const radioCard = cards[1], radioX = viewport.x + radioCard.x - panel.position();
         radio.update(now, onScreen && radioX < viewport.x + viewport.w && radioX + radioCard.w > viewport.x);
         tdt.update(now, onScreen && cards[panel.state.selected].id === 'tdtworld');
-        if (dirty || panel.animating() || now - lastFrame >= 900) frame(now);
+        const newsLoading = onScreen && cards[panel.state.selected].id === 'news' && data.photoStatus === 'loading';
+        const voiceIndicator = onScreen && !data.diagnostics && navigationUi.state.panel === 'none' && assistant.state.indicator;
+        if (dirty || panel.animating() || now - lastFrame >= (voiceIndicator ? 50 : newsLoading ? 240 : 900)) frame(now);
     }, 33);
 
     return {
@@ -186,6 +196,7 @@ module.exports = function createSession(gpu, options) {
         setHome(status) {
             if (data.home === status) return;
             data.home = status;
+            if (status === 'error') notify('No se ha podido volver a iDrive');
             dirty = true;
         },
         telemetry(records, thermal) {
@@ -198,6 +209,7 @@ module.exports = function createSession(gpu, options) {
             if (shown === on) return;
             shown = on;
             if (!on) {
+                data.toast = undefined;
                 assistant.setVisible(false);
                 provider.suspend();
                 confirmedOnScreen = false;

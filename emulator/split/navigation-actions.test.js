@@ -289,11 +289,11 @@ test('Mercator viewport, dateline fitting and segment clipping stay bounded at s
     assert.equal(clipSegment([-10, -10], [-5, -5], { x: 0, y: 0, w: 100, h: 50 }), null);
 });
 
-test('map UI searches only on submit, keeps gestures inside its panel and cancels on coverage', () => {
+test('map UI searches only on keyboard confirmation, keeps gestures inside its panel and cancels on coverage', () => {
     const sent = [], ui = createNavigationUI({ navigationCommand: (c) => { sent.push(c); return true; } }, () => {});
     const nav = { state: 'inactive', points: [], destinations: [], segments: [], theme: 'day' };
     ui.update(nav, {}, true); ui.activate('search'); ui.activate('key:M'); ui.activate('key:Á');
-    assert.equal(sent.length, 0); ui.activate('submit'); assert.equal(sent[0].query, 'MÁ');
+    assert.equal(sent.length, 0); ui.activate('keyboard-done'); assert.equal(sent[0].query, 'MÁ');
     const cv = new Recorder(1960, 520); controls(cv, ui, nav);
     assert(ui.state.buttons.every((b) => b.x >= map.x && b.y >= map.y && b.x + b.w <= map.x + map.w && b.y + b.h <= map.y + map.h));
     const b = ui.state.buttons.find((b) => b.id === 'close');
@@ -313,11 +313,15 @@ test('charger panel reports waiting, failure and empty results separately and re
     ui.update(Object.assign({}, nav, { controls: failure }), {}, true);
     assert.equal(ui.state.pending, false);
     controls(new Recorder(1960, 520), ui, nav);
-    const retry = ui.state.buttons.find((b) => b.id === 'chargers' && b.w > 70);
+    // The persistent charger control is also the retry entry point in the simplified panel.
+    const retry = ui.state.buttons.find((b) => b.id === 'chargers');
     assert(retry && !retry.disabled);
-    ui.activate(retry.id); assert.equal(sent[1].action, 'chargers');
+    ui.touch('down', retry.x + retry.w / 2, retry.y + retry.h / 2);
+    ui.touch('up', retry.x + retry.w / 2, retry.y + retry.h / 2);
+    assert.equal(sent[1].action, 'chargers');
     assert.match(searchMessage(failure, false), /no ha enviado resultados/);
-    assert.match(searchMessage({ status: 'results' }, false), /terminado sin encontrar/);
+    assert.match(searchMessage({ status: 'results' }, false, true), /No se han encontrado cargadores/);
+    assert.match(searchMessage({ status: 'results' }, false, false), /No se ha encontrado ningún destino/);
     assert.match(searchMessage({ status: 'loading', searchPhase: 'categories' }, false), /categorías/);
     ui.close();
 });

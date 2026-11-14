@@ -419,6 +419,32 @@ function tasuReply(did, payload, ecu = 7) {
     ]) };
 }
 
+test('SME native Buffers cross the OAP VM boundary without losing the voltage/current sample', async (t) => {
+    const fs = require('node:fs'), vm = require('node:vm');
+    const module = { exports: {} };
+    const source = fs.readFileSync(require.resolve('../../apps/javi_carlauncher/potencia-hv'), 'utf8');
+    const context = { module, Buffer, setTimeout, clearTimeout };
+    vm.runInNewContext(source, context);
+    assert.equal(vm.runInNewContext('Buffer.alloc(1) instanceof Uint8Array', context), false,
+        'the native Buffer and app Uint8Array have different realms, as in the OAP runner');
+    let notify;
+    const probe = module.exports.createPowerProbe({ buildAndInitTypedProxy: () => ({
+        sendTasuResponse: { subscribe(fn) { notify = fn; } },
+        sendTasuRequest(request) {
+            const did = request.udsData.readUInt16BE(0);
+            notify(tasuReply(did, did === 0xe54d ? [0x9c, 0x40] : [0, 0, 0xec, 0x78]));
+            return { TasuErrorEnum: 'REQUEST_PENDING' };
+        }
+    }) }, { replyMs: 20 });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    for (let i = 0; i < 30 && probe.snapshot().status === 'no-sample'; i++) {
+        await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal(probe.snapshot().status, 'sample');
+    assert.deepEqual(JSON.parse(JSON.stringify(probe.snapshot().fields)), { kw: 20, volts: 400, amps: 50 });
+});
+
 test('a slow TASU acknowledgement leaves the full reply window for the SME', async (t) => {
     let notify;
     let begin;
@@ -489,6 +515,32 @@ test('SME timeout distinguishes silence, unrelated events and a pending reply', 
             assert.deepEqual(probe.snapshot().fields, { stage: 'voltage', failure, code: undefined });
         });
     }
+});
+
+test('the installed SDK shutdown completes before a timed-out TASU connection is replaced', async (t) => {
+    const lifecycle = [];
+    let finishShutdown;
+    const probe = createPowerProbe({ buildAndInitTypedProxy() {
+        lifecycle.push('open');
+        return {
+            sendTasuResponse: { subscribe: () => 0, unsubscribe: () => lifecycle.push('unsubscribe') },
+            sendTasuRequest: () => new Promise(() => {}),
+            shutdown() {
+                lifecycle.push('shutdown');
+                return new Promise((resolve) => { finishShutdown = resolve; });
+            },
+            dispose() { assert.fail('The SDK shutdown owns the native proxy'); }
+        };
+    } }, { requestMs: 15, retryMs: 15 });
+    t.after(() => { probe.show(false); if (finishShutdown) finishShutdown(); });
+    probe.show(true);
+    for (let i = 0; i < 30 && !finishShutdown; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(typeof finishShutdown, 'function');
+    await new Promise((r) => setTimeout(r, 45));
+    assert.deepEqual(lifecycle, ['open', 'unsubscribe', 'shutdown']);
+    finishShutdown();
+    for (let i = 0; i < 30 && lifecycle.length === 3; i++) await new Promise((r) => setTimeout(r, 5));
+    assert.equal(lifecycle[3], 'open');
 });
 
 test('the battery power probe reads only the SME voltage and signed current and displays their product', async (t) => {

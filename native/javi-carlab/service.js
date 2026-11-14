@@ -110,6 +110,10 @@ const session = createSession(gpu, {
             console.warn('BMWLauncher requiere la salida ID8 de 2880 x 960 y el modo layer');
             return null;
         }
+        if (height === 572 && (!info.appArea || info.appArea.x !== 0 || info.appArea.y !== 0 || info.appArea.w !== 2880 || info.appArea.h !== 840)) {
+            console.warn('BMWLauncher: la vista alta requiere que mgu-render anuncie 0,0,2880,840');
+            return null;
+        }
         return fitArea(info.appArea, width, height);
     }
 });

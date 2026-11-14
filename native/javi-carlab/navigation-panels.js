@@ -17,20 +17,20 @@ function duration(seconds) {
     const n = Math.ceil(seconds / 60);
     return n >= 60 ? Math.floor(n / 60) + ' h ' + n % 60 + ' min' : n + ' min';
 }
-function searchMessage(data, busy) {
+function searchMessage(data, busy, chargers) {
     if (data.status === 'error') {
         if (data.error === 'BMW_CHARGER_CATEGORY') return 'BMW no ha facilitado la categoría de cargadores';
         if (/INVALID_POSITION|BAD_LOCATION/.test(data.error)) return 'BMW no dispone de una posición válida para buscar';
-        if (data.error === 'BMW_SEARCH_TIMEOUT') return 'BMW no ha enviado resultados. Puedes reintentar.';
+        if (data.error === 'BMW_SEARCH_TIMEOUT') return 'BMW no ha enviado resultados';
         if (data.error === 'BMW_LIST_NOT_RECEIVED') return 'BMW encontró lugares, pero no se recibió la lista';
-        if (data.error === 'BMW_LIST_DESTROYED') return 'BMW ha cerrado la lista. Vuelve a buscar.';
+        if (data.error === 'BMW_LIST_DESTROYED') return 'BMW ha cerrado la lista de resultados';
         return 'No se ha podido completar la búsqueda en BMW';
     }
     if (busy || data.status === 'loading') return ({ session: 'Conectando con la búsqueda de BMW…', location: 'Obteniendo la posición del coche…',
         categories: 'Consultando las categorías de BMW…', view: 'Abriendo la lista de resultados…', results: 'Esperando los resultados de BMW…' })[data.searchPhase] || 'Buscando en BMW Maps…';
-    return data.status === 'results' ? 'BMW ha terminado sin encontrar resultados' : 'Escribe un destino o busca cargadores';
+    return chargers ? 'No se han encontrado cargadores en la zona' : 'No se ha encontrado ningún destino';
 }
-function controls(cv, ui, nav) {
+function controls(cv, ui, nav, now = Date.now()) {
     const s = ui.state, data = s.controls || {}, p = palettes[s.theme === 'auto' ? nav.theme === 'day' ? 'day' : 'night' : s.theme];
     const busy = s.pending || data.busy, b = layout.panel(s), x = b.x, y = b.y, w = b.w, h = b.h;
     s.buttons = [];
@@ -96,8 +96,7 @@ function controls(cv, ui, nav) {
         paging(results.length, count);
         if (!results.length) {
             icon(cv, chargers ? 'chargers' : 'search', x + w / 2, y + 133, p.secondary, p.surface, 1.4);
-            wrap(searchMessage(data, busy), x + 28, y + 190, w - 56, 21, p.secondary);
-            if (!busy) button(chargers ? 'chargers' : 'submit', data.status === 'error' ? 'Reintentar' : 'Buscar de nuevo', x + 56, y + 300, w - 112, 52, { primary: true });
+            wrap(searchMessage(data, busy, chargers), x + 28, y + 190, w - 56, 21, p.secondary);
             return;
         }
         results.slice(s.offset, s.offset + count).forEach((item, i) => {
@@ -121,13 +120,12 @@ function controls(cv, ui, nav) {
         });
     }
     function keyboard() {
-        button('query', '', x + 12, y + 70, w - 138, 50);
+        button('query', '', x + 12, y + 70, w - 24, 50);
         let first = 0;
-        while (first < s.cursor && cv.textWidth(s.query.slice(first, s.cursor), 20) > w - 190) first++;
-        text(s.query.slice(first) || 'Dirección, ciudad o lugar', x + 26, y + 103, 20, s.query ? p.text : p.secondary, w - 172);
+        while (first < s.cursor && cv.textWidth(s.query.slice(first, s.cursor), 20) > w - 62) first++;
+        text(s.query.slice(first) || 'Dirección, ciudad o lugar', x + 26, y + 103, 20, s.query ? p.text : p.secondary, w - 52);
         const caret = x + 26 + cv.textWidth(s.query.slice(first, s.cursor), 20);
         cv.line(caret, y + 82, caret, y + 108, 2, p.accent);
-        button('submit', 'Buscar', x + w - 116, y + 70, 104, 50, { primary: true, disabled: busy || !s.query.trim() });
         const rows = s.keyboardNumbers ? ['1234567890', '-/.,:;()@&', 'ÁÉÍÓÚÜÑ?!'] : ['QWERTYUIOP', 'ASDFGHJKLÑ', 'ZXCVBNM'];
         rows.forEach((letters, r) => {
             const start = x + (w - (letters.length * 69 - 7)) / 2;
@@ -139,7 +137,7 @@ function controls(cv, ui, nav) {
         button('cursor-right', '', x + 232, y + 318, 44, 50, { icon: 'next', scale: .8 });
         button('key: ', 'Espacio', x + 284, y + 318, 250, 50);
         button('erase', 'Borrar', x + 542, y + 318, 84, 50, { size: 18 });
-        button('keyboard-done', 'Listo', x + 634, y + 318, 92, 50);
+        button('keyboard-done', 'Listo', x + 634, y + 318, 92, 50, { primary: true, disabled: busy || !s.query.trim() });
     }
     function detail() {
         const selected = data.selected || {}, charger = selected.type === 'charger';
@@ -195,18 +193,21 @@ function controls(cv, ui, nav) {
             const yy = y + 76 + i * 58; text(label, x + 20, yy + 29, 20, p.text, w - 120);
             button('pref:' + key, s.preferences[key] ? 'Sí' : 'No', x + w - 92, yy, 72, 44, { primary: s.preferences[key] });
         });
-        text('Mínimo al destino', x + 20, y + 277, 20, p.text);
-        button('arrival-down', '−', x + 212, y + 250, 46, 44); text(s.preferences.arrival + '%', x + 270, y + 280, 20); button('arrival-up', '+', x + w - 66, y + 250, 46, 44);
+        icon(cv, 'battery', x + 30, y + 271, p.text, p.surface, .75);
+        text('Mínimo al destino', x + 48, y + 277, 20, p.text);
+        button('arrival-down', '−', x + 242, y + 250, 46, 44); text(s.preferences.arrival + '%', x + 302, y + 280, 20); button('arrival-up', '+', x + w - 66, y + 250, 46, 44);
         button('theme', 'Tema: ' + ({ auto: 'Automático', day: 'Día', night: 'Noche' })[s.theme], x + 20, y + 306, w - 40, 46);
-        button('recalculate', 'Aplicar a esta ruta', x + 20, y + 364, w - 40, 50, { primary: true, disabled: busy || !(data.stops || []).length });
     }
     // Separate circles, in reference order; unavailable BMW features stay disabled.
     const ready = ui.tiles.status().ready;
-    [['settings', 'settings'], ['audio', 'audio'], ['chargers', 'chargers'], ['recent', 'recent'], ['center', 'center'], ['assistant', 'assistant']].forEach((a, i) =>
-        button(a[0], '', map.x + 12, map.y + 10 + i * 55, 50, 50, { circle: true, icon: a[1], disabled: a[0] === 'audio' || a[0] === 'assistant' && !ui.assistant || a[0] === 'center' && !ready }));
+    const voice = nav.presentation && nav.presentation.options.voiceGuidanceEnabled;
+    [['settings', 'settings'], ['audio', voice === false ? 'audio-muted' : 'audio'], ['chargers', 'chargers'], ['recent', 'recent'], ['center', 'center'], ['assistant', 'assistant']].forEach((a, i) =>
+        button(a[0], '', map.x + 12, map.y + 10 + i * 55, 50, 50, { circle: true, icon: a[1],
+            disabled: a[0] === 'audio' && (typeof voice !== 'boolean' || busy) || a[0] === 'assistant' && !ui.assistant || a[0] === 'center' && !ready }));
     button('zoom-in', '', map.x + 12, map.y + 350, 50, 44, { icon: 'zoom-in', disabled: !ready });
     button('zoom-out', '', map.x + 12, map.y + 398, 50, 44, { icon: 'zoom-out', disabled: !ready });
     if (s.panel === 'none') {
+        if (ui.assistant) assistantPanel.drawIndicator(cv, ui.assistant.state, map.x + map.w - 116, map.y + map.h / 2 - 22, now, p);
         button('search', 'Buscar destino o lugar', x, y, 440, 52);
         if (nav.state === 'active') {
             const turn = nav.instruction;
@@ -228,7 +229,7 @@ function controls(cv, ui, nav) {
     } else {
         const titles = { search: s.keyboard ? 'Buscar' : s.searchKind === 'chargers' ? 'Estaciones de carga' : s.query || 'Resultados', detail: 'Información del lugar', route: s.routePage === 'stops' ? 'Detalles de la ruta' : s.routePage === 'battery' ? 'Batería al llegar' : 'Navegación', settings: 'Ajustes de navegación', recent: 'Destinos guardados', stop: 'Finalizar navegación' };
         Object.assign(titles, { settings: 'Ajustes', 'route-settings': 'Ajustes de navegación', assistant: 'Asistente', 'assistant-settings': 'Configurar asistente', 'assistant-edit': 'Asistente', 'assistant-voices': 'Voces del asistente' });
-        titles['guidance-displays'] = 'HUD y cuadro · navegación BMW';
+        titles['guidance-displays'] = 'HUD y cuadro';
         header(titles[s.panel] || 'Navegación');
         if (s.panel === 'search') { if (s.keyboard) keyboard(); else list(); }
         else if (s.panel === 'detail') detail();
@@ -239,7 +240,7 @@ function controls(cv, ui, nav) {
             row('guidance-displays', 'HUD y cuadro', y + 238, 'route-panel', 'Maniobras y vistas originales BMW');
         }
         else if (s.panel === 'route-settings') settings();
-        else if (s.panel === 'guidance-displays') displayPanel.draw({ ui, x, y, w, p, text, wrap, button });
+        else if (s.panel === 'guidance-displays') displayPanel.draw({ ui, x, y, w, p, text, button });
         else if (s.panel.indexOf('assistant') === 0 && ui.assistant) assistantPanel.draw({ ui, x, y, w, p, text, wrap, button });
         else if (s.panel === 'recent') {
             const favorites = s.savedTab === 'favorites', entries = favorites ? s.favorites : s.recent;
@@ -255,7 +256,7 @@ function controls(cv, ui, nav) {
         }
     }
     cv.fillRect(map.x + 74, map.y + map.h - 24, map.w - 148, 24, p.surface);
-    text(s.message || (data.status === 'error' && s.panel !== 'search' ? 'BMW: ' + data.error : ready ? 'Navegación BMW' : 'Navegación BMW · mapa local no disponible'), map.x + 86, map.y + map.h - 7, 14, p.secondary, map.w - 170);
+    text(ready ? 'Navegación BMW' : 'Navegación BMW · mapa local no disponible', map.x + 86, map.y + map.h - 7, 14, p.secondary, map.w - 170);
     return p;
 }
 module.exports = { controls, palettes, shorten, searchMessage, distance, duration };

@@ -6,11 +6,9 @@ const download = require('./drivehub-network.js');
 const { loadPhoto } = require('./drivehub-data.js');
 const { dropImage } = require('./vendor/kit_record.js');
 const catalog = require('./tdt-catalog.js');
-const { channels, visibleChannels } = require('./tdtworld-data.js');
+const { previewChannels, visibleChannels } = require('./tdtworld-data.js');
 
-const menu = ['Guía de programación', 'Mis favoritos', 'Añadir a favoritos', 'Configuración', 'Actualizar canales', 'Volver'];
-const settings = ['País', 'Categoría', 'Orden de canales', 'Iniciar en el último canal', 'Duración de la información', 'Volver'];
-const filters = catalog.categories;
+const settings = ['País', 'Duración de la información', 'Iniciar en el último canal'];
 const clocks = new Map();
 const seconds = [0, 3, 5, 8, 12];
 const interval = 30 * 60000;
@@ -23,7 +21,7 @@ function layout(w, h) {
     const body = h - 54;
     return { top, body, listWidth, rowHeight: Math.floor(body / visibleChannels),
         detailX: listWidth + 17, detailWidth: w - listWidth - 26,
-        actionX: w - 103, menuX: 24, menuTop: 55, menuRow: 52 };
+        actionX: w - 137, actionWidth: 126, settingsX: 24, settingsTop: 55, settingsRow: 52 };
 }
 
 function load(file, fallback) {
@@ -54,21 +52,14 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     const store = loadJson(file('settings.json'), {});
     const prefs = {
         country: catalog.countries[store.country] ? store.country : 'es',
-        filters: Array.isArray(store.filters) ? store.filters.filter((value) => filters.includes(value)) : filters.slice(),
-        alphabetical: store.alphabetical === true,
-        order: store.order && typeof store.order === 'object' ? store.order : {},
         resume: store.resume === true,
         seconds: seconds.includes(store.seconds) ? store.seconds : 5,
-        favorites: Array.isArray(store.favorites) ? store.favorites : [],
         last: store.last && typeof store.last === 'object' ? store.last : {}
     };
     const state = {
         prefs, channels: [], channel: 0, firstChannel: 0, mode: 'browse', option: 0,
-        programOffset: null, status: 'loading', guideStatus: 'loading', playback: 'idle', favoritesOnly: false
+        programOffset: null, status: 'loading', guideStatus: 'loading', playback: 'idle'
     };
-    const fixtureChannels = fixture && (fixture.tdtChannels || channels.map((item, index) => Object.assign({
-        id: 'preview-' + index, sources: [], group: catalog.categories[0]
-    }, item)));
     let entries = [];
     let guide;
     let fanart;
@@ -90,7 +81,6 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
 
     function savePrefs() { save(file('settings.json'), prefs); }
     function selected() { return state.channels[state.channel]; }
-    function favoriteId(item) { return prefs.country + '/' + item.id; }
     function programs(item = selected()) { return catalog.schedule(guide, item); }
     function program(item, time, browsing) {
         if (!item) return undefined;
@@ -117,38 +107,39 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         change();
     }
 
-    function orderedChannels() {
-        const order = prefs.order[prefs.country] || [];
-        const ranks = new Map(order.map((id, i) => [id, i]));
-        if (!prefs.alphabetical && !ranks.size) return entries;
-        return entries.map((item, index) => ({ item, index, rank: ranks.has(item.id) ? ranks.get(item.id) : order.length + index }))
-            .sort((a, b) => (prefs.alphabetical ? a.item.name.localeCompare(b.item.name, 'es') : a.rank - b.rank) || a.index - b.index)
-            .map((entry) => entry.item);
+    function setChannels(id) {
+        const choice = state.playerChoice === undefined ? undefined : state.channels[state.playerChoice];
+        state.channels = entries;
+        const playing = entries.findIndex((item) => item.id === id);
+        if (playing < 0 && state.mode === 'player') setMode('browse');
+        setChannel(Math.max(0, playing));
+        if (choice) {
+            const index = entries.findIndex((item) => item.id === choice.id);
+            state.playerChoice = index < 0 ? undefined : index;
+        }
     }
 
-    function filterChannels(id) {
-        state.channels = orderedChannels().filter((item) => prefs.filters.includes(item.group)
-            && (!state.favoritesOnly || prefs.favorites.includes(favoriteId(item))));
-        setChannel(Math.max(0, state.channels.findIndex((item) => item.id === id)));
-    }
+    const channelFile = (country) => file((country === 'es' ? 'es-domestic' : country) + '-channels.json');
 
     function readCountry() {
         const country = prefs.country;
         guide = undefined;
         fanart = undefined;
-        if (fixtureChannels) {
-            entries = fixtureChannels;
-            guide = fixture.tdtGuide;
-            fanart = fixture.tdtFanart;
+        if (fixture) {
+            entries = country === 'es' && fixture.tdtChannels || previewChannels(country);
+            if (country === 'es') {
+                guide = fixture.tdtGuide;
+                fanart = fixture.tdtFanart;
+            }
         } else {
-            const cached = loadJson(file(country + '-channels.json'), []);
+            const cached = loadJson(channelFile(country), []);
             entries = Array.isArray(cached) ? cached : [];
         }
         state.guideStatus = guide ? 'ready' : 'loading';
         state.status = entries.length ? 'ready' : 'loading';
         catalogDue = guideDue = 0;
         state.firstChannel = 0;
-        filterChannels(prefs.resume ? prefs.last[country] : undefined);
+        setChannels(prefs.resume ? prefs.last[country] : undefined);
     }
 
     function loadGuide(country, current) {
@@ -192,8 +183,9 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                 entries = value;
                 state.status = 'ready';
                 catalogDue = time + 6 * interval;
-                save(file(country + '-channels.json'), value);
-                filterChannels(item ? item.id : prefs.resume ? prefs.last[country] : undefined);
+                save(channelFile(country), value);
+                const id = startup && prefs.resume ? prefs.last[country] : item && item.id;
+                setChannels(id);
             }, () => {
                 if (!current()) return;
                 state.status = entries.length ? 'cached' : 'offline';
@@ -216,13 +208,15 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     }
 
     function loadLogo() {
-        if (pendingLogo || state.mode !== 'browse') return;
-        const channel = state.channels.slice(state.firstChannel, state.firstChannel + visibleChannels)
+        const first = state.mode === 'browse' ? state.firstChannel : playerStart();
+        if (pendingLogo || first === undefined) return;
+        const channel = state.channels.slice(first, first + visibleChannels)
             .find((item) => item.logo && item.logo.startsWith('https://') && !logos.has(item.logo));
         if (!channel) return;
         pendingLogo = true;
-        photo(channel.logo, get, 31, 31, true, () => !closed && active && state.mode === 'browse').then((image) => {
-            if (closed) { dropImage(image); return; }
+        const current = () => !closed && active && (state.mode === 'browse' || state.playerChoice !== undefined);
+        photo(channel.logo, get, 31, 31, true, current).then((image) => {
+            if (!current()) { dropImage(image); return; }
             logos.set(channel.logo, image);
             change();
         }, (error) => { if (!closed && error.code !== 'IMAGE_CANCELLED') logos.set(channel.logo, null); }).then(() => {
@@ -282,15 +276,17 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         stop();
         const request = tuning;
         state.mode = 'player';
+        state.programOffset = null;
         clearTimeout(artTimer);
         pendingArt = undefined;
         artUrl = undefined;
+        releaseArt();
         state.playback = 'loading';
         state.overlayUntil = Infinity;
         change();
         if (!tdtPlayer) { state.playback = 'unavailable'; change(); return; }
         try {
-            const sources = await catalog.resolveSources(item, get);
+            const sources = await (fixture ? item.sources : catalog.resolveSources(item, get));
             if (request !== tuning) return;
             if (!sources.length) state.playback = 'no-source';
             else tdtPlayer.start(sources, (status, diagnostic) => {
@@ -325,7 +321,13 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         if (state.mode === 'player') stop();
         state.mode = mode;
         state.option = 0;
-        if (mode !== 'guide') state.programOffset = null;
+        state.programOffset = null;
+        if (mode !== 'browse') {
+            clearTimeout(artTimer);
+            pendingArt = undefined;
+            artUrl = undefined;
+            releaseArt();
+        }
         change();
     }
 
@@ -337,6 +339,22 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     function movePlayerChoice(delta) {
         state.playerChoice = clamp(state.playerChoice + delta, 0, state.channels.length - 1);
         change();
+    }
+
+    function playerStart() {
+        if (state.playerChoice === undefined) return undefined;
+        return clamp(state.playerChoice - Math.floor(visibleChannels / 2), 0, Math.max(0, state.channels.length - visibleChannels));
+    }
+
+    function playChannel(index) {
+        if (index < 0 || index >= state.channels.length) return;
+        if (state.mode === 'player' && state.channel === index && state.playback === 'playing') {
+            state.playerChoice = undefined;
+            showOverlay();
+            return;
+        }
+        setChannel(index);
+        play();
     }
 
     function showOverlay() {
@@ -360,74 +378,16 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             update = null;
             readCountry();
         }
-        if (index === 1) { setMode('filters'); return; }
-        if (index === 2) { setMode('order'); return; }
-        if (index === 3) prefs.resume = !prefs.resume;
-        if (index === 4) prefs.seconds = cycle(seconds, prefs.seconds);
-        if (index === 5) { setMode('menu'); return; }
-        const item = selected();
-        filterChannels(item && item.id);
+        if (index === 1) prefs.seconds = cycle(seconds, prefs.seconds);
+        if (index === 2) prefs.resume = !prefs.resume;
         savePrefs();
-    }
-
-    function toggleFilter(index) {
-        const name = filters[index];
-        if (!name) { setMode('settings'); return; }
-        const item = selected();
-        prefs.filters = prefs.filters.includes(name) ? prefs.filters.filter((value) => value !== name) : prefs.filters.concat(name);
-        filterChannels(item && item.id);
-        savePrefs();
-    }
-
-    function reorder(delta) {
-        const item = selected();
-        const other = state.channels[state.channel + delta];
-        if (!item || !other) return;
-        const order = orderedChannels().map((channel) => channel.id);
-        const from = order.indexOf(item.id);
-        const to = order.indexOf(other.id);
-        order.splice(from, 1);
-        order.splice(to, 0, item.id);
-        prefs.alphabetical = false;
-        prefs.order[prefs.country] = order;
-        filterChannels(item.id);
-        savePrefs();
-    }
-
-    function chooseOrder(index) {
-        if (index === 0) { setMode('settings'); return; }
-        const item = selected();
-        prefs.alphabetical = index === 2;
-        if (index === 1) delete prefs.order[prefs.country];
-        filterChannels(item && item.id);
-        savePrefs();
-    }
-
-    function applyMenu(index) {
-        const item = selected();
-        if (index === 0) setMode('guide');
-        if (index === 1) {
-            state.favoritesOnly = !state.favoritesOnly;
-            filterChannels(item && item.id);
-            setMode('browse');
-        }
-        if (index === 2 && item) {
-            const id = favoriteId(item);
-            if (prefs.favorites.includes(id)) prefs.favorites = prefs.favorites.filter((value) => value !== id);
-            else prefs.favorites.push(id);
-            savePrefs();
-            filterChannels(item.id);
-            setMode('browse');
-        }
-        if (index === 3) setMode('settings');
-        if (index === 4) { generation++; update = null; catalogDue = guideDue = 0; setMode('browse'); }
-        if (index === 5) setMode('browse');
+        change();
     }
 
     let countryLoaded = false;
     if (fixture) { readCountry(); countryLoaded = true; }
     return {
-        state, selected, programs, program,
+        state, selected, program, playerStart,
         prepareChannels(alive) {
             if (closed || !alive()) return Promise.resolve('cancelled');
             if (!countryLoaded) { readCountry(); countryLoaded = true; }
@@ -446,7 +406,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                 catalogWaiters.add(finish); check();
             });
         },
-        playNamed(id) { const index = state.channels.findIndex((c) => c.id === id); if (index >= 0 && !closed) { setChannel(index); play(); } },
+        playNamed(id) { if (!closed) playChannel(state.channels.findIndex((c) => c.id === id)); },
         logo: (item) => logos.get(item.logo),
         time(value) {
             const country = prefs.country;
@@ -455,27 +415,9 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             }));
             return clocks.get(country).format(value);
         },
-        guideStart(time) {
-            const rows = programs();
-            const selectedIndex = state.programOffset === null ? catalog.currentIndex(rows, time) : state.programOffset;
-            return Math.max(0, Math.min(rows.length - visibleChannels, selectedIndex - Math.floor(visibleChannels / 2)));
-        },
-        playerStart() {
-            return Math.max(0, Math.min(state.channels.length - visibleChannels,
-                state.playerChoice - Math.floor(visibleChannels / 2)));
-        },
-        menu: () => menu.map((label, i) => {
-            if (i === 1 && state.favoritesOnly) return 'Todos los canales';
-            if (i === 2 && selected() && prefs.favorites.includes(favoriteId(selected()))) return 'Quitar de favoritos';
-            return label;
-        }),
         settings: () => settings.map((label, i) => ({
-            label, value: [catalog.countries[prefs.country], prefs.filters.length === filters.length ? 'Todas' : prefs.filters.length + ' activas',
-                prefs.alphabetical ? 'Alfabético' : prefs.order[prefs.country] ? 'Personalizado' : 'Del catálogo',
-                prefs.resume ? 'Sí' : 'No', prefs.seconds ? prefs.seconds + ' s' : 'Oculta'][i]
+            label, value: [catalog.countries[prefs.country], prefs.seconds ? prefs.seconds + ' s' : 'Oculta', prefs.resume ? 'Sí' : 'No'][i]
         })),
-        filters: () => filters.map((name) => ({ label: name, value: prefs.filters.includes(name) ? 'Sí' : 'No' }))
-            .concat({ label: 'Volver' }),
         update(time, focused) {
             if (!focused && (active || state.mode !== 'browse')) {
                 clearTimeout(artTimer);
@@ -493,12 +435,12 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                 const last = prefs.last[prefs.country];
                 if (prefs.resume && last && selected() && last === selected().id && state.mode === 'browse') play();
             }
-            if (state.mode !== 'player') showArt(time);
+            if (state.mode === 'browse') showArt(time);
             loadLogo();
         },
         rotate(delta) {
-            if (['menu', 'settings', 'filters'].includes(state.mode)) {
-                state.option = clamp(state.option + delta, 0, state.mode === 'filters' ? filters.length : menu.length - 1);
+            if (state.mode === 'settings') {
+                state.option = clamp(state.option + delta, 0, settings.length - 1);
                 change();
                 return;
             }
@@ -508,8 +450,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             if (state.mode === 'player' && before !== state.channel) play();
         },
         tilt(delta) {
-            if (state.mode === 'browse' || state.mode === 'guide') moveProgram(delta, now());
-            if (state.mode === 'order') reorder(delta);
+            if (state.mode === 'browse') moveProgram(delta, now());
             if (state.mode === 'player') {
                 if (state.playerChoice !== undefined) movePlayerChoice(delta);
                 else this.rotate(-delta);
@@ -519,63 +460,42 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         press(long) {
             if (state.mode === 'player') {
                 if (long) togglePlayerChannels();
-                else if (state.playerChoice !== undefined) { setChannel(state.playerChoice); play(); }
+                else if (state.playerChoice !== undefined) playChannel(state.playerChoice);
                 else showOverlay();
                 return;
             }
-            if (long) { setMode(state.mode === 'menu' ? 'browse' : 'menu'); return; }
-            if (state.mode === 'menu') { applyMenu(state.option); return; }
+            if (long) { setMode(state.mode === 'settings' ? 'browse' : 'settings'); return; }
             if (state.mode === 'settings') { applySetting(state.option, 1); return; }
-            if (state.mode === 'filters') { toggleFilter(state.option); return; }
-            if (state.mode === 'order') { setMode('settings'); return; }
-            if (state.mode === 'guide') { setMode('browse'); return; }
             play();
         },
         touch(x, y, w, h, scroll) {
             const l = layout(w, h);
             if (scroll) {
-                if (state.mode === 'guide' || x >= l.detailX) this.tilt(scroll);
+                if (state.mode === 'browse' && x >= l.detailX || state.mode === 'player' && state.playerChoice === undefined && x >= l.detailX) this.tilt(scroll);
                 else this.rotate(scroll);
                 return;
             }
-            if (y < 38 && x >= l.actionX) {
-                setMode(state.mode === 'browse' ? 'menu' : ['filters', 'order'].includes(state.mode) ? 'settings' : 'browse');
+            if (y >= 3 && y < 38 && x >= l.actionX && x < l.actionX + l.actionWidth) {
+                setMode(state.mode === 'browse' ? 'settings' : 'browse');
                 return;
             }
-            if (['menu', 'settings', 'filters'].includes(state.mode)) {
-                const row = Math.floor((y - l.menuTop) / l.menuRow);
-                if (row < 0 || row >= (state.mode === 'filters' ? filters.length + 1 : menu.length)) return;
-                if (state.mode === 'menu') applyMenu(row);
-                else if (state.mode === 'filters') toggleFilter(row);
-                else applySetting(row, x < w / 2 ? -1 : 1);
-                return;
-            }
-            if (state.mode === 'player') {
-                if (y < 38 && x <= 111) { togglePlayerChannels(); return; }
-                if (state.playerChoice !== undefined && x < l.detailX && y >= l.top && y < l.top + l.rowHeight * visibleChannels) {
-                    const index = this.playerStart() + Math.floor((y - l.top) / l.rowHeight);
-                    if (index < state.channels.length) { setChannel(index); play(); }
-                } else showOverlay();
-                return;
-            }
-            if (state.mode === 'guide') {
-                if (x < l.detailX && y >= l.top && y < l.top + l.rowHeight * visibleChannels) {
-                    const index = this.guideStart(now()) + Math.floor((y - l.top) / l.rowHeight);
-                    if (index < programs().length) { state.programOffset = index; change(); }
+            if (state.mode === 'settings') {
+                const row = Math.floor((y - l.settingsTop) / l.settingsRow);
+                if (x >= l.settingsX && x < w - l.settingsX && row >= 0 && row < settings.length) {
+                    state.option = row;
+                    applySetting(row, x < w / 2 ? -1 : 1);
                 }
                 return;
             }
-            if (y < l.top || y >= l.top + l.body) return;
-            if (x < l.detailX) {
-                const row = Math.floor((y - l.top) / l.rowHeight);
-                const index = state.firstChannel + row;
-                if (row >= visibleChannels || index >= state.channels.length) return;
-                if (index === state.channel && state.mode === 'browse') play();
-                else setChannel(index);
-            } else if (state.mode === 'order') {
-                if (y < l.top + 2 * l.menuRow) reorder(y < l.top + l.menuRow ? -1 : 1);
-                else if (y < l.top + 4 * l.menuRow) chooseOrder(y < l.top + 3 * l.menuRow ? 1 : 2);
-            } else if (x >= w - 146 && y >= h - 49 && y < h - 19) play();
+            if (state.mode === 'player' && y >= 3 && y < 38 && x >= 9 && x <= 111) {
+                togglePlayerChannels();
+                return;
+            }
+            const first = state.mode === 'browse' ? state.firstChannel : playerStart();
+            const row = Math.floor((y - l.top) / l.rowHeight);
+            if (first !== undefined && x >= 9 && x < 9 + l.listWidth && row >= 0 && row < visibleChannels) {
+                playChannel(first + row);
+            } else if (state.mode === 'player') showOverlay();
         },
         video: () => tdtPlayer && tdtPlayer.frame(),
         close() {

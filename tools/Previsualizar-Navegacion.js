@@ -40,12 +40,12 @@ async function main() {
         ui.update(nav, vehicle, true);
         let reference;
         const scenarios = ['mapa', 'teclado', 'resultados', 'cargadores-esperando', 'cargadores-error', 'cargadores-vacio', 'cargadores', 'cargadores-noche', 'detalle', 'ruta', 'ruta-paradas', 'ruta-bateria', 'ajustes', 'guardados', 'noche', 'guiado', 'ensayo-marcadores', 'ensayo-ruta',
-            'hud-cuadro', 'hud-cuadro-noche', 'hud-cuadro-sin-datos', 'hud-cuadro-error'];
+            'hud-cuadro', 'hud-cuadro-noche', 'hud-cuadro-sin-datos', 'hud-cuadro-error', 'voz-activa', 'voz-silenciada'];
         const realStatus = ui.tiles.status, realDraw = ui.tiles.draw;
         for (const scenario of scenarios) {
             Object.assign(nav, { state: 'inactive', points: [], route: null, instruction: null, destinations: [], segments: [], presentation: undefined });
             ui.tiles.status = realStatus; ui.tiles.draw = realDraw;
-            ui.state.offset = 0; ui.state.routePage = 'summary'; ui.state.camera = null; ui.state.follow = true; ui.state.displayFeedback = '';
+            ui.state.offset = 0; ui.state.routePage = 'summary'; ui.state.camera = null; ui.state.follow = true; data.toast = undefined;
             ui.state.panel = ({ teclado: 'search', resultados: 'search', detalle: 'detail', ruta: 'route', ajustes: 'settings', guardados: 'recent' })[scenario] || 'none';
             ui.state.theme = scenario.indexOf('noche') >= 0 ? 'night' : 'day'; ui.state.query = 'MADRID'; ui.state.cursor = 6; ui.state.keyboard = scenario === 'teclado';
             ui.state.recent = ['Destino de prueba', 'Madrid']; ui.state.controls = Object.assign({}, controls, { status: scenario === 'ruta' ? 'preview' : 'results' });
@@ -69,8 +69,11 @@ async function main() {
                 nav.presentation = { options: settings, available: known, hud: { ready: known ? true : null, mapSelected: null, layout: null },
                     views: known ? [{ id: 'fixture-hud', target: 'HUD', type: 'HIGH_GUIDING', preview: false, consistent: true },
                         { id: 'fixture-ic', target: 'IC', type: 'JUNCTION_VIEW', preview: false, consistent: true }] : [] };
-                if (scenario === 'hud-cuadro-error') ui.state.displayFeedback = 'BMW_GUIDANCE_SETTING_REJECTED';
+                if (scenario === 'hud-cuadro-error') data.toast = {
+                    message: require('../native/javi-carlab/navigation-displays').settingError('BMW_GUIDANCE_SETTING_REJECTED'), until: 5000
+                };
             }
+            if (scenario.indexOf('voz-') === 0) nav.presentation = { options: { voiceGuidanceEnabled: scenario === 'voz-activa' } };
             if (scenario === 'guiado') {
                 nav.state = 'active'; nav.points = [point, { latitude: point.latitude + .001, longitude: point.longitude + .001 }];
                 nav.instruction = { kind: 'intersection', direction: 'RIGHT', road: 'Vía de prueba', metres: 200, exit: null };

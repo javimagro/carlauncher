@@ -17,7 +17,7 @@ function connect(config, event, network, dependencies) {
         worker.on('exit', () => { if (!closed) { event({ type: 'error', code: 'DISCONNECTED' }); close(); } });
         worker.on('message', (message) => { if (!closed) { if (message.type === 'ready') clearTimeout(timeout); event(message); } });
         worker.send({ op: 'start', config, uplink: !!access.uplink });
-    }).catch(() => { if (!closed) { event({ type: 'error', code: 'NETWORK' }); close(); } });
+    }).catch((error) => { if (!closed) { event({ type: 'error', code: /^UPLINK/.test(error && error.code) ? 'UPLINK' : 'NETWORK' }); close(); } });
     timeout = setTimeout(() => { if (!closed) { event({ type: 'error', code: 'SETUP_TIMEOUT' }); close(); } }, 22000);
     return { close, send(message) { if (!closed && worker && worker.connected) { worker.send(message, (err) => { if (err && !closed) { event({ type: 'error', code: 'NETWORK' }); close(); } }); return true; } return false; } };
 }

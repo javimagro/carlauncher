@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
 const { createNavigationUI } = require('../../native/javi-carlab/navigation-ui');
 const { controls } = require('../../native/javi-carlab/navigation-panels');
 const layout = require('../../native/javi-carlab/navigation-layout');
@@ -36,6 +37,26 @@ function insideFrame(s, points) {
         assert(xy[1] >= b.y + 22 && xy[1] <= b.y + b.h - 22, 'vertical padding');
     }
 }
+
+test('route settings save as they change and load even when edited before the file finishes reading', async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-prefs-'));
+    const navigationFile = path.join(root, 'navigation.json');
+    await fs.writeFile(navigationFile, JSON.stringify({ preferences: { arrival: 25, motorways: false }, theme: 'day' }));
+    const ui = createNavigationUI({ navigationFile }, () => {});
+    let restored;
+    t.after(async () => { ui.close(); if (restored) restored.close(); await fs.rm(root, { recursive: true, force: true }); });
+    ui.activate('route-settings'); ui.activate('pref:tolls');
+    for (let i = 0; i < 40; i++) {
+        const stored = JSON.parse(await fs.readFile(navigationFile, 'utf8'));
+        if (stored.preferences.tolls === false) break;
+        await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    const saved = JSON.parse(await fs.readFile(navigationFile, 'utf8'));
+    assert.deepEqual(saved.preferences, { tolls: false, arrival: 25, motorways: false });
+    restored = createNavigationUI({ navigationFile }, () => {});
+    for (let i = 0; i < 40 && restored.state.preferences.arrival !== 25; i++) await new Promise((resolve) => setTimeout(resolve, 15));
+    assert.deepEqual(restored.state.preferences, { charging: true, tolls: false, arrival: 25, motorways: false });
+});
 test('charger list frames only its visible numbered rows beside the panel, including after scrolling', () => {
     const r = rig(); r.ui.activate('chargers'); r.receive(); r.draw();
     assert.equal(scene.markers(r.ui.state).length, 2);
@@ -108,7 +129,7 @@ test('route subpages and adding a stop preserve the existing destination intent 
     r.tap('arrival-up'); assert.equal(r.ui.state.preferences.arrival, 20);
     r.tap('back'); assert.equal(r.ui.state.routePage, 'summary');
     r.tap('add-stop-search'); assert.equal(r.ui.state.addingStop, true);
-    r.ui.state.query = 'Área de recarga'; r.tap('submit'); r.receive({ stops, plan });
+    r.ui.state.query = 'Área de recarga'; r.tap('keyboard-done'); r.receive({ stops, plan });
     r.tap('result:11:0'); r.receive({ status: 'detail', stops, plan, selected: Object.assign({ address: { test: true }, phone: '' }, results[0]) });
     r.tap('add-stop'); assert.equal(r.sent[r.sent.length - 1].action, 'add-stop');
     assert(!r.sent.some((c) => c.action === 'start')); r.ui.close();
@@ -148,7 +169,7 @@ test('reference keyboard edits at the cursor, clears text and submits only on th
 });
 
 test('busy actions keep their search kind and returning to the vehicle closes panels', () => {
-    const r = rig(); r.ui.activate('search'); r.ui.state.query = 'Madrid'; r.ui.activate('submit');
+    const r = rig(); r.ui.activate('search'); r.ui.state.query = 'Madrid'; r.ui.activate('keyboard-done');
     r.ui.activate('chargers'); assert.equal(r.ui.state.searchKind, 'text'); assert.equal(r.sent.length, 1);
     r.receive(); r.ui.tiles.status = () => ({ ready: true }); r.tap('center');
     assert.equal(r.ui.state.panel, 'none'); assert.equal(r.ui.state.follow, true); r.ui.close();

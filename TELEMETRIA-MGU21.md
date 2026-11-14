@@ -1,5 +1,12 @@
 # Telemetría del BMW i4 en MGU21
 
+## Corrección de recepción HV · 0.2.14
+
+La respuesta SME estaba llegando, pero el Buffer nativo atravesaba una frontera VM del runner OAP y no cumplía `instanceof Uint8Array` dentro de la app. Ahora se reconoce con `Buffer.isBuffer`. La regresión ejecuta el módulo en `vm.runInNewContext` y demuestra fallo antes/corrección después. El proxy se cierra mediante `shutdown()`, tal como declara el SDK instalado.
+
+El 14-11-2026, una sonda de lectura con el módulo corregido en Node 8.16.2 de la MGU recibió E54D y E561 en el mismo ciclo, a menos de un segundo, y calculó V/A/kW. No se instaló en la app ni se cambió el estado del vehículo. Falta contrastar la nueva versión instalada y el signo de corriente con OBD2; no se confunde esta potencia con el consumo instantáneo de BMW.
+
+
 Primera inspección local sobre PSdZData 4.58.15 Full. El paquete `SWFL 000056EE 036_010_004` contiene el catálogo `/etc/oap/someip/someip-interfaces.json`. En los ELF del paquete `SWFL 000056E7` se encontraron símbolos de despliegue SOME/IP para el campo de autonomía eléctrica del cuadro y para el porcentaje de carga HV. El catálogo confirma nombres, tipos e identificadores de transporte. La disponibilidad, las escalas y la correspondencia con el cuadro del i4 se validan en la unidad.
 
 ## Lecturas para validar

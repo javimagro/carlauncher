@@ -16,7 +16,7 @@ async function main(source, destination) {
     if (!info.isFile() || info.size > 16384) throw new Error('Exportación no válida');
     const value = JSON.parse(await fs.readFile(src, 'utf8'));
     const keys = value.keys || {};
-    if (!Object.keys(keys).length || Object.keys(keys).some((p) => !Object.prototype.hasOwnProperty.call(providers, p) || !validKey(keys[p]))) throw new Error('Se requiere una exportación con claves descifradas; no sirve el XML cifrado de Android');
+    if (!Object.keys(keys).length || Object.keys(keys).some((p) => !Object.prototype.hasOwnProperty.call(providers, p) || !validKey(keys[p], p))) throw new Error('Se requiere una exportación con claves descifradas; no sirve el XML cifrado de Android');
     const config = createConfig(dest); await config.ready;
     for (const p of Object.keys(keys)) await config.update({ provider: p, key: keys[p], voice: value.voices && value.voices[p] || providers[p].voices[0] });
     if (value.provider) await config.update({ provider: value.provider });

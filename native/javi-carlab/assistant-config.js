@@ -5,8 +5,11 @@ const providers = {
     openai: { label: 'OpenAI', model: 'gpt-realtime-2.1', voices: ['marin', 'cedar', 'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] },
     gemini: { label: 'Gemini', model: 'gemini-3.8-live', voices: ['Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe', 'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina', 'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar', 'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix', 'Sadachbia', 'Sadaltager', 'Sulafat'] }
 };
-const defaults = () => ({ provider: 'openai', voices: { openai: 'marin', gemini: 'Kore' }, keys: { openai: '', gemini: '' }, speak: true });
-const validKey = (s) => typeof s === 'string' && /^[A-Za-z0-9_\-]{16,2048}$/.test(s);
+const defaults = () => ({ provider: 'openai', voices: { openai: 'marin', gemini: 'Kore' }, keys: { openai: '', gemini: '' } });
+function validKey(key, provider) {
+    if (typeof key !== 'string' || key.length < 16 || key.length > 2048 || key !== key.trim()) return false;
+    return /^[A-Za-z0-9_-]+$/.test(key) || provider === 'gemini' && /^AQ\.[A-Za-z0-9_-]+$/.test(key);
+}
 const call = (name, args) => new Promise((resolve, reject) => fs[name].apply(fs, args.concat((err, value) => err ? reject(err) : resolve(value))));
 async function read(file, limit) {
     const info = await call('lstat', [file]);
@@ -28,9 +31,9 @@ function createConfig(directory) {
             const saved = JSON.parse(Buffer.concat([decipher.update(bytes.slice(28)), decipher.final()]).toString('utf8'));
             if (!Object.prototype.hasOwnProperty.call(providers, saved.provider) || !saved.voices || !saved.keys) throw new Error('CONFIG_FILE');
             for (const p of Object.keys(providers)) {
-                if (!providers[p].voices.includes(saved.voices[p]) || typeof saved.keys[p] !== 'string' || saved.keys[p] && !validKey(saved.keys[p])) throw new Error('CONFIG_FILE');
+                if (!providers[p].voices.includes(saved.voices[p]) || typeof saved.keys[p] !== 'string' || saved.keys[p] && !validKey(saved.keys[p], p)) throw new Error('CONFIG_FILE');
             }
-            value = { provider: saved.provider, voices: saved.voices, keys: saved.keys, speak: saved.speak !== false };
+            value = { provider: saved.provider, voices: saved.voices, keys: saved.keys };
         } catch (e) { if (found || e.code !== 'ENOENT') { writable = false; failure = 'No se puede leer la configuración privada'; } }
     })();
     async function persist(next) {
@@ -58,9 +61,9 @@ function createConfig(directory) {
     }
     return {
         ready,
-        snapshot() { return { provider: value.provider, voices: Object.assign({}, value.voices), speak: value.speak,
+        snapshot() { return { provider: value.provider, voices: Object.assign({}, value.voices),
             configured: { openai: !!value.keys.openai, gemini: !!value.keys.gemini }, error: failure }; },
-        credentials() { return { provider: value.provider, voice: value.voices[value.provider], key: value.keys[value.provider], speak: value.speak }; },
+        credentials() { return { provider: value.provider, voice: value.voices[value.provider], key: value.keys[value.provider] }; },
         update(patch) {
             const job = queue.then(() => ready).then(async () => {
                 if (!writable) throw new Error('CONFIG_UNREADABLE');
@@ -72,10 +75,9 @@ function createConfig(directory) {
                     next.voices[p] = patch.voice;
                 }
                 if (patch.key !== undefined) {
-                    if (patch.key !== '' && !validKey(patch.key)) throw new Error('CONFIG_API_KEY');
+                    if (patch.key !== '' && !validKey(patch.key, p)) throw new Error('CONFIG_API_KEY');
                     next.keys[p] = patch.key;
                 }
-                if (patch.speak !== undefined) next.speak = patch.speak === true;
                 await persist(next); return this.snapshot();
             });
             queue = job.catch(() => {}); return job;

@@ -8,6 +8,16 @@ let sending = Promise.resolve();
 let pointer;
 let pressed = false;
 
+const reopen = document.getElementById('reopen');
+if (home) {
+    reopen.addEventListener('click', async () => {
+        const response = await fetch('/open', { method: 'POST' });
+        if (!response.ok) status.textContent = 'El simulador no está preparado';
+        else stage.focus();
+    });
+    fetch('/open', { method: 'POST' }).catch(() => {});
+}
+
 function send(input) {
     sending = sending.then(async () => {
         const response = await fetch('/input', {
@@ -41,6 +51,10 @@ try {
         const info = gfx.stats();
         canvas.dataset.visible = String(info.visible);
         canvas.dataset.frames = info.frames;
+        if (home && layer === 'launcher') {
+            reopen.hidden = !!info.visible;
+            if (!info.visible) status.textContent = 'BMWLauncher cerrado';
+        }
         if (layers.get('launcher').canvas.dataset.visible === 'true') {
             const panel = layers.get('panel').gfx.stats();
             status.textContent = home ? 'Simulador conectado'

@@ -29,9 +29,19 @@ function toolResult(provider, id, name, result) {
     return provider === 'openai' ? [{ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: id, output: JSON.stringify(result) } }] :
         [{ toolResponse: { functionResponses: [{ id, name, response: result }] } }];
 }
+function providerError(error, fallback) {
+    const code = error && error.code, type = error && (error.type || error.status);
+    if (code === 'credit_balance_exhausted') return 'CREDIT_BALANCE';
+    if (code === 429 || type === 'insufficient_quota' || type === 'RESOURCE_EXHAUSTED' || code === 'rate_limit_exceeded') return 'QUOTA';
+    const apiKeyInvalid = Array.isArray(error && error.details) && error.details.some((detail) => detail && detail.reason === 'API_KEY_INVALID');
+    if (code === 401 || code === 403 || code === 'invalid_api_key' || type === 'UNAUTHENTICATED' || type === 'PERMISSION_DENIED' || apiKeyInvalid) return 'AUTH';
+    if (code === 'model_not_found' || type === 'NOT_FOUND') return 'MODEL';
+    return fallback;
+}
+
 function events(provider, message) {
     const out = [];
-    if (message.error) return [{ type: 'error', code: 'PROVIDER_ERROR' }];
+    if (message.error) return [{ type: 'error', code: providerError(message.error, 'PROVIDER_ERROR') }];
     if (provider === 'openai') {
         if (message.type === 'session.updated') out.push({ type: 'ready' });
         if (['response.output_text.delta', 'response.output_audio_transcript.delta'].includes(message.type)) out.push({ type: 'text', text: message.delta });
@@ -40,7 +50,11 @@ function events(provider, message) {
             let args; try { args = JSON.parse(message.arguments); } catch (_) { args = null; }
             out.push({ type: 'tool', id: message.call_id, name: message.name, args });
         }
-        if (message.type === 'response.done') out.push({ type: message.response && message.response.status === 'failed' ? 'error' : 'turn', code: 'RESPONSE_FAILED' });
+        if (message.type === 'response.done') {
+            const response = message.response;
+            if (response && response.status === 'failed') out.push({ type: 'error', code: providerError(response.status_details && response.status_details.error, 'RESPONSE_FAILED') });
+            else out.push({ type: 'turn' });
+        }
     } else {
         if (message.setupComplete || message.setup_complete) out.push({ type: 'ready' });
         const content = message.serverContent || {};

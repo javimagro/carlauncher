@@ -93,7 +93,7 @@ function drawNavigation(cv, nav, vehicle, zoom, now, ui) {
                 cv.noclip();
             }
         }
-        panels.controls(cv, ui, nav);
+        panels.controls(cv, ui, nav, now);
         button(cv, toggle, 'Datos', { surface: p.surface, text: p.text });
         return;
     }

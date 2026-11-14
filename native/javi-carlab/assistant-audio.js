@@ -18,7 +18,7 @@ function createAudio(options, emit, dependencies) {
         if (sink) sink.close(); sink = null;
         const old = converter; converter = null; terminate(old);
     }
-    function outputError() { if (failed) return; failed = true; stopOutput(); emit({ type: 'audio-status', message: 'No hay salida de voz disponible; la respuesta sigue en pantalla' }); }
+    function outputError() { if (failed) return; failed = true; stopOutput(); emit({ type: 'audio-status', failed: true, message: 'No hay salida de voz disponible; la respuesta sigue en pantalla' }); }
     function output() {
         if (converter || stopped || failed || !options.playback) return;
         finishing = finished = false;
@@ -42,7 +42,12 @@ function createAudio(options, emit, dependencies) {
         }, queue, Object.assign({}, options.playback, { maxRetries: 0 }), launch, { warn() {} });
         if (failed || stopped) { sink.close(); sink = null; return; }
         timer = setInterval(() => {
-            if (finished && !bytes) { stopOutput(); emit({ type: 'audio-status', message: 'Respuesta entregada a la salida multimedia' }); return; }
+            if (finished && !bytes) {
+                function delivered() { stopOutput(); emit({ type: 'audio-status', finished: true, message: 'Respuesta entregada a la salida multimedia' }); }
+                if (options.playback.drain && sink) { clearInterval(timer); sink.drain(delivered); }
+                else delivered();
+                return;
+            }
             if (!sink || !sink.stats().ready || sink.stats().blocked || !bytes) return;
             let remaining = Math.min(3840, bytes); // 20 ms, 48 kHz stereo PCM16.
             remaining -= remaining % 4;
@@ -77,7 +82,10 @@ function createAudio(options, emit, dependencies) {
             stopOutput(); captureBytes = 0; captureTail = Buffer.alloc(0);
             capture = launch(options.capture.command, options.capture.args, { stdio: ['ignore', 'pipe', 'ignore'] });
             const process = capture;
-            capture.on('error', () => { if (capture === process) { finishCapture(); emit({ type: 'audio-status', message: 'No se pudo abrir el micrófono' }); } });
+            capture.on('error', () => {
+                if (capture !== process) return;
+                finishCapture();
+            });
             capture.on('close', () => { if (capture === process) finishCapture(); });
             capture.stdout.on('data', (buffer) => {
                 if (capture !== process) return;
@@ -87,7 +95,10 @@ function createAudio(options, emit, dependencies) {
                 // Both IPC peers accept at most 64,000 base64 characters (48 kB PCM16).
                 for (let offset = 0; offset < length; offset += 48000) {
                     const part = buffer.slice(offset, Math.min(offset + 48000, length));
-                    captureBytes += part.length; emit({ type: 'capture', data: part.toString('base64') });
+                    let square = 0, samples = 0;
+                    for (let i = 0; i + 1 < part.length; i += 16) { square += part.readInt16LE(i) ** 2; samples++; }
+                    captureBytes += part.length;
+                    emit({ type: 'capture', data: part.toString('base64'), speaking: samples > 0 && square / samples > 90000 });
                 }
             });
             captureTimer = setTimeout(finishCapture, 30000);

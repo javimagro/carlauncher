@@ -1,5 +1,7 @@
 'use strict';
 
+const os = require('node:os');
+const fs = require('node:fs');
 const path = require('node:path');
 const [socket, store, mode, telemetry] = process.argv.slice(2);
 const native = '../../native/javi-carlab/';
@@ -7,6 +9,13 @@ const record = require(native + 'vendor/kit_record.js');
 const createSession = require(native + 'drivehub-session.js');
 const { width, height } = require(native + 'drivehub-state.js');
 const { RenderClient } = require(path.join(store, 'native/mgu-render/js/mgu_render_client.js'));
+const { createActions, contracts } = require('../../apps/javi_carlauncher/navegacion-acciones');
+const profile = process.env.LOCALAPPDATA || os.homedir();
+const ffmpeg = process.env.JAVI_TDT_FFMPEG || 'ffmpeg';
+const ffplay = process.env.JAVI_ASSISTANT_FFPLAY;
+const microphone = process.env.JAVI_ASSISTANT_PC_MIC;
+const tdtDirectory = path.join(profile, mode === 'live' ? 'BMWLauncher-TDT' : 'BMWLauncher-TDT-Demo');
+fs.mkdirSync(tdtDirectory, { recursive: true });
 
 const fixture = {
     weather: {
@@ -42,15 +51,46 @@ const fixture = {
 };
 
 const gpu = new RenderClient('javi_carlauncher_preview', console, { socket, kit: record });
+let voiceGuidance = true;
+const guidanceOptions = Object.fromEntries(Object.keys(contracts.guidance.attributes).map((key) => [key, null]));
+const guidance = createActions({ async buildAndInitTypedProxy(name) {
+    if (name !== contracts.guidance.name) throw new Error('BMW_NO_DISPONIBLE');
+    return { dispose() {}, voiceGuidanceEnabled: {
+        async setValue(value) { voiceGuidance = value; },
+        async getValue() { return voiceGuidance; }
+    } };
+} });
+function reportNavigation() {
+    session.navigation({ version: 1, at: Date.now(), state: 'unavailable', theme: 'auto', route: null, destinations: [], segments: [],
+        destinationsKnown: false, electricRouting: null, controls: guidance.snapshot(),
+        presentation: { options: { ...guidanceOptions, voiceGuidanceEnabled: voiceGuidance }, available: true,
+            hud: { ready: null, layout: null, mapSelected: null }, views: [] } });
+}
 const session = createSession(gpu, {
     diagnostics: telemetry === 'telemetry',
     fixture: mode === 'live' ? undefined : fixture,
-    tdtPlayback: { ffmpeg: process.env.JAVI_TDT_FFMPEG || 'ffmpeg', preview: true },
+    assistantDirectory: path.join(profile, 'BMWLauncher-Assistant'),
+    navigationFile: path.join(profile, 'BMWLauncher-Navigation.json'),
+    tdtDirectory,
+    assistantAudio: ffplay && {
+        ffmpeg,
+        playback: { command: ffplay, drain: true, args: ['-nodisp', '-autoexit', '-loglevel', 'error', '-f', 's16le', '-ar', '48000', '-ch_layout', 'stereo', '-i', 'pipe:0'] },
+        capture: microphone && { command: ffmpeg, args: ['-loglevel', 'error', '-f', 'dshow', '-i', 'audio=' + microphone, '-ar', '24000', '-ac', '1', '-f', 's16le', 'pipe:1'] }
+    },
+    tdtPlayback: { ffmpeg, preview: true },
+    navigationCommand(command) {
+        if (command.action !== 'guidance-setting' || command.setting !== 'voiceGuidanceEnabled') return false;
+        guidance.command(command).then(reportNavigation);
+        return true;
+    },
     onExit: () => session.show(false),
     area: () => ({ x: 0, y: 0, w: width, h: height, scale: 1 })
 });
 session.setHome('ready');
 session.show(true);
+reportNavigation();
+const navigationTimer = setInterval(reportNavigation, 1000);
+navigationTimer.unref();
 if (telemetry === 'telemetry') {
     const samples = {
         statusChargeOfBatteryHybrid: { displayChargingConditionHighVoltageStorage: 182 },
@@ -67,6 +107,7 @@ if (telemetry === 'telemetry') {
         driveSegment: { bcBeTripDistanceKm: 310, bcBeDurationDrive: 2150, bcBeConsElectricVisible: 2700, bcBeSpeedAvgDrive: 2750 },
         bcDataAll: {
             'bcUnits.tachoDigital': 'KILOMETERS', 'bcUnits.averageConsumptionElectric': 'KWH',
+            'bcUnits.currentConsumptionElectric': 'KWH', 'active.consumptionElectricCurrentDigit': 65745,
             'trip.counterDistance': 345, 'trip.consumptionElectricAverageDigit': 65753, 'trip.speedAverage': 425,
             'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 1, 'trip.dateTimeTrip.minute': 7,
             'trip.dateTimeTrip.second': 0, 'charge.counterDistance': 523, 'charge.consumptionElectricAverageDigit': 65763,
@@ -82,5 +123,6 @@ if (telemetry === 'telemetry') {
     const sampledAt = Date.now();
     session.telemetry(Object.entries(samples).map(([signal, fields]) => ({ signal, status: 'sample', sampledAt, fields })));
 }
-process.on('disconnect', () => session.close());
+process.on('message', (message) => { if (message === 'open') session.show(true); });
+process.on('disconnect', () => { clearInterval(navigationTimer); guidance.stop(); session.close(); });
 gpu.connect();

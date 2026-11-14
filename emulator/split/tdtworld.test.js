@@ -43,7 +43,7 @@ async function eventually(condition) {
 }
 
 test('catalogues accept direct HLS and DASH, preserving programme aliases and time-keyed fanart', async () => {
-    const json = { countries: [{ ambits: [{ name: 'Generalistas', channels: [{
+    const json = { countries: [{ name: 'Spain', ambits: [{ name: 'Generalistas', channels: [{
         name: 'La 1', epg_id: 'La1.TV', options: [
             { format: 'youtube', url: 'https://example.com/live' },
             { format: 'm3u8', url: 'https://example.com/play?id=[DEVICE_ID]' },
@@ -108,7 +108,28 @@ test('switching channel and programme discards fanart that arrives after the foc
     assert.equal(tdt.program(tdt.selected(), 50, true).title, 'Actual');
 });
 
-test('changing channel retunes and hiding TDT releases playback; favourites and last channel persist', async (t) => {
+test('Atres retuning selects DASH before failing legacy HLS and never repeats an identical source', async () => {
+    const hls = 'https://cdn.example.org/hlsts/master.m3u8';
+    const legacy = 'https://cdn.example.org/hlslegacy/master.m3u8';
+    const dash = 'https://cdn.example.org/dasht/manifest.mpd?session=fixture';
+    const sources = [hls, legacy, legacy, dash].map((src) => ({ src }));
+    sources.push({ src: 'https://cdn.example.org/protected.mpd', drm: true });
+    const channel = { name: 'La Sexta', sources: [] };
+    let lookups = 0;
+    const resolve = () => catalog.resolveSources(channel, async () => {
+        lookups++;
+        return Buffer.from(JSON.stringify({ sourcesLive: sources }));
+    });
+    assert.deepEqual(await resolve(), [dash, hls, legacy]);
+    assert.deepEqual(await resolve(), [dash, hls, legacy]);
+    assert.equal(lookups, 2, 'each retune resolves current CDN credentials');
+    assert.deepEqual(channel.sources, [], 'do not cache tokenized sources in the catalogue');
+    const onlyHls = await catalog.resolveSources(channel, async () => JSON.stringify({ sourcesLive: [{ src: hls }] }));
+    assert.deepEqual(onlyHls, [hls]);
+    assert.deepEqual(await catalog.resolveSources(first, () => assert.fail()), first.sources);
+});
+
+test('changing channel retunes and hiding TDT releases playback; settings and last channel persist', async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-settings-'));
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const tuned = [];
@@ -116,17 +137,20 @@ test('changing channel retunes and hiding TDT releases playback; favourites and 
     const player = { start(sources, change) { tuned.push(sources[0]); change('playing'); }, stop() { stops++; } };
     const opts = { fixture: { tdtChannels: [first, second] }, tdtDirectory: dir, tdtPlayer: player };
     const tdt = createTdt(opts, () => {});
+    t.after(() => tdt.close());
     tdt.update(Date.now(), true);
     tdt.press(true);
-    tdt.rotate(3);
+    assert.equal(tdt.state.mode, 'settings');
+    assert.deepEqual(tdt.settings().map((item) => item.label), ['País', 'Duración de la información', 'Iniciar en el último canal']);
+    tdt.rotate(1);
     tdt.press(false);
-    tdt.rotate(3);
+    assert.equal(tdt.state.prefs.seconds, 8);
+    tdt.rotate(1);
     tdt.press(false);
     assert.equal(tdt.state.prefs.resume, true);
     tdt.press(true);
-    tdt.rotate(2);
-    tdt.press(false);
-    assert.deepEqual(tdt.state.prefs.favorites, ['es/la1']);
+    assert.equal(tdt.state.mode, 'browse');
+    assert.equal(tuned.length, 0);
     tdt.press(false);
     await eventually(() => tuned.length === 1);
     tdt.rotate(1);
@@ -139,10 +163,103 @@ test('changing channel retunes and hiding TDT releases playback; favourites and 
     tdt.close();
     const restored = createTdt(opts, () => {});
     t.after(() => restored.close());
+    assert.equal(restored.state.prefs.seconds, 8);
+    assert.equal(restored.state.prefs.resume, true);
     assert.equal(restored.selected().id, second.id);
     restored.update(Date.now(), true);
     await eventually(() => tuned.length === 3);
     assert.equal(tuned[2], second.sources[0]);
+});
+
+test('Spanish catalogues exclude foreign entries and preview countries return independent lists', () => {
+    const entry = (name) => ({ name, epg_id: name, options: [{ format: 'm3u8', url: first.sources[0] }] });
+    const region = (name, channel) => ({ name, ambits: [{ name: 'Generalistas', channels: [entry(channel)] }] });
+    ['Spain', 'España'].forEach((name) => {
+        const result = catalog.parseCatalog(JSON.stringify({ countries: [region('France', 'France 2'), region(name, 'La 1')] }));
+        assert.deepEqual(result.map((item) => item.name), ['La 1']);
+    });
+    assert.throws(() => catalog.parseCatalog(JSON.stringify({ countries: [region('France', 'France 2')] })), /Catálogo vacío/);
+    const markdown = '## Nacionales\n| La 1 | [m3u8](https://example.com/uno.m3u8) | - | - | La1.TV | - |\n'
+        + '## Int. Francia\n| France 2 | [m3u8](https://example.com/dos.m3u8) | - | - | France2 | - |';
+    assert.deepEqual(catalog.parseMarkdown(markdown).map((item) => item.name), ['La 1']);
+    const { previewChannels } = require('../../native/javi-carlab/tdtworld-data');
+    const spanish = previewChannels('es'), portuguese = previewChannels('pt');
+    assert.equal(portuguese[0].name, 'RTP 1');
+    assert.equal(spanish[0].name, 'La 1');
+    spanish[0].name = 'changed in caller';
+    assert.equal(previewChannels('es')[0].name, 'La 1');
+});
+
+test('changing country replaces the displayed catalogue and ignores a late response from the previous country', async (t) => {
+    const { layout } = require('../../native/javi-carlab/tdtworld');
+    const { viewport } = require('../../native/javi-carlab/drivehub-state');
+    const { w, h } = viewport, rows = layout(w, h);
+    function nextCountry(tdt) {
+        if (tdt.state.mode !== 'settings') tdt.touch(rows.actionX + 10, 17, w, h);
+        tdt.touch(w - 45, rows.settingsTop + 15, w, h);
+    }
+    const demo = createTdt({ fixture: {} }, () => {});
+    t.after(() => demo.close());
+    assert.equal(demo.selected().name, 'La 1');
+    nextCountry(demo); assert.equal(demo.selected().name, 'RTP 1');
+    nextCountry(demo); assert.equal(demo.selected().name, 'Das Erste');
+
+    let resolveSpain;
+    const live = createTdt({ get(url) {
+        if (url.endsWith('/tv.json')) return new Promise((resolve) => { resolveSpain = resolve; });
+        if (url.endsWith('/pt.m3u')) return Promise.resolve(Buffer.from('#EXTINF:-1 tvg-id="RTP1.pt",RTP 1\nhttps://example.com/rtp.m3u8'));
+        return Promise.reject(new Error('offline'));
+    } }, () => {});
+    t.after(() => live.close());
+    live.update(1000, true);
+    nextCountry(live);
+    assert.deepEqual(live.state.channels, []);
+    live.update(1000, true);
+    await eventually(() => live.selected());
+    resolveSpain(Buffer.from(JSON.stringify({ countries: [{ name: 'Spain', ambits: [{ channels: [{ name: 'La 1' }] }] }] })));
+    await delay(10);
+    assert.deepEqual(live.state.channels.map((channel) => channel.name), ['RTP 1']);
+});
+
+test('player channel picker waits for confirmation and selecting the current channel does not retune', async (t) => {
+    const tuned = [];
+    const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, tdtPlayer: {
+        start(sources, change) { tuned.push(sources[0]); change('playing'); }, stop() {}
+    } }, () => {});
+    t.after(() => tdt.close());
+    tdt.update(Date.now(), true); tdt.press(false);
+    await eventually(() => tuned.length === 1);
+    tdt.press(true); tdt.rotate(1);
+    assert.equal(tdt.state.playerChoice, 1);
+    assert.equal(tdt.selected().id, first.id);
+    assert.equal(tuned.length, 1);
+    tdt.press(false);
+    await eventually(() => tuned.length === 2);
+    assert.equal(tdt.selected().id, second.id);
+    assert.equal(tdt.state.playerChoice, undefined);
+    tdt.press(true); tdt.press(false);
+    assert.equal(tuned.length, 2);
+    assert.equal(tdt.state.playerChoice, undefined);
+});
+
+test('touching a different row starts playback immediately and leaving the card cancels a pending tune', async (t) => {
+    const tuned = [], { layout } = require('../../native/javi-carlab/tdtworld');
+    const { viewport } = require('../../native/javi-carlab/drivehub-state');
+    const { w, h } = viewport, rows = layout(w, h);
+    const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, tdtPlayer: {
+        start(sources, change) { tuned.push(sources[0]); change('playing'); }, stop() {}
+    } }, () => {});
+    t.after(() => tdt.close());
+    tdt.update(Date.now(), true);
+    tdt.touch(46, rows.top + rows.rowHeight + 18, w, h);
+    assert.equal(tdt.state.mode, 'player');
+    await eventually(() => tuned.length === 1);
+    assert.deepEqual(tuned, second.sources);
+    tdt.touch(rows.actionX + 10, 18, w, h);
+    tdt.rotate(-1); assert.equal(tdt.selected().id, first.id); assert.equal(tuned.length, 1);
+    tdt.press(false); tdt.update(Date.now(), false);
+    await delay(10);
+    assert.deepEqual(tuned, second.sources);
 });
 
 test('shared video rotates slots and records the renderer video operation', (t) => {

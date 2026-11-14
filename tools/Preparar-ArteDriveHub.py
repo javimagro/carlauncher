@@ -39,7 +39,6 @@ def main():
         add("weather-" + condition, fitted(weather / f"weather_background_{condition}.webp", (556, 468)))
         add("icon-" + condition, thumbnail(weather / f"weather_icon_{condition}.webp", (120, 120)))
     add("icon-rain-detail", thumbnail(weather / "weather_icon_rain_detail.png", (100, 100)))
-    add("news", fitted(weather / "news_fanart_placeholder.webp", (368, 207)))
     station = sorted((drivehub / "assets/logos").glob("onda-cero-madrid-*"))[0]
     add("radio", fitted(station, (142, 142)))
 

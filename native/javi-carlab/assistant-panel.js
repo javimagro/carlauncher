@@ -6,15 +6,14 @@ function action(ui, id, show, invalidate) {
     if (!assistant || id.indexOf('assistant:') !== 0) return false;
     const name = id.slice(10), a = assistant.state;
     if (name !== 'remove') s.confirmKeyRemoval = false;
-    if (name === 'open') show('assistant');
-    else if (name === 'settings') show('assistant-settings');
+    if (name === 'settings') show('assistant-settings');
+    else if (name === 'open-text') show('assistant');
     else if (name === 'provider') assistant.configure({ provider: a.config.provider === 'openai' ? 'gemini' : 'openai' });
     else if (name === 'voice') { s.assistantVoiceOffset = 0; show('assistant-voices'); }
     else if (name.indexOf('voice:') === 0) { assistant.configure({ voice: name.slice(6) }); s.stack.pop(); s.panel = 'assistant-settings'; s.focus = -1; }
     else if (name === 'voices-up') s.assistantVoiceOffset = Math.max(0, (s.assistantVoiceOffset || 0) - 4);
     else if (name === 'voices-down') s.assistantVoiceOffset = Math.min(providers[a.config.provider].voices.length - 4, (s.assistantVoiceOffset || 0) + 4);
-    else if (name === 'speak') assistant.configure({ speak: !a.config.speak });
-    else if (name === 'preview') { show('assistant'); assistant.submit('Di únicamente: Hola, soy tu asistente BMWLauncher. Esta es mi voz generada por inteligencia artificial.'); }
+    else if (name === 'preview') assistant.previewVoice();
     else if (name === 'stop') assistant.stop();
     else if (name === 'listen') assistant.listen ? assistant.listen() : (a.message = a.audio);
     else if (name === 'key' || name === 'write') {
@@ -33,7 +32,7 @@ function action(ui, id, show, invalidate) {
         else if (name === 'caps') edit.caps = !edit.caps;
         else if (name.indexOf('char:') === 0 && edit.draft.length < max) edit.draft += name.slice(5);
         else if (name === 'save') {
-            if (edit.kind === 'key' && !validKey(edit.draft)) { edit.error = 'La clave está incompleta o contiene caracteres no válidos'; return true; }
+            if (edit.kind === 'key' && !validKey(edit.draft, a.config.provider)) { edit.error = 'La clave está incompleta o contiene caracteres no válidos'; return true; }
             function complete(ok) {
                 if (s.assistantEditor !== edit) return;
                 edit.saving = false;
@@ -63,10 +62,11 @@ function draw(surface) {
         button('assistant:key', a.config.configured[a.config.provider] ? 'Configurada · sustituir' : 'Introducir API key', x + 20, y + 188, w - 164, 48, { disabled: busy });
         button('assistant:remove', s.confirmKeyRemoval ? 'Confirmar' : 'Borrar', x + w - 132, y + 188, 112, 48, { disabled: busy || !a.config.configured[a.config.provider] });
         text('Voz del asistente · generada por IA', x + 20, y + 263, 18, p.secondary);
-        button('assistant:voice', a.config.voices[a.config.provider], x + 20, y + 274, 240, 48, { disabled: busy });
-        button('assistant:preview', 'Oír voz', x + 272, y + 274, 156, 48, { disabled: busy || !a.config.configured[a.config.provider] });
-        button('assistant:speak', a.config.speak ? 'Voz: activada' : 'Voz: desactivada', x + 440, y + 274, w - 460, 48, { disabled: busy });
-        wrap(a.config.error || a.message || a.audio, x + 20, y + 357, w - 40, 18, a.config.error ? p.danger : p.secondary, 2);
+        button('assistant:voice', a.config.voices[a.config.provider], x + 20, y + 274, w - 380, 48, { disabled: busy });
+        button('assistant:preview', 'Oír voz', x + w - 348, y + 274, 156, 48, { disabled: busy || a.busy || !a.config.configured[a.config.provider] });
+        button('assistant:open-text', 'Escribir', x + w - 180, y + 274, 160, 48, { disabled: busy || a.busy });
+        const feedback = a.config.error || (a.busy ? 'Preparando la muestra de voz…' : '');
+        if (feedback) wrap(feedback, x + 20, y + 377, w - 40, 18, a.config.error ? p.danger : p.secondary, 2);
     } else if (s.panel === 'assistant-voices') {
         const offset = s.assistantVoiceOffset || 0;
         text(provider.label + ' · elige una voz', x + 20, y + 88, 20, p.secondary);
@@ -75,10 +75,10 @@ function draw(surface) {
         button('assistant:voices-up', 'Anterior', x + 20, y + 353, 200, 48, { disabled: !offset });
         button('assistant:voices-down', 'Siguiente', x + w - 220, y + 353, 200, 48, { disabled: offset + 4 >= provider.voices.length });
     } else if (s.panel === 'assistant') {
-        text(({ idle: 'Listo', connecting: 'Conectando…', ready: 'Conectado', thinking: 'Consultando…', error: 'Revisa la conexión', listening: 'Escuchando…' })[a.status] || a.status,
+        text(({ idle: 'Listo', connecting: 'Conectando…', ready: 'Conectado', thinking: 'Consultando…', error: 'Listo', listening: 'Escuchando…' })[a.status] || a.status,
             x + 20, y + 89, 18, p.accent);
         text(a.input || 'Pide una emisora, una tarjeta o los datos del coche.', x + 20, y + 124, 20, p.secondary, w - 40);
-        wrap(a.message || a.answer || 'Por ejemplo: «Pon Onda Cero» o «Muéstrame el tiempo».', x + 20, y + 165, w - 40, 21, a.status === 'error' ? p.danger : p.text, 5);
+        wrap(a.answer || 'Por ejemplo: «Pon Onda Cero» o «Muéstrame el tiempo».', x + 20, y + 185, w - 40, 21, p.text, 5);
         text(a.audio, x + 20, y + 333, 16, p.secondary, w - 40);
         button('assistant:write', 'Escribir', x + 20, y + 350, 156, 52, { primary: true, disabled: a.busy });
         button('assistant:listen', a.status === 'listening' ? 'Terminar' : 'Hablar', x + 188, y + 350, 148, 52, { disabled: a.busy && a.status !== 'listening' });
@@ -100,7 +100,32 @@ function draw(surface) {
         button('assistant:erase', 'Borrar', x + 440, y + 309, 126, 44);
         button('assistant:clear', 'Vaciar', x + 578, y + 309, w - 598, 44);
         button('assistant:save', edit.saving ? 'Guardando…' : edit.kind === 'key' ? 'Guardar clave' : 'Enviar', x + 20, y + 365, w - 40, 50,
-            { primary: true, disabled: busy || edit.saving || (edit.kind === 'key' ? !validKey(edit.draft) : !edit.draft.trim()) });
+            { primary: true, disabled: busy || edit.saving || (edit.kind === 'key' ? !validKey(edit.draft, a.config.provider) : !edit.draft.trim()) });
     }
 }
-module.exports = { action, draw };
+
+const indicatorStyles = {
+    connecting: ['Conectando…', '#8B79D1', '#C9B9FF'],
+    processing: ['Preparando respuesta…', '#8B79D1', '#C9B9FF'],
+    listening: ['Escuchando…', '#F28C28', '#FFB15B'],
+    speaking: ['Respondiendo…', '#258CCF', '#65C6E9']
+};
+function drawIndicator(cv, state, x, y, now, palette) {
+    const style = indicatorStyles[state.indicator];
+    if (!style) return;
+    const phase = now / 750, wave = (Math.sin(phase * Math.PI) + 1) / 2;
+    cv.circle(x, y, 38, palette.control);
+    if (state.indicator === 'connecting') {
+        cv.circle(x, y, 19, palette.line);
+        cv.circle(x, y, 16, palette.control);
+        cv.circle(x + Math.cos(phase * Math.PI) * 17.5, y + Math.sin(phase * Math.PI) * 17.5, 5, style[2]);
+        cv.circle(x, y, 6, style[1]);
+    } else {
+        const width = 26 + wave * 22, offset = (wave - .5) * 18;
+        cv.roundRect(x + offset - width / 2, y - width * .36, width, width * .72, width / 2, style[1]);
+        cv.circle(x - offset, y, 7 + (1 - wave) * 7, style[2]);
+    }
+    cv.roundRect(x - 94, y + 47, 188, 28, 7, palette.surface);
+    cv.text(style[0], x, y + 66, 15, palette.text, { align: 'center' });
+}
+module.exports = { action, draw, drawIndicator };

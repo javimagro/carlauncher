@@ -1,6 +1,12 @@
 # TDTWorld · validación local y prueba pendiente en MGU21
 
-## Resultado vigente · 0.2.12
+## Resultado vigente · selección al retunar en 0.2.14
+
+La 0.2.13 sí contenía el adaptador probado, pero La Sexta abría primero varias fuentes HLS antiguas, incluida una duplicada, antes de alcanzar el DASH adaptado. Se verificó por lectura de los procesos mientras el usuario cambiaba de canal: reinicios y pausas hasta 11,55 s; el último decodificador DASH se mantuvo al menos 95 s. ALSA vuelve a intentarse con cada nuevo decodificador, por lo que la coincidencia temporal no establece que el audio cause sus reinicios.
+
+El catálogo Atres prioriza DASH y conserva HLS como alternativa. La prueba de 30 s en Windows con la lista completa y FFmpeg 9.0.2 entregó 577 cuadros con un intento y cero vaciados/reconexiones; máximo productor 62 ms. Es una prueba de PC. Pendientes la retunía instalada en el i4 y el sonido continuo. También se corrigió el adaptador de descarga de `Probar-Canal-TDT.js`: su argumento de plazo no puede pasarse como función DNS a `drivehub-network`.
+
+## Ensayo anterior · 0.2.12
 
 El 14-11 se reprodujeron los cortes con la 0.2.11 instalada. La corrección ahora usa listas HLS locales para los segmentos DASH originales y reutiliza conexiones HTTPS al CDN. En la MGU: 90 segundos, cero vaciados/reconexiones, máximo un fotograma repetido y hueco máximo 71 ms; usuario confirma continuidad. Se restauró el worker original después del ensayo, sin instalación ni reinicio. **Audio aún pendiente:** se oyó unos 10–15 segundos con microcortes en un ensayo posterior; la salida ALSA terminó sin avance. Las cifras del receptor PCM no acreditan sonido. Más detalle en BITACORA.
 

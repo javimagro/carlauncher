@@ -6,7 +6,7 @@ const { EventEmitter } = require('node:events');
 const { createPreconditioning, consumeCommands, service } = require('../../apps/javi_carlauncher/preconditioning-bmw');
 const { createPreconditioningUI } = require('../../native/javi-carlab/preconditioning-ui');
 const { consume } = require('../../native/javi-carlab/telemetry-input');
-const { preconditioningButton: box, home } = require('../../native/javi-carlab/drivehub-state');
+const { preconditioningButton: box, home, map, energyBar } = require('../../native/javi-carlab/drivehub-state');
 const createSession = require('../../native/javi-carlab/drivehub-session');
 const { createNavigationUI } = require('../../native/javi-carlab/navigation-ui');
 const { controls } = require('../../native/javi-carlab/navigation-panels');
@@ -100,6 +100,30 @@ test('a hung HV setter ends the waiting indicator but cannot admit overlapping c
     r.control.stop(); resolve(); await result; assert.equal(r.control.snapshot().available, false);
 });
 
+test('HV reports only a bounded diagnostic for each setter failure and prefers a vehicle restriction', async (t) => {
+    const r = await rig(t), notices = [];
+    const ui = createPreconditioningUI((command) => { r.control.command(command); return true; }, () => {}, (notice) => notices.push(notice));
+    for (const [error, reason, message] of [
+        [Object.assign(Error('private payload'), { code: 'EACCES' }), 'permission', /no tiene permiso/],
+        [Error('SOME/IP E_TIMEOUT'), 'no-response', /no respondió/],
+        [Object.assign(Error('private payload'), { code: 'ECONNRESET' }), 'service', /conexión/],
+        [Error('private payload'), 'unknown', /no ha comunicado la causa/]
+    ]) {
+        r.notify(sample()); ui.receive(r.control.snapshot(), r.now());
+        r.proxy.operationMode.setValue = async () => { throw error; };
+        ui.toggle(r.now()); await flush();
+        const frame = r.control.snapshot(); ui.receive(frame, r.now());
+        assert.equal(frame.result, 'error'); assert.equal(frame.failure, reason);
+        assert.match(notices[notices.length - 1], message);
+        assert(!JSON.stringify(frame).includes('private payload'));
+    }
+    r.proxy.operationMode.setValue = async () => { r.notify(sample(0, false, 2)); throw Error('rejected'); };
+    r.notify(sample()); await flush();
+    await r.control.command(command('restricted-after-write', true));
+    assert.equal(r.control.snapshot().result, 'restricted');
+    assert.equal(r.control.snapshot().restriction, 2);
+});
+
 test('HV command and telemetry parsers are bounded and preserve old telemetry clients', () => {
     const commands = [], receive = consumeCommands((c) => commands.push(c));
     assert(receive(Buffer.from('{"op":"precon'))); assert(receive(Buffer.from('dition","id":"a","enabled":true}\n')));
@@ -111,6 +135,7 @@ test('HV command and telemetry parsers are bounded and preserve old telemetry cl
     assert(read(Buffer.from(JSON.stringify({ version: 1, records: [], preconditioning: status() }) + '\n')));
     assert.deepEqual(frames, [[[], undefined], [[], status()]]);
     assert.equal(read(Buffer.from(JSON.stringify({ version: 1, records: [], preconditioning: status({ mode: 15 }) }) + '\n')), false);
+    assert.equal(read(Buffer.from(JSON.stringify({ version: 1, records: [], preconditioning: status({ failure: 'raw remote error' }) }) + '\n')), false);
 });
 
 test('the telemetry connection carries an explicit HV request back to OAP and releases it on hide', { timeout: 5000 }, async (t) => {
@@ -139,9 +164,10 @@ test('the telemetry connection carries an explicit HV request back to OAP and re
 });
 
 test('HV UI never toggles from missing data, handles stale feedback and shows a failed transport', () => {
-    let sent = 0; const ui = createPreconditioningUI(() => { sent++; return false; }, () => {});
+    const notices = [];
+    let sent = 0; const ui = createPreconditioningUI(() => { sent++; return false; }, () => {}, (notice) => notices.push(notice));
     ui.toggle(100); assert.equal(sent, 0);
-    ui.receive(status(), 100); ui.toggle(101); assert.equal(sent, 1); assert.match(ui.state(102).message, /Sin conexión/);
+    ui.receive(status(), 100); ui.toggle(101); assert.equal(sent, 1); assert.match(notices[1], /Sin conexión/);
     ui.toggle(6000); assert.equal(sent, 1); assert.equal(ui.state(6000).available, false);
     ui.reset(); assert.equal(ui.state(6000).selected, false);
 });
@@ -161,6 +187,37 @@ test('HV touch requires a completed tap, works beside Datos and never writes whi
     gpu.emit('touch', 'down', home.x - 80, y); gpu.emit('touch', 'up', home.x - 80, y); // Datos
     gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y); assert.equal(sent[1].enabled, false);
     session.show(false); gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y); assert.equal(sent.length, 2);
+});
+
+test('assistant and HV share a bottom toast that expires and is cleared when hidden', async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    const gpu = new EventEmitter();
+    let labels = [], rectangles = [];
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() {} });
+    const text = Recorder.prototype.text, rect = Recorder.prototype.roundRect, reset = Recorder.prototype.reset;
+    t.mock.method(Recorder.prototype, 'reset', function () { labels = []; rectangles = []; return reset.call(this); });
+    t.mock.method(Recorder.prototype, 'text', function (value) { labels.push(value); return text.apply(this, arguments); });
+    t.mock.method(Recorder.prototype, 'roundRect', function (x, y, w, h, radius, color) {
+        rectangles.push({ x, y, w, h, color }); return rect.apply(this, arguments);
+    });
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] } });
+    t.after(() => session.close());
+    gpu.emit('ready', {}, { touch: true }); session.show(true);
+    await flush();
+    const tap = (x, y) => { gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y); t.mock.timers.tick(33); };
+    const hv = 'Esperando el estado de preacondicionamiento de BMW';
+    const assistant = 'OpenAI · Micrófono sin configurar en este entorno.';
+    tap(box.x + 20, box.y + 20);
+    assert.equal(labels.filter((text) => text === hv).length, 1);
+    tap(map.x + 37, map.y + 310);
+    assert(!labels.includes(hv));
+    assert.equal(labels.filter((text) => text === assistant).length, 1);
+    assert(rectangles.some((r) => r.x > map.x && r.x + r.w < map.x + map.w && r.y + r.h === energyBar.y - 4));
+    t.mock.timers.tick(4000);
+    assert(!labels.includes(assistant));
+    tap(box.x + 20, box.y + 20);
+    session.show(false); session.show(true); t.mock.timers.tick(33);
+    assert(!labels.includes(hv));
 });
 
 test('wide navigation headers leave the HV control free in both themes', () => {
