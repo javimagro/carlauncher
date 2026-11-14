@@ -8,6 +8,7 @@ const split = 966 + formerSidebarWidth;
 const energyBar = { x: inset, y: height - inset - 40, w: split - 3 * inset, h: 40 };
 const map = { x: energyBar.x, y: inset, w: energyBar.w, h: energyBar.y - 2 * inset };
 const home = { x: map.x + map.w - 66, y: map.y + 10, w: 56, h: 48 };
+const preconditioningButton = { x: map.x + map.w - 248, y: home.y, w: 52, h: home.h };
 const viewport = { x: split, y: inset, w: width - split - inset, h: height - 2 * inset };
 const gap = 9;
 const wide = Math.round((viewport.w - gap) * 0.57);
@@ -141,6 +142,7 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
     return {
         state,
         position,
+        selectCard(index) { if (Number.isInteger(index) && index >= 0 && index < cards.length) select(index); },
         touch,
         animating: () => !!transition,
         setArticleCount(count, selected = state.article) {
@@ -192,4 +194,4 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
     };
 }
 
-module.exports = { width, height, cards, map, home, energyBar, viewport, dailyChart, contains, createDriveHub };
+module.exports = { width, height, cards, map, home, preconditioningButton, energyBar, viewport, dailyChart, contains, createDriveHub };

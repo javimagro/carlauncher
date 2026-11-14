@@ -8,6 +8,10 @@ Se mantiene la tarjeta estrecha, el fondo diagonal del carrusel y la referencia 
 
 ## Evidencia y límites
 
+**Corrección local 0.2.11, aún sin publicar:** se procesan las listas completas e incrementales de `dataStationList` y se solicita su difusión después de suscribirse. Cada lista tiene su propia revisión; una notificación de favoritos no descarta la consulta FM/DAB. Un fallo de una lista no impide consultar las demás. Los logos se extraen de `ByteBufferData.data`, con comprobación de firma y tamaño, y se consulta primero la caché BMW `TunerFmAmDabMetadata` (45118, mayor 2, instancia 1) con retorno al sintonizador. Este servicio es opcional; no puede impedir la lectura ni la sintonización.
+
+La investigación local confirmó en Hmi8 que `onStationListChanged` (`0x67aff00`) distingue la actualización incremental (ON) de la completa: llama a `updateExistingList` (`0x67af3f0`) o a `replaceExistingList` (`0x67ae3e0`). `requestStationList` está en `0x67a7200`. Son observaciones de desensamblado Capstone y símbolos de la copia con el hash indicado abajo. REA identificó el ELF, pero volvió a indicar `provider_unavailable` para pseudocódigo; no se ha decompilado por completo ni conectado al coche en esta revisión.
+
 - Catálogo SOME/IP de la copia MGU21 **036.010.004**: `TunerFmAmDab`, servicio **45108**, versión mayor **2**, instancia **1**. Hereda `TunerGeneric`; sus métodos no aparecen en el nodo derivado y hay que resolver `extends` al verificar permisos.
 - `getStationListMetaData(listType, pictures, epgDataScope, startPosition, length)` devuelve las filas; `selectStation(listType, dataBaseIdentifier, positionIndex)` selecciona una fila. Se conservan el identificador y la posición de BMW, sin sustituirlos por el índice de nuestra lista filtrada.
 - Listas: **2** FM/DAB recibibles, **7** presintonías de radio, **10** emisoras destacadas por BMW. No se seleccionan AM, tráfico, televisión, satélite ni fuentes IP desde esta tarjeta.
@@ -31,7 +35,7 @@ La referencia de solo lectura es `D:/Usuarios/javie/StudioProjects/DriveHub`: `c
 
 ## Arquitectura y protección frente a fallos
 
-`radio-datos.js` define y normaliza contratos. `radio-bmw.js` posee proxies, getters, suscripciones y órdenes. `radio-model.js` valida el transporte. `radio-ui.js` posee foco, filtros, favoritos, caché de imágenes y la animación. `radio-view.js` dibuja. `drivehub-state.js` conserva los gestos del carrusel y delega la interacción interna de Radio.
+`radio-datos.js` define y normaliza contratos. `radio-bmw.js` posee proxies, getters, suscripciones y órdenes. `radio-listas.js` conserva listas completas, actualizaciones por identificador y revisiones independientes; impide que una respuesta de una consulta antigua sustituya una notificación nueva. `radio-model.js` valida el transporte. `radio-ui.js` posee foco, filtros, favoritos, caché de imágenes y la animación; libera las imágenes sustituidas, descartadas o al cerrar. La pertenencia a favoritos/populares y la deduplicación usan la identidad de emisora, también cuando BMW cambia el identificador entre listas. `radio-view.js` dibuja. `drivehub-state.js` conserva los gestos del carrusel y delega la interacción interna de Radio.
 
 El OAP abre el adaptador al hacerse visible; lo cierra al ocultarse. Abrir, ocultar o cerrar la app **no inicia ni detiene la radio original**. La única escritura al coche es la selección explícita de fuente/emisora. No se toman recursos de audio propios ni canales de avisos.
 

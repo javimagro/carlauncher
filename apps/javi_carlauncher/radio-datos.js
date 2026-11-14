@@ -3,7 +3,9 @@
 // Contracts derived from MGU21 036.010.004; no firmware/SDK is distributed.
 const services = {
     tuner: { name: 'de.bmw.infotainment.tuner.fmamdab.tunerfmamdab.TunerFmAmDab',
-        attributes: ['currentStationFmDab', 'epgReferenceTime'], methods: ['getStationListMetaData', 'selectStation'], broadcasts: ['dataStationList'] },
+        attributes: ['currentStationFmDab', 'epgReferenceTime'], methods: ['getStationListMetaData', 'selectStation', 'triggerStationListBroadcast'], broadcasts: ['dataStationList'] },
+    metadata: { name: 'de.bmw.infotainment.tuner.fmamdab.tunerfmamdab.TunerFmAmDabMetadata',
+        attributes: [], methods: ['getStationListMetaData'] },
     media: { name: 'de.bmw.infotainment.entertainment.mediasource.MediaSource',
         attributes: ['sources', 'activeSourceId'], methods: ['selectSource'] }
 };
@@ -13,6 +15,8 @@ const uint = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 const on = (v) => v === 1 || v === 'ON';
 const bandNames = { WB_FM: 1, WB_MW: 2, WB_DAB: 3, WB_FM_DAB: 4 };
 function picture(value) {
+    // BMW ByteBufferData is a struct, not the encoded image itself.
+    if (value && value.data !== undefined) value = value.data;
     if (!(Buffer.isBuffer(value) || value instanceof Uint8Array || Array.isArray(value)) || value.length > 96 * 1024 || value.length < 8) return null;
     const b = Buffer.from(value);
     return (b[0] === 255 && b[1] === 216) || b.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? b.toString('base64') : null;
@@ -49,4 +53,6 @@ function sources(values) {
         .map((s) => ({ id: s.sourceId, name: clean(s.displayText), selectable: s.selectable === true,
             type: types[s.playerType] || s.playerType }));
 }
-module.exports = { services, lists, station, sources, picture, clean, seconds };
+const listNames = { LT_RECEIVABLE_FM_DAB: 2, LT_PRESETS_RADIO: 7, LT_TOPSTATIONS_RADIO: 10 };
+function listType(value) { return lists.includes(value) ? value : listNames[value]; }
+module.exports = { services, lists, station, sources, picture, clean, seconds, listType };

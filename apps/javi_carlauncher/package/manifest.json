@@ -88,6 +88,7 @@
       ],
       "attributes": {
         "statusPredictiveThermalManagement": "rs",
+        "operationMode": "w",
         "statusHighVoltageBattery": "rs"
       }
     },
@@ -106,7 +107,8 @@
       ],
       "attributes": {
         "displayRangeElectricVehicle": "rs",
-        "statusConsumptionAverageElectricVehicle": "r"
+        "statusConsumptionAverageElectricVehicle": "r",
+        "statusHUDSelection": "rs"
       }
     },
     "de.bmw.infotainment.navigation.positioning.Positioning": {
@@ -186,7 +188,12 @@
         "currentRoute": "rs",
         "allDestinationsInfo": "rs",
         "conclusiveDart": "rs",
-        "currentRoad": "rs"
+        "currentRoad": "rs",
+        "junction3dViewInKombiEnabled": "rsw",
+        "visualizationInKombiNonNaviEnabled": "rsw",
+        "additionalInformationEnabled": "rsw",
+        "guidingPopupsEnabled": "rsw",
+        "signboardPopupsEnabled": "rsw"
       },
       "methods": [
         "startGuidance",
@@ -248,7 +255,8 @@
       ],
       "broadcasts": [
         "resultList",
-        "searchStatus"
+        "searchStatus",
+        "changedViewInfo"
       ]
     },
     "de.bmw.infotainment.navigation.poisearch.POISearch": {
@@ -269,7 +277,8 @@
       ],
       "broadcasts": [
         "resultList",
-        "searchStatus"
+        "searchStatus",
+        "changedViewInfo"
       ]
     },
     "de.bmw.infotainment.navigation.poicategorytree.POICategoryTree": {
@@ -298,7 +307,8 @@
       },
       "methods": [
         "getStationListMetaData",
-        "selectStation"
+        "selectStation",
+        "triggerStationListBroadcast"
       ],
       "broadcasts": [
         "dataStationList"
@@ -314,6 +324,30 @@
       },
       "methods": [
         "selectSource"
+      ]
+    },
+    "de.bmw.infotainment.tuner.fmamdab.tunerfmamdab.TunerFmAmDabMetadata": {
+      "instances": [
+        "1"
+      ],
+      "attributes": {},
+      "methods": [
+        "getStationListMetaData"
+      ]
+    },
+    "de.bmw.infotainment.navigation.guiding.GuidanceRenderedContent": {
+      "instances": [
+        "Main_Instance"
+      ],
+      "attributes": {
+        "registeredViews": "rs"
+      },
+      "methods": [
+        "getViewConfig",
+        "getViewContent"
+      ],
+      "broadcasts": [
+        "viewContentChanged"
       ]
     }
   },

@@ -1,25 +1,39 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.10 de prueba** incluye Radio FM/DAB integrada con formato DriveHub: emisoras BMW, categorías, favoritos propios, logos/EPG disponibles y selección de fuente original. El audio del sintonizador no usa internet. Consulta [Radio MGU21](RADIO-MGU21.md) para manejo y validación pendiente en el coche.
+La **0.2.11 de prueba** reúne las mejoras de navegación, Radio FM/DAB, tiempo por GPS, preacondicionamiento, asistente y ajustes de HUD/cuadro, junto con las correcciones de la auditoría integral. El sonido de TDT, la cartografía BMW y la exclusividad física del mando siguen pendientes de validar en el coche.
 
 
 [Arquitectura de desarrollo](ARQUITECTURA.md) · [Bitácora técnica](BITACORA.md)
 
-### Navegación en desarrollo: 0.2.10 de prueba
+### Versión 0.2.11 de prueba
 
-La versión incorpora mapa interactivo, búsqueda de direcciones/POI/cargadores mediante BMW, favoritos, cálculo con paradas de recarga y guiado. Los paneles siguen la referencia de Carlinkit. **Las calles que se dibujan son de OpenStreetMap; el motor cartográfico original de BMW sigue pendiente.** Las llamadas de navegación están contrastadas con el catálogo del firmware y probadas con respuestas simuladas; falta validarlas en el i4. La distribución de prueba usa la etiqueta `v0.2.10` del canal Tags. [Estado, uso y límites](NAVEGACION-MGU21.md).
+[Auditoría integral](AUDITORIA-INTEGRAL.md): correcciones de entrada oculta, cancelación de fotos, asistente y edición de claves; menos trabajo repetido en rutas y favoritos. **192 pruebas locales correctas**. [Código y ZIP para USB de la 0.2.11](https://github.com/javimagro/carlauncher/releases/tag/v0.2.11). El ZIP final contiene los mismos módulos que la etiqueta; no incorpora SDK, firmware ni claves privadas.
 
-Para reproducir las nueve capturas locales: `node tools/Previsualizar-Navegacion.js --online`. Se guardan en `dist/navigation-preview/`, con datos de prueba y un encuadre real de OSM. [El ZIP de prueba 0.2.10](https://github.com/javimagro/carlauncher/releases/download/v0.2.10/BMWLauncher-0.2.10-USB.zip) reúne navegación y radio: contiene fuentes para que la unidad enlace su SDK; no incluye el donante sintético usado para comprobar el empaquetado. Descomprime `mgu-repo` en la raíz del USB y revisa en la Store los componentes 0.2.10 antes de instalar la prueba.
+**Ajustes → HUD y cuadro** permite consultar contenido de guiado anunciado por BMW y cambiar sus preferencias de cruces 3D, maniobras y carteles. Conserva el guiado y los dibujos originales. Falta confirmar en el coche que rutas iniciadas desde BMWLauncher muestran las mismas vistas y animaciones; el destino HUD de todos los carteles no está garantizado. [Integración y límites](HUD-NAVEGACION-MGU21.md).
+
+El engranaje incorpora **Ajustes → Asistente**: OpenAI/Gemini, voces y API key privada. El asistente controla las emisoras FM/DAB y tarjetas de DriveHub, TDT y las consultas disponibles del coche/navegación. La conversación escrita y los contratos se han probado en local; faltan las claves reales y la validación del micrófono y los altavoces. Las claves cifradas de Carlinkit todavía no se han recuperado. [Capacidades, configuración y pruebas](ASISTENTE-MGU21.md).
+
+Navegación BMW conserva búsqueda, destinos, cálculo y guiado mediante OAP/SOME/IP, pero retira las teselas externas. **La cartografía original todavía no está integrada:** el panel lo indica y no usa cachés de OSM como sustituto. Consulta [evidencia de ambas pantallas y componentes que faltan](NAVEGACION-MGU21.md).
+
+La interfaz adapta los paneles y 15 iconos de la referencia Carlinkit, el teclado, las fichas y las páginas de ruta. Incluye lógica de encuadre de resultados y ruta, probada sin cartografía real. [Diseño, pruebas y diferencias pendientes](NAVEGACION-INTERFAZ.md).
+
+TDT integra la selección DASH que dio vídeo continuo en una prueba temporal confirmada por el usuario, además de contrapresión en la cola y correcciones del proxy Node 8. El transporte final está probado en local, pendiente de repetir en MGU. La sonda MSDK decodificó 100 cuadros en hardware; todavía no es el backend de la app. **El audio continúa pendiente:** se corrigió un índice de pista de la sonda nativa, aún sin repetir la prueba audible. [Pruebas y límites](TDT-VALIDACION-MGU21.md) · [Audio nativo](TDT-AUDIO-MGU21.md) · [Diagnóstico local del mapa](MAPA-ENSAYO-LOCAL.md).
+
+Usa `BMWLauncher-0.2.11-USB.zip` de la release para instalar esta revisión por USB. Los ZIP de versiones anteriores no incluyen estos cambios.
+
+Se contrastó la búsqueda con Hmi8: corregido el estado final de POI y añadido el tamaño/cierre de la lista BMW para distinguir ausencia de coincidencias de pérdida de resultados. El panel permite reintentar y muestra la fase de espera. Falta contrastar una búsqueda real, selección y ruta en el i4; no se presenta como navegación terminada.
+
+`node tools/Previsualizar-Navegacion.js` genera veintidós capturas de interfaz con datos simulados y sin red. La versión de prueba es la [0.2.11](https://github.com/javimagro/carlauncher/releases/tag/v0.2.11), disponible mediante el canal Tags.
 
 ## Pantalla principal de BMWLauncher
 
-El lado izquierdo muestra el mapa alternativo, con la franja de energía debajo; Android Auto continúa pendiente. En la vista de diagnóstico se muestran las lecturas del coche. El carrusel de DriveHub ocupa toda la altura del lado derecho. **Ahora** muestra la batería y la autonomía del cuadro. **Trayecto** reproduce los seis indicadores de Carlinkit, la gráfica de altura y las temperaturas exterior y de batería HV. La energía consumida se estima a partir de la distancia y el consumo medio. Los cuatro periodos y el estado de carga rápida y precalentamiento se consultan en **Lecturas del coche**. Cuando falta una muestra válida se muestra un guion. La navegación no rellena previsiones de energía sin una fuente validada; Radio consulta el sintonizador BMW.
+La interfaz reserva el lado izquierdo para la cartografía BMW, todavía pendiente de integrar, con la franja de energía debajo; Android Auto continúa pendiente. En la vista de diagnóstico se muestran las lecturas del coche. El carrusel de DriveHub ocupa toda la altura del lado derecho. **Ahora** muestra la batería y la autonomía del cuadro. **Trayecto** reproduce los seis indicadores de Carlinkit, la gráfica de altura y las temperaturas exterior y de batería HV. La energía consumida se estima a partir de la distancia y el consumo medio. Los cuatro periodos y el estado de carga rápida y precalentamiento se consultan en **Lecturas del coche**. Cuando falta una muestra válida se muestra un guion. La navegación no rellena previsiones de energía sin una fuente validada; Radio consulta el sintonizador BMW.
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.10**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. Reinicia iDrive con el coche parado si la Store indica que el filtro requiere reinicio. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.10).
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.11**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. Reinicia iDrive con el coche parado si la Store indica que el filtro requiere reinicio. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.11).
 
-La radio y las llamadas de navegación requieren validación en el i4. Las mejoras locales de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.9](https://github.com/javimagro/carlauncher/releases/tag/v0.2.9).
+La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.10](https://github.com/javimagro/carlauncher/releases/tag/v0.2.10).
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
 
@@ -29,7 +43,7 @@ Con el coche parado, abre **BMWLauncher** y espera unos segundos. En **Lecturas 
 
 Con el coche parado, abre **BMWLauncher**, gira la rueda en ambos sentidos y comprueba que cambia la tarjeta. Con la herramienta de captura instalada, inclina el mando a la izquierda y hacia arriba. Comprueba que BMWLauncher mantiene el foco y usa la casita para volver a iDrive. Abre Tiempo y Noticias y, si alguna tarjeta falla, anota el mensaje que aparece debajo del título de error.
 
-Con `mgu-uplink` conectado, Tiempo consulta Open-Meteo cada 30 minutos y Noticias consulta los RSS cada 15 minutos mientras la app está abierta. Si falla la conexión, muestran la última respuesta disponible y reintentan pasados dos minutos.
+En la 0.2.11, con `mgu-uplink` conectado, Tiempo usa el GPS del coche: actualiza cada diez minutos o tras desplazarse un kilómetro, comprobándolo una vez por minuto. La tarjeta y el cockpit comparten el pronóstico. Sin posición válida lo indican y no muestran una ciudad fija. Tras un fallo de red, Tiempo reintenta al minuto y conserva solamente datos cercanos de menos de veinte minutos. Noticias sigue consultando los RSS cada quince minutos y reintenta a los dos minutos.
 
 ### Probar el widget en el cuadro
 
@@ -52,7 +66,7 @@ Abre BMWLauncher desde la pantalla de iDrive a la que quieras volver. Gira la ru
 3. Separar las fuentes de datos de la pantalla. Tiempo utiliza Open-Meteo con tres horas de previsión, precipitación por hora y siete días seleccionables. Noticias usa las portadas RSS de EL PAÍS, Xataka y Motorpasión, con titular, resumen del medio, imagen y contador. El servicio conserva la última respuesta válida. En iDrive las descargas se ejecutan con el UID de BMWLauncher y necesitan `mgu-uplink` conectado.
 4. Comparar con capturas de Carlinkit y probar en Chrome el desplazamiento, foco, lluvia, cambio de día, anterior y siguiente. En el coche queda por comprobar el área real de Winston, el acceso a internet y los eventos del mando físico.
 
-Las coordenadas de Tiempo usan Madrid por defecto. Para cambiar la ubicación en una futura instalación, `/var/opt/javi-carlab/drivehub.json` admite un objeto `location` con `name`, `latitude` y `longitude`. La posición del vehículo para Tiempo, la integración de las lecturas verificadas en la franja de energía y la búsqueda de noticias mediante asistente quedan pendientes.
+En la 0.2.11, Tiempo usa la posición GPS válida del coche. Sin ella muestra falta de ubicación; no recurre a Madrid ni al antiguo ajuste fijo de `drivehub.json`. La franja Ahora consume las lecturas verificadas y el asistente puede buscar entre las noticias descargadas.
 
 Los fondos e iconos del tiempo, la imagen de reserva de Noticias y el ejemplo de Radio proceden de los recursos locales de DriveHub. Los iconos de energía proceden de los recursos locales de BMWLauncher para Carlinkit. `drivehub-art.rgba.gz` contiene versiones redimensionadas para el renderizador. Se regenera con `python tools/Preparar-ArteDriveHub.py <DriveHub> <BMWLauncher-Android>` y Pillow. Las licencias de Inter, jpeg-js y SAX se incluyen en `native/javi-carlab/vendor`.
 

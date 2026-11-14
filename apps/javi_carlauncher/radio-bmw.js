@@ -3,14 +3,16 @@
 const net = require('net');
 const { StringDecoder } = require('string_decoder');
 const { services, lists, station, sources, picture, clean, seconds } = require('./radio-datos.js');
+const { createLists } = require('./radio-listas.js');
 const safe = (fn) => Promise.resolve().then(fn).catch(() => undefined);
 
 function createRadio(builders, options) {
     options = options || {};
     const now = options.now || Date.now, every = options.every || setInterval, cancel = options.cancel || clearInterval;
-    const proxies = {}, subscriptions = [], timers = [], records = {}, pages = {};
+    const proxies = {}, subscriptions = [], timers = [], records = {};
+    const stationLists = createLists(now);
     let stopped = false, loading = false, wanted = true, lastLoad = -Infinity, busy = false, result = null;
-    let listRevision = 0, current = null, currentAt = 0, logo = null, logoKey = '', logoSerial = 0;
+    let current = null, currentAt = 0, logo = null, logoKey = '', logoSerial = 0;
     let listError = '', incomplete = false;
     let artwork = null, artworkBusy = false, artworkSerial = 0;
     function changed(name, value) {
@@ -25,7 +27,7 @@ function createRadio(builders, options) {
     }
     function subscribe(attr, fn) {
         if (!attr || typeof attr.subscribe !== 'function') return;
-        safe(async () => {
+        return safe(async () => {
             const id = await attr.subscribe(fn);
             if (stopped) return safe(() => attr.unsubscribe(id));
             subscriptions.push([attr, id]);
@@ -46,27 +48,36 @@ function createRadio(builders, options) {
     }
     async function refresh() {
         if (stopped || loading || busy || !proxies.tuner || (!wanted && now() - lastLoad < 30000) || now() - lastLoad < 2000) return;
-        loading = true; wanted = false; lastLoad = now(); const revision = listRevision;
+        loading = true; wanted = false; lastLoad = now();
+        const errors = []; incomplete = false;
         try {
             for (const list of lists) {
-                const found = new Map(); let full = false;
-                for (let start = 0; start < 500 && !stopped; start += 32) {
-                    const response = await proxies.tuner.getStationListMetaData({ listType: list, pictures: 0, epgDataScope: 1,
-                        startPosition: start, length: Math.min(32, 500 - start) });
-                    if (stopped) return;
-                    const rows = response && response.stationList;
-                    if (!Array.isArray(rows) || rows.length > 32) throw new Error('LIST_FORMAT');
-                    rows.forEach((v) => { const s = station(v, list, true); if (s) found.set(s.key, s); });
-                    if (rows.length < 32) { full = true; break; }
-                }
                 if (stopped) return;
-                // A list event can move indices while pages are being read. Retry the whole snapshot.
-                if (revision !== listRevision) { wanted = true; return; }
-                pages[list] = { rows: Array.from(found.values()), at: now(), revision };
-                incomplete = !full && found.size >= 500;
+                const revision = stationLists.revision(list);
+                // Subscribe first, then request the actual list. Metadata alone is not a list subscription.
+                await safe(() => !stopped && proxies.tuner.triggerStationListBroadcast({ listType: list }));
+                try {
+                    let found = [], full = false;
+                    for (let start = 0; start < 500 && !stopped; start += 32) {
+                        const args = { listType: list, pictures: 0, epgDataScope: 1, startPosition: start, length: Math.min(32, 500 - start) };
+                        let response;
+                        try { response = await proxies.tuner.getStationListMetaData(args); }
+                        catch (error) { if (stopped || !proxies.metadata) throw error; response = await proxies.metadata.getStationListMetaData(args); }
+                        if (stopped) return;
+                        const rows = response && response.stationList;
+                        if (!Array.isArray(rows) || rows.length > 32) throw new Error('LIST_FORMAT');
+                        found = found.concat(rows);
+                        if (rows.length < 32) { full = true; break; }
+                        if (revision !== stationLists.revision(list)) break;
+                    }
+                    if (stopped) return;
+                    // Do not let an empty metadata cache erase a current broadcast list.
+                    if (found.length || !stationLists.all().some((s) => s.list === list)) stationLists.commit(list, found, revision, true);
+                    incomplete = incomplete || (!full && found.length >= 500);
+                } catch (_) { if (!stopped) errors.push(list); }
             }
-            listError = '';
-        } catch (_) { if (!stopped) listError = 'No se pudo actualizar la lista BMW'; }
+            listError = errors.length && !stationLists.all().length ? 'BMW no ha entregado las listas; reintentando' : '';
+        }
         finally { loading = false; }
     }
     const connecting = {};
@@ -80,38 +91,46 @@ function createRadio(builders, options) {
             proxies[key] = proxy;
             d.attributes.forEach((name) => watch(proxy, name));
             if (key === 'tuner') {
-                subscribe(proxy.dataStationList, () => { if (!stopped) { listRevision++; wanted = true; } });
+                await subscribe(proxy.dataStationList, (event) => {
+                    if (!stopped && !stationLists.receive(event)) wanted = true;
+                });
+                if (stopped) return;
                 refresh(); timers.push(every(refresh, 2000));
             }
-        } catch (_) { if (!stopped) listError = 'Radio BMW no disponible'; }
+        } catch (_) { if (!stopped && key === 'tuner') listError = 'Radio BMW no disponible'; }
         finally { connecting[key] = false; }
     }
     const ready = Promise.all(Object.keys(services).map(connect));
     timers.push(every(() => Object.keys(services).forEach(connect), 10000));
     function fresh(name) { const r = records[name]; return r && now() - r.at < 15000 ? r.value : undefined; }
-    function listed() {
-        return lists.reduce((all, list) => all.concat(pages[list] && now() - pages[list].at < 90000 ? pages[list].rows : []), []);
-    }
+    const listed = stationLists.all;
     async function command(c) {
         if (stopped || !c || typeof c.id !== 'string' || c.id.length > 40 || !['tune', 'refresh', 'artwork'].includes(c.op)) return false;
         if (c.op === 'artwork') {
             if (artworkBusy || busy || !proxies.tuner) return false;
-            const item = listed().find((v) => v.key === c.key && v.list === c.list);
+            const item = stationLists.find(c.key, c.list);
             if (!item) return false;
             artworkBusy = true;
             try {
-                const r = await proxies.tuner.getStationListMetaData({ listType: item.list, pictures: 1, epgDataScope: 0, startPosition: item.position, length: 1 });
-                if (stopped) return false;
-                const row = r && Array.isArray(r.stationList) && r.stationList.find((v) => v.dataBaseIdentifier === item.id);
-                artwork = { key: item.key, serial: ++artworkSerial, bytes: picture(row && row.stationIconPicture) };
+                let bytes = null;
+                for (const proxy of [proxies.metadata, proxies.tuner].filter(Boolean)) {
+                    const live = stationLists.find(c.key, c.list);
+                    if (stopped || !live) return false;
+                    const r = await safe(() => proxy.getStationListMetaData({ listType: live.list, pictures: 1, epgDataScope: 0, startPosition: live.position, length: 1 }));
+                    if (stopped) return false;
+                    const row = r && Array.isArray(r.stationList) && r.stationList.find((v) => v.dataBaseIdentifier === item.id);
+                    bytes = picture(row && row.stationIconPicture);
+                    if (bytes) break;
+                }
+                artwork = { key: item.key, serial: ++artworkSerial, bytes };
                 return true;
             } catch (_) { if (!stopped) artwork = { key: item.key, serial: ++artworkSerial, bytes: null }; return false; }
             finally { artworkBusy = false; }
         }
         if (busy) return false;
         if (c.op === 'refresh') { wanted = true; refresh(); return true; }
-        const s = listed().find((v) => v.key === c.key && v.list === c.list);
-        if (!s || pages[s.list].revision !== listRevision || !proxies.tuner || !proxies.media) {
+        const s = stationLists.find(c.key, c.list);
+        if (!s || !proxies.tuner || !proxies.media) {
             wanted = true; result = { id: c.id, ok: false, message: 'La lista ha cambiado; vuelve a seleccionar la emisora' }; return false;
         }
         const available = sources(fresh('sources'));
@@ -127,8 +146,8 @@ function createRadio(builders, options) {
             }
             if (stopped) return false;
             // Resolve the index again after source activation; never tune a different row after a list update.
-            const live = listed().find((v) => v.key === s.key && v.list === s.list);
-            if (!live || pages[live.list].revision !== listRevision) throw new Error('STATION');
+            const live = stationLists.find(s.key, s.list);
+            if (!live) throw new Error('STATION');
             const tuned = await proxies.tuner.selectStation({ listType: live.list, dataBaseIdentifier: live.id, positionIndex: live.position });
             if (!tuned || ![0, 'EC_NO_ERROR'].includes(tuned.errorCode)) throw new Error('TUNE');
             if (!stopped) result = { id: c.id, ok: true, message: 'Emisora solicitada a BMW' };

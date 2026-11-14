@@ -1,0 +1,26 @@
+'use strict';
+const fs = require('fs');
+const assert = require('assert');
+const { service } = require('../apps/javi_carlauncher/preconditioning-bmw');
+const catalog = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const manifest = require('../apps/javi_carlauncher/package/manifest.json');
+const iface = catalog.interfaces[service], types = catalog.datatypes;
+assert.strictEqual(iface.serviceId, 46395); assert.strictEqual(iface.version.major, 1);
+assert.strictEqual(catalog.instanceIDs[service]['1'], 1);
+assert.strictEqual(iface.fields.operationMode.setter.id, 1);
+assert.strictEqual(iface.fields.statusPredictiveThermalManagement.getter.id, 2);
+assert.strictEqual(iface.fields.statusPredictiveThermalManagement.notifier.id, 32769);
+const command = types[iface.fields.operationMode.dataRef];
+assert.deepStrictEqual(command.members.map((m) => m.name), ['operationModeVWM']);
+const commands = types[command.members[0].dataRef].items;
+assert.deepStrictEqual(['VWMDEACTIVATED', 'AUTOMATIKMODUSON', 'MANUALMODUSON', 'MANUALAUTOMODUSON'].map((k) => commands[k]), [0, 1, 2, 3]);
+const status = types[iface.fields.statusPredictiveThermalManagement.dataRef];
+const member = (name) => status.members.find((m) => m.name === name);
+assert.strictEqual(member('statusVWM').defaultValue, 63);
+const feedback = types[member('statusFeedbackVWM').dataRef].items;
+assert.deepStrictEqual(['VWM_OFF_FEEDBACK', 'VWM_MANUALON_FEEDBACK', 'VWM_AUTO_FEEDBACK', 'VWM_MANUALONAUTO_FEEDBACK'].map((k) => feedback[k]), [0, 1, 2, 3]);
+const restrictions = types[member('statusRestrictionsVWM').dataRef].items;
+assert.deepStrictEqual(['NO_RESTRICTIONS', 'INSUFFICIENT_RANGE', 'CHARGING_PROCESS', 'INSUFFICIENT_RESIDUAL_RANGE', 'CRITICAL_RANGE', 'MAX_EFFICIENT_ACTIVE'].map((k) => restrictions[k]), [0, 1, 2, 3, 4, 5]);
+assert.deepStrictEqual(manifest.proxies[service], { instances: ['1'], attributes: {
+    statusPredictiveThermalManagement: 'rs', operationMode: 'w', statusHighVoltageBattery: 'rs' } });
+console.log('Preacondicionamiento: servicio, instancia, setter, feedback, restricciones y permisos coinciden con el catálogo MGU21.');

@@ -16,10 +16,10 @@ const bold = { align: 'center', font: 'bold' };
 const text = (value, decimals = 0) => Number.isFinite(value)
     ? value.toFixed(decimals).replace('.', ',') : '–';
 
-function preconditioningIcon(cv, x, y) {
+function preconditioningIcon(cv, x, y, color = blue) {
     const bodyWidth = preconditioningIconWidth - 4;
-    cv.strokeRoundRect(x, y, bodyWidth, 24, 3, 2, blue);
-    cv.fillRect(x + bodyWidth, y + 8, 4, 8, blue);
+    cv.strokeRoundRect(x, y, bodyWidth, 24, 3, 2, color);
+    cv.fillRect(x + bodyWidth, y + 8, 4, 8, color);
     const cx = x + 18;
     const cy = y + 12;
     const blade = [[-0.5, -2], [-3.7, -5.1], [-2.9, -8.1], [2.2, -7.2]];
@@ -27,9 +27,9 @@ function preconditioningIcon(cv, x, y) {
         const angle = i * 2 * Math.PI / 3;
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
-        cv.quad(blade.map(([dx, dy]) => [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]), blue);
+        cv.quad(blade.map(([dx, dy]) => [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]), color);
     }
-    cv.circle(cx, cy, 2.1, blue);
+    cv.circle(cx, cy, 2.1, color);
 }
 
 function battery(cv, value, preconditioning) {
@@ -106,4 +106,4 @@ function drawCockpit(cv, readings, weather, art) {
     cv.text(text(readings.trip.average, 1) + ' ' + unit, center, 378, 29, foreground, centered);
 }
 
-module.exports = { drawCockpit, width, height };
+module.exports = { drawCockpit, preconditioningIcon, width, height };

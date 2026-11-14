@@ -5,6 +5,22 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createCockpit } = require('../../native/javi-carlab/cockpit.js');
 const { width, height } = require('../../native/javi-carlab/cockpit-view.js');
+test('the cockpit consumes the shared forecast without a second network request', () => {
+    const { EventEmitter } = require('node:events');
+    let requests = 0, frames = 0;
+    class SharedRenderer extends EventEmitter {
+        constructor() { super(); this.ready = true; this.backend = 'id8'; this.targets = 'widget:2240x896'; }
+        connect() { this.emit('ready'); }
+        image() { return 1; }
+        pixels() { frames++; }
+        close() {}
+    }
+    const cockpit = createCockpit(SharedRenderer, () => { requests++; });
+    const readings = { location: { latitude: 40, longitude: -3 }, trip: {} };
+    cockpit.update(readings, 1000, { cockpitIcon: 'clear_day', temp: 21, probability: 0 });
+    cockpit.update(readings, 2000, undefined);
+    assert.equal(requests, 0); assert.equal(frames, 2); cockpit.close();
+});
 const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
 
 test('the cockpit publishes a selectable ID8 widget and updates telemetry and local weather by band', async () => {
@@ -60,8 +76,8 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     cockpit.update(moving, 4000);
     await new Promise(setImmediate);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].get('latitude'), '40.42');
-    assert.equal(requests[0].get('longitude'), '-3.7');
+    assert.equal(requests[0].get('latitude'), '40.417');
+    assert.equal(requests[0].get('longitude'), '-3.704');
     cockpit.update(moving, 5000);
     const weatherBand = { rects: [{ x: 0, y: 0, w: width, h: 192 }], size: width * 192 * 4 };
     assert.deepEqual(calls[3], weatherBand);

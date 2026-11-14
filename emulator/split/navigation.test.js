@@ -102,6 +102,29 @@ test('a late proxy is disposed and unresponsive fields expire without invented r
     assert.equal(r.probe.snapshot().state, 'unavailable'); assert.equal(r.probe.snapshot().route, null);
     r.probe.stop();
 });
+
+test('navigation retries unavailable services after startup, without duplicate proxies or retries after closing', async () => {
+    const attempts = {}, timers = [], disposed = [];
+    let time = 1000;
+    const probe = createProbe({ async buildAndInitTypedProxy(name) {
+        attempts[name] = (attempts[name] || 0) + 1;
+        if (attempts[name] === 1) throw new Error('SERVICE_NOT_AVAILABLE');
+        const spec = Object.keys(services).map((k) => services[k]).find((s) => s.name === name);
+        const p = { dispose() { disposed.push(name); } };
+        (spec.attributes || []).forEach((a) => { p[a] = { async subscribe() { return 1; }, async unsubscribe() {}, async getValue() { return a === 'guidanceState' ? 'INACTIVE' : undefined; } }; });
+        p.routeExported = { async subscribe() { return 1; }, async unsubscribe() {} };
+        return p;
+    } }, { now: () => time, every(fn, ms) { const timer = { fn, ms }; timers.push(timer); return timer; }, cancel(t) { t.cancelled = true; } });
+    await flush(); assert.equal(probe.snapshot().state, 'unavailable');
+    time += 5000; timers.filter((t) => t.ms === 5000).forEach((t) => t.fn()); await flush();
+    assert.equal(probe.snapshot().state, 'inactive');
+    time += 5000; timers.filter((t) => t.ms === 5000).forEach((t) => t.fn()); await flush();
+    assert(Object.values(attempts).every((count) => count === 2));
+    probe.stop(); await flush();
+    timers.forEach((t) => t.fn()); await flush();
+    assert(Object.values(attempts).every((count) => count === 2)); assert.equal(disposed.length, 5);
+    assert(timers.every((t) => t.cancelled));
+});
 test('electrical route preferences are read from the matching BMW route without guessing stop charge values', () => {
     const route = { sessionID: 1, routeHandle: 2 };
     const trips = [{ active: true, routeIdentifer: route, tripDefinition: { tripSegment: [

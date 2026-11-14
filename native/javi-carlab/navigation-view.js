@@ -3,6 +3,9 @@
 const { map, home, contains } = require('./drivehub-state.js');
 const mapDrawing = require('./navigation-map');
 const panels = require('./navigation-panels');
+const scene = require('./navigation-scene');
+const layout = require('./navigation-layout');
+const { icon } = require('./navigation-icons');
 const toggle = { x: map.x + map.w - 186, y: home.y, w: 110, h: home.h };
 const controls = [
     { id: 'zoom-in', label: '+', x: map.x + map.w - 68, y: map.y + 156, w: 52, h: 48 },
@@ -51,32 +54,44 @@ function drawNavigation(cv, nav, vehicle, zoom, now, ui) {
         const p = panels.palettes[night ? 'night' : 'day'];
         cv.roundRect(map.x, map.y, map.w, map.h, 10, p.ground);
         ui.tiles.draw(cv, night);
-        if (s.camera) {
-            cv.clip(map.x, map.y, map.w, map.h);
-            if (nav.points.length) {
-                const points = nav.points.map((point) => mapDrawing.project(point, s.camera));
+        const status = ui.tiles.status();
+        if (s.camera && status.ready) {
+            const box = layout.viewport(s), route = scene.routePoints(s);
+            cv.clip(box.x, box.y, box.w, box.h);
+            if (route.length && !(s.panel === 'search' && !s.keyboard) && s.panel !== 'detail') {
+                const points = route.map((point) => mapDrawing.project(point, s.camera));
                 for (let i = 1; i < points.length; i++) {
-                    const segment = mapDrawing.clipSegment(points[i - 1], points[i], { x: map.x - 12, y: map.y - 12, w: map.w + 24, h: map.h + 24 });
+                    const segment = mapDrawing.clipSegment(points[i - 1], points[i], box);
                     if (!segment) continue;
                     const a = segment[0], b = segment[1];
-                    cv.line(a[0], a[1], b[0], b[1], 12, '#C7DAFF'); cv.line(a[0], a[1], b[0], b[1], 7, '#1967D2');
+                    cv.line(a[0], a[1], b[0], b[1], 11, '#DDD0FF'); cv.line(a[0], a[1], b[0], b[1], 6, '#8054D6');
                 }
-                nav.destinations.forEach((d) => { if (d.position) marker(cv, mapDrawing.project(d.position, s.camera), d.charging,
-                    { surface: p.surface, route: '#E53935', charge: '#4C98F7' }); });
             }
-            const selected = s.controls && s.controls.selected;
-            if (selected) marker(cv, mapDrawing.project(selected, s.camera), false, { surface: p.surface, route: '#E53935' });
-            if (vehicle.location) {
+            if (vehicle.location && s.panel === 'none') {
                 const point = mapDrawing.project(vehicle.location, s.camera);
                 cv.circle(point[0], point[1], 13, '#FFFFFF'); cv.circle(point[0], point[1], 9, '#1976D2');
             }
+            scene.markers(s).forEach((m) => {
+                const xy = mapDrawing.project(m, s.camera), x = xy[0], y = xy[1];
+                if (x < box.x + 20 || x > box.x + box.w - 20 || y < box.y + 20 || y > box.y + box.h - 20) return;
+                cv.circle(x, y, s.focus === m.action ? 22 : 19, p.surface);
+                const ink = m.kind === 'destination' ? p.danger : p.primaryText;
+                if (m.kind === 'number') { cv.circle(x, y, 15, p.selected); cv.text(m.label, x, y + 6, 19, ink, center); }
+                else if (m.kind === 'origin') { cv.circle(x, y, 9, p.accent); cv.circle(x, y, 4, p.surface); }
+                else icon(cv, m.kind === 'charge' ? 'chargers' : 'destination', x, y, ink, p.surface, .8);
+            });
             cv.noclip();
         }
-        const status = ui.tiles.status();
-        if (s.panel === 'none' && (!s.camera || !status.ready)) {
-            cv.roundRect(map.x + 210, map.y + 172, 620, 88, 12, p.surface);
-            cv.text(!s.camera ? 'Esperando posición GPS del coche' : status.issue || 'Cargando mapa…', map.x + 520, map.y + 212, 25, p.text, center);
-            cv.text('Cartografía online · búsquedas y rutas de BMW', map.x + 520, map.y + 241, 18, p.secondary, center);
+        if ((!s.camera || !status.ready) && !s.keyboard && s.panel !== 'detail') {
+            const v = layout.viewport(s), cx = v.x + v.w / 2;
+            // Wide settings panels leave too little map space for a readable notice.
+            // The footer already carries availability; never spill text into DriveHub.
+            if (v.w >= 360) {
+                cv.clip(v.x, v.y, v.w, v.h);
+                cv.text(status.issue || 'Esperando posición GPS del coche', cx, map.y + 214, 23, p.text, center);
+                cv.text(status.ready ? 'La posición se actualizará al recibir señal' : 'Cartografía local pendiente de integrar', cx, map.y + 244, 17, p.secondary, center);
+                cv.noclip();
+            }
         }
         panels.controls(cv, ui, nav);
         button(cv, toggle, 'Datos', { surface: p.surface, text: p.text });

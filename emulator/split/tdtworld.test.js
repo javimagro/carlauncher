@@ -269,3 +269,69 @@ test('playout starts with buffered video, preserves the last frame on depletion 
     assert.equal(attachment, file);
     assert.ok(fs.readFileSync(file).readUInt32LE(16) > 3);
 });
+
+
+test('a segment burst applies video backpressure and plays every queued frame', async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-burst-'));
+    const decoder = new EventEmitter();
+    decoder.kill = () => {};
+    decoder.stdout = new PassThrough(); decoder.stderr = new PassThrough();
+    let attachment;
+    const player = createPlayer({ video(id, file) { attachment = file; } }, {
+        directory, bufferSeconds: 0.15, spawnProcess: () => decoder
+    });
+    t.after(() => { player.stop(); fs.rmdirSync(directory); });
+    player.ready({ video: true }); player.start(first.sources, () => {});
+    await new Promise((resolve) => setImmediate(resolve));
+    decoder.stdout.write(Buffer.alloc(640 * 360 * 3 / 2 * 10));
+    assert.equal(decoder.stdout.isPaused(), true);
+    await eventually(() => attachment && fs.readFileSync(attachment).readUInt32LE(16) === 10);
+    assert.equal(decoder.stdout.isPaused(), false);
+    // Cancelling another full burst releases the pipe and ignores old frames.
+    decoder.stdout.write(Buffer.alloc(640 * 360 * 3 / 2 * 10));
+    assert.equal(decoder.stdout.isPaused(), true);
+    player.stop();
+    assert.equal(decoder.stdout.isPaused(), false);
+    assert.equal(attachment, null);
+});
+
+test('an initial HTTP failure retries with audio and never downgrades silently to video only', async (t) => {
+    const decoders = [], states = [];
+    const player = createPlayer({ video() {} }, { directory: os.tmpdir(), audio: { command: 'sink', args: [] },
+        log: { warn() {} }, spawnProcess(command, args) {
+            assert.notEqual(command, 'sink');
+            const peer = new EventEmitter(); peer.kill = () => {};
+            peer.stdout = new PassThrough(); peer.stderr = new PassThrough();
+            peer.stdio = [null, peer.stdout, peer.stderr, new PassThrough()];
+            decoders.push({ peer, args }); return peer;
+        } });
+    t.after(() => player.stop());
+    player.ready({ video: true }); player.start(first.sources, (status) => states.push(status));
+    await delay(10);
+    decoders[0].peer.stderr.write('HTTP error 503 Service Unavailable\n');
+    decoders[0].peer.emit('close', 1);
+    assert(states.includes('reconnecting'));
+    assert.equal(decoders.length, 1, 'retry is bounded and delayed');
+    for (let i = 0; i < 30 && decoders.length < 2; i++) await delay(50);
+    assert.equal(decoders.length, 2);
+    assert(decoders[1].args.includes('pipe:3'), 'a network fault must not remove the PCM output');
+    assert(!states.includes('audio-unavailable'));
+});
+
+test('only a confirmed missing audio stream permits a video-only recovery', async (t) => {
+    const decoders = [], states = [];
+    const player = createPlayer({ video() {} }, { directory: os.tmpdir(), audio: { command: 'sink', args: [] },
+        log: { warn() {} }, spawnProcess(command, args) {
+            const peer = new EventEmitter(); peer.kill = () => {};
+            peer.stdout = new PassThrough(); peer.stderr = new PassThrough();
+            peer.stdio = [null, peer.stdout, peer.stderr, new PassThrough()];
+            decoders.push({ peer, args }); return peer;
+        } });
+    t.after(() => player.stop()); player.ready({ video: true });
+    player.start(first.sources, (status) => states.push(status)); await delay(10);
+    decoders[0].peer.stderr.write("Stream map '0:a:0' matches no streams.\n");
+    decoders[0].peer.emit('close', 1);
+    assert.equal(decoders.length, 2);
+    assert(!decoders[1].args.includes('pipe:3'));
+    assert(states.includes('audio-unavailable'));
+});

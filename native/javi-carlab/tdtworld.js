@@ -86,6 +86,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     let startup = true;
     let pendingLogo = false;
     const logos = new Map();
+    const catalogWaiters = new Set();
 
     function savePrefs() { save(file('settings.json'), prefs); }
     function selected() { return state.channels[state.channel]; }
@@ -177,27 +178,30 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         }))).then((results) => results.every(Boolean), () => Promise.all(restore).then(() => false));
     }
 
-    function refresh(time) {
-        if (!active || fixture || update || (time < catalogDue && time < guideDue)) return;
+    function refresh(time, catalogOnly) {
+        if ((!active && !catalogOnly) || fixture || update || (time < catalogDue && (catalogOnly || time < guideDue))) return;
         const country = prefs.country;
         const job = ++generation;
         const current = () => !closed && job === generation;
         const tasks = [];
-        if (time >= catalogDue) tasks.push(catalog.loadCatalog(country, get).then((value) => {
-            if (!current()) return;
-            const item = selected();
-            entries = value;
-            state.status = 'ready';
-            catalogDue = time + 6 * interval;
-            save(file(country + '-channels.json'), value);
-            filterChannels(item ? item.id : prefs.resume ? prefs.last[country] : undefined);
-        }, () => {
-            if (!current()) return;
-            state.status = entries.length ? 'cached' : 'offline';
-            catalogDue = time + retry;
-            change();
-        }));
-        if (time >= guideDue) tasks.push(loadGuide(country, current).then((ok) => {
+        if (time >= catalogDue) {
+            if (!entries.length) { state.status = 'loading'; change(); }
+            tasks.push(catalog.loadCatalog(country, get).then((value) => {
+                if (!current()) return;
+                const item = selected();
+                entries = value;
+                state.status = 'ready';
+                catalogDue = time + 6 * interval;
+                save(file(country + '-channels.json'), value);
+                filterChannels(item ? item.id : prefs.resume ? prefs.last[country] : undefined);
+            }, () => {
+                if (!current()) return;
+                state.status = entries.length ? 'cached' : 'offline';
+                catalogDue = time + retry;
+                change();
+            }));
+        }
+        if (!catalogOnly && time >= guideDue) tasks.push(loadGuide(country, current).then((ok) => {
             if (!current()) return;
             if (!ok) state.guideStatus = guide ? 'cached' : 'offline';
             guideDue = time + (ok ? interval : retry);
@@ -424,6 +428,25 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     if (fixture) { readCountry(); countryLoaded = true; }
     return {
         state, selected, programs, program,
+        prepareChannels(alive) {
+            if (closed || !alive()) return Promise.resolve('cancelled');
+            if (!countryLoaded) { readCountry(); countryLoaded = true; }
+            const country = prefs.country, deadline = Date.now() + 12000;
+            refresh(now(), true);
+            return new Promise((resolve) => {
+                let timer;
+                function finish(status) { clearTimeout(timer); catalogWaiters.delete(finish); resolve(status); }
+                function check() {
+                    if (closed || !alive() || prefs.country !== country) { finish('cancelled'); return; }
+                    if (state.channels.length || state.status === 'ready' || state.status === 'cached') { finish('ready'); return; }
+                    if (state.status === 'offline') { finish('unavailable'); return; }
+                    if (Date.now() >= deadline) { finish('loading'); return; }
+                    timer = setTimeout(check, 100);
+                }
+                catalogWaiters.add(finish); check();
+            });
+        },
+        playNamed(id) { const index = state.channels.findIndex((c) => c.id === id); if (index >= 0 && !closed) { setChannel(index); play(); } },
         logo: (item) => logos.get(item.logo),
         time(value) {
             const country = prefs.country;
@@ -557,6 +580,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         video: () => tdtPlayer && tdtPlayer.frame(),
         close() {
             closed = true;
+            catalogWaiters.forEach((finish) => finish('cancelled'));
             generation++;
             clearTimeout(artTimer);
             pendingArt = undefined;

@@ -2,6 +2,8 @@
 
 const fs = require('fs');
 const { valid } = require('./radio-model');
+const { matching } = require('./assistant-tools');
+const { dropImage } = require('./vendor/kit_record.js');
 const filters = ['favorites', 'popular', 'music', 'sports'];
 const empty = () => ({ stations: [], current: null, active: false, sourceKnown: false, loading: false, listError: '', result: null });
 function createRadioUI(options, invalidate) {
@@ -10,17 +12,37 @@ function createRadioUI(options, invalidate) {
     const favorites = new Map(), images = new Map(), attempted = new Map(), decoding = new Set();
     let received = 0, serial = 0, pending = null, closed = false, writeBusy = false, writeAgain = false;
     let preferencesReady = !options.radioFile;
+    let assistantRequest;
+    function endAssistant(result) { if (assistantRequest) { const r = assistantRequest; assistantRequest = null; clearTimeout(r.timer); r.resolve(result); } }
+    let indexedSource, stations = [], nativeFavorites = new Set(), popular = new Set(), rowCache, rowFilters, favoriteRevision = 0, rowRevision;
+    function allStations() {
+        if (indexedSource !== state.frame.stations) {
+            indexedSource = state.frame.stations; rowCache = null;
+            const seen = new Map(); nativeFavorites = new Set(); popular = new Set();
+            indexedSource.forEach((s) => {
+                if (s.list === 7 || s.favorite) nativeFavorites.add(s.memoryKey);
+                if (s.list === 10) popular.add(s.memoryKey);
+                if (!seen.has(s.memoryKey)) seen.set(s.memoryKey, s);
+            });
+            stations = Array.from(seen.values());
+        }
+        return stations;
+    }
     let lastArt = '', lastLogo = '', artRequest, enabled = false, imageEpoch = 0;
     // Same decorative spectrum as DriveHub; these bars are NOT audio amplitude.
     let random = 0x51f15eed, tick = 0, lastAnimation = 0;
     const levels = Array(64).fill(.025), targets = levels.slice();
-    function favorite(s) { return favorites.has(s.memoryKey) ? favorites.get(s.memoryKey) : s.favorite || s.list === 7; }
+    function favorite(s) { allStations(); return favorites.has(s.memoryKey) ? favorites.get(s.memoryKey) :
+        s.favorite || s.list === 7 || nativeFavorites.has(s.memoryKey); }
     function rows() {
-        const all = new Map(), popular = new Set(), nativeFavorites = new Set();
-        state.frame.stations.forEach((s) => { if (s.list === 10) popular.add(s.key); if (s.list === 7) nativeFavorites.add(s.key); });
-        state.frame.stations.forEach((s) => { if (!all.has(s.key)) all.set(s.key, Object.assign({}, s, { favorite: s.favorite || nativeFavorites.has(s.key) })); });
-        return Array.from(all.values()).filter((s) => (!state.filters.includes('favorites') || favorite(s)) &&
-            (!state.filters.some((f) => f !== 'favorites') || state.filters.some((f) => f === s.category || f === 'popular' && popular.has(s.key))));
+        const source = allStations(), filterKey = state.filters.join(',');
+        if (rowCache && rowFilters === filterKey && rowRevision === favoriteRevision) return rowCache;
+        const onlyFavorites = state.filters.includes('favorites'), categories = state.filters.filter((f) => f !== 'favorites');
+        rowCache = source.filter((s) => (!onlyFavorites || favorite(s)) &&
+            (!categories.length || categories.some((f) => f === s.category || f === 'popular' && popular.has(s.memoryKey))))
+            .map((s) => Object.assign({}, s, { favorite: favorite(s) }));
+        rowFilters = filterKey; rowRevision = favoriteRevision;
+        return rowCache;
     }
     function clamp() {
         const length = rows().length; state.index = Math.max(0, Math.min(state.index, length - 1));
@@ -67,7 +89,7 @@ function createRadioUI(options, invalidate) {
                 if (p.version === 1 && Array.isArray(p.favorites)) p.favorites.slice(-256).forEach((pair) => {
                     if (Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length <= 110 && typeof pair[1] === 'boolean' && !favorites.has(pair[0]) && favorites.size < 256) favorites.set(pair[0], pair[1]);
                 });
-                clamp(); invalidate();
+                favoriteRevision++; clamp(); invalidate();
             } catch (_) { /* A malformed preference file must not stop the tuner. */ }
             preferencesLoaded();
         });
@@ -75,6 +97,7 @@ function createRadioUI(options, invalidate) {
     function toggleFavorite(s) {
         if (!s) return; const value = !favorite(s); favorites.delete(s.memoryKey); favorites.set(s.memoryKey, value);
         if (favorites.size > 256) favorites.delete(favorites.keys().next().value);
+        favoriteRevision++;
         state.message = value ? 'Añadida a favoritos de BMWLauncher' : 'Quitada de favoritos de BMWLauncher';
         clamp(); save(); invalidate();
     }
@@ -89,20 +112,29 @@ function createRadioUI(options, invalidate) {
         decoding.add(p.key);
         options.photo('https://radio.invalid/' + p.key, () => Promise.resolve(Buffer.from(p.bytes, 'base64')), 160, 160, true,
             () => !closed && enabled && epoch === imageEpoch).then((img) => {
-                if (closed || !enabled || epoch !== imageEpoch) return;
+                if (closed || !enabled || epoch !== imageEpoch) { dropImage(img); return; }
+                if (images.has(p.key)) dropImage(images.get(p.key));
                 images.delete(p.key); images.set(p.key, img);
-                if (images.size > 20) images.delete(images.keys().next().value);
+                if (images.size > 20) { const key = images.keys().next().value; dropImage(images.get(key)); images.delete(key); }
                 invalidate();
             }, () => {}).then(() => decoding.delete(p.key));
     }
     function receive(frame, now) {
         if (closed) return;
         const selected = rows()[state.index];
-        if (!frame || !valid(frame)) { state.frame = empty(); received = 0; images.clear(); imageEpoch++; invalidate(); return; }
+        if (!frame || !valid(frame)) { state.frame = empty(); received = 0; images.forEach(dropImage); images.clear(); attempted.clear(); lastArt = lastLogo = ''; artRequest = null; imageEpoch++; invalidate(); return; }
         state.frame = frame; received = now;
+        if (assistantRequest && assistantRequest.accepted && frame.active && frame.current && frame.current.memoryKey === assistantRequest.memoryKey) {
+            endAssistant({ status: 'confirmed', station: frame.current.name, message: 'BMW informa de esta emisora activa; no se ha medido el sonido' });
+        }
         if (selected) { const index = rows().findIndex((s) => s.key === selected.key); if (index >= 0) state.index = index; }
         clamp();
         if (pending && frame.result && frame.result.id === pending.id && frame.result.ok !== null) {
+            if (!frame.result.ok) endAssistant({ status: 'error', message: frame.result.message });
+            else if (assistantRequest) {
+                assistantRequest.accepted = true;
+                if (frame.active && frame.current && frame.current.memoryKey === assistantRequest.memoryKey) endAssistant({ status: 'confirmed', station: frame.current.name });
+            }
             state.message = frame.result.message;
             if (frame.result.ok) { state.mode = 'playing'; state.filterFocus = -1; }
             pending = null;
@@ -141,7 +173,18 @@ function createRadioUI(options, invalidate) {
         levels.forEach((value, i) => { levels[i] = value + (targets[i] - value) * .46; }); invalidate();
     }
     function open() { state.mode = 'list'; state.filterFocus = -1; clamp(); invalidate(); }
-    return { state, rows, favorite, levels, images, receive, update, open, filter, toggleFavorite,
+    return { state, rows, favorite, levels, images, receive, update, open, filter, toggleFavorite, allStations,
+        playNamed(name, alive) {
+            if (closed || !alive() || !received || Date.now() - received >= 5000) return Promise.resolve({ status: 'unavailable', message: 'No hay una lista vigente de BMW' });
+            if (pending || assistantRequest) return Promise.resolve({ status: 'busy' });
+            const candidates = matching(allStations(), name);
+            if (candidates.length !== 1) return Promise.resolve({ status: candidates.length ? 'selection_required' : 'not_found', candidates: candidates.slice(0, 8).map((s) => s.name) });
+            const id = send('tune', candidates[0]);
+            if (!id) return Promise.resolve({ status: 'unavailable' });
+            pending = { id, at: Date.now() }; state.message = 'Sintonizando…'; invalidate();
+            return new Promise((resolve) => { assistantRequest = { resolve, memoryKey: candidates[0].memoryKey, accepted: false,
+                timer: setTimeout(() => { endAssistant({ status: 'timeout', message: 'BMW no ha confirmado la emisora activa' }); }, 18000) }; });
+        },
         rotate(delta) {
             if (state.mode !== 'list') { open(); return; }
             if (state.filterFocus >= 0) state.filterFocus = Math.max(0, Math.min(3, state.filterFocus + delta));
@@ -173,7 +216,7 @@ function createRadioUI(options, invalidate) {
             else open();
             invalidate();
         },
-        close() { closed = true; enabled = false; imageEpoch++; images.clear(); }
+        close() { closed = true; enabled = false; endAssistant({ status: 'cancelled' }); imageEpoch++; images.forEach(dropImage); images.clear(); }
     };
 }
 module.exports = { createRadioUI, filters };

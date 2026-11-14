@@ -5,6 +5,7 @@ const net = require('net');
 const { StringDecoder } = require('string_decoder');
 const { createActions } = require('./navegacion-acciones.js');
 const { instruction, description } = require('./navegacion-indicaciones.js');
+const { createDisplays } = require('./navegacion-pantallas.js');
 const prefix = 'de.bmw.infotainment.navigation.';
 const services = {
     guidance: { name: prefix + 'guiding.Guidance', attributes: ['guidanceState', 'currentRoute', 'allDestinationsInfo', 'conclusiveDart', 'currentRoad'] },
@@ -68,6 +69,7 @@ function createProbe(builders, options) {
     const proxies = [];
     const subscriptions = [];
     const timers = [];
+    const connections = {};
     let stopped = false, route, request, exported, routing, exporting = false, lastAttempt = -Infinity, routeStatus = 'waiting', automaticTheme;
     const safe = (fn) => Promise.resolve().then(fn).catch(() => undefined);
     const dispose = (p) => p && typeof p.dispose === 'function' ? safe(() => p.dispose()) : Promise.resolve();
@@ -146,20 +148,29 @@ function createProbe(builders, options) {
         finally { exporting = false; }
     }
     async function connect(key) {
+        const connection = connections[key] || (connections[key] = { pending: false, ready: false, retryAt: 0 });
+        if (stopped || connection.pending || connection.ready || now() < connection.retryAt) return;
+        connection.pending = true;
         const descriptor = services[key];
+        let proxy;
         try {
-            const proxy = await builders.buildAndInitTypedProxy(descriptor.name, descriptor.instance || instance, { timeoutMs: 10000 });
+            proxy = await builders.buildAndInitTypedProxy(descriptor.name, descriptor.instance || instance, { timeoutMs: 10000 });
             if (stopped) return dispose(proxy);
-            proxies.push(proxy);
             if (key === 'routing') {
                 const id = await proxy.routeExported.subscribe(exportedRoute);
-                if (stopped) return safe(() => proxy.routeExported.unsubscribe(id));
+                if (stopped) { safe(() => proxy.routeExported.unsubscribe(id)); return dispose(proxy); }
                 subscriptions.push([proxy.routeExported, id]);
                 routing = proxy; exportRoute();
             } else descriptor.attributes.forEach((name) => watch(proxy, name));
-        } catch (_) { if (!stopped && key === 'routing') routeStatus = 'unavailable'; }
+            proxies.push(proxy); connection.ready = true;
+        } catch (_) {
+            dispose(proxy);
+            connection.retryAt = now() + 5000;
+            if (!stopped && key === 'routing') routeStatus = 'unavailable';
+        } finally { connection.pending = false; }
     }
     Object.keys(services).forEach(connect);
+    timers.push(every(() => Object.keys(services).forEach(connect), 5000));
     timers.push(every(exportRoute, 1000));
     return {
         snapshot() {
@@ -191,7 +202,7 @@ function createProbe(builders, options) {
 }
 
 function report(builders, endpoint = '/run/javi-carlab/navigation.sock') {
-    let probe, actions, socket, timer;
+    let probe, actions, displays, socket, timer;
     function send() {
         if (!probe) return;
         if (!socket) {
@@ -212,12 +223,12 @@ function report(builders, endpoint = '/run/javi-carlab/navigation.sock') {
             peer.on('connect', () => { if (socket === peer) send(); });
             peer.on('close', () => { if (socket === peer) socket = null; });
         } else if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
-            socket.write(JSON.stringify(Object.assign({}, probe.snapshot(), { controls: actions.snapshot() })) + '\n', 'utf8');
+            socket.write(JSON.stringify(Object.assign({}, probe.snapshot(), { controls: actions.snapshot(), presentation: displays.snapshot() })) + '\n', 'utf8');
         }
     }
     return { show(on) {
-        if (on && !probe) { probe = createProbe(builders); actions = createActions(builders); timer = setInterval(send, 1000); send(); }
-        else if (!on && probe) { clearInterval(timer); probe.stop(); actions.stop(); probe = actions = null; if (socket) socket.destroy(); socket = null; }
+        if (on && !probe) { probe = createProbe(builders); actions = createActions(builders); displays = createDisplays(builders); timer = setInterval(send, 1000); send(); }
+        else if (!on && probe) { clearInterval(timer); probe.stop(); actions.stop(); displays.stop(); probe = actions = displays = null; if (socket) socket.destroy(); socket = null; }
     } };
 }
 module.exports = { services, instance, createProbe, report, position, polyline, tripSummary };

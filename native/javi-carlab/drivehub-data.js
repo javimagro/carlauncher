@@ -7,14 +7,13 @@ const { URL } = require('url');
 const download = require('./drivehub-network.js');
 const sax = require('./vendor/sax.js');
 const { makeImage, dropImage } = require('./vendor/kit_record.js');
+const { createWeather } = require('./weather-location.js');
 
-const defaultLocation = { name: 'Madrid', latitude: 40.4168, longitude: -3.7038 };
 const feeds = [
     ['EL PAÍS', 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada'],
     ['Xataka', 'https://feeds.weblogssl.com/xataka2'],
     ['Motorpasión', 'https://www.motorpasion.com/index.xml']
 ];
-const weatherInterval = 30 * 60 * 1000;
 const newsInterval = 15 * 60 * 1000;
 const retryInterval = 2 * 60 * 1000;
 const mockEnergy = [
@@ -57,7 +56,10 @@ function parseWeather(data, name) {
         if (!hourlyRain[date]) hourlyRain[date] = [];
         hourlyRain[date].push({ label: time(value).slice(0, 2), mm: hourly.precipitation[i] });
     });
+    let cockpitIcon = weatherKind(current.weather_code, current.is_day);
+    if (current.weather_code <= 2) cockpitIcon = (current.weather_code ? 'partly_cloudy_' : 'clear_') + (current.is_day === 0 ? 'night' : 'day');
     return {
+        cockpitIcon,
         name, temp: current.temperature_2m, feels: current.apparent_temperature, rain: current.precipitation,
         wind: current.wind_speed_10m, direction: current.wind_direction_10m,
         probability: hourly.precipitation_probability[hour], kind: weatherKind(current.weather_code, current.is_day),
@@ -202,25 +204,25 @@ function networkDetail(code) {
     return 'Fuente temporalmente no disponible';
 }
 
-function createData({ cacheFile, configFile, fixture, get = download, photo = loadPhoto }, changed) {
-    const config = readJson(configFile);
-    const location = config && config.location;
-    const valid = location && typeof location.name === 'string' && location.name.trim()
-        && Number.isFinite(location.latitude) && Math.abs(location.latitude) <= 90
-        && Number.isFinite(location.longitude) && Math.abs(location.longitude) <= 180;
-    const current = valid ? {
-        name: location.name.trim().slice(0, 48), latitude: location.latitude, longitude: location.longitude
-    } : defaultLocation;
+function createData({ cacheFile, fixture, get = download, photo = loadPhoto, now: clock = Date.now }, changed) {
     const saved = readJson(cacheFile);
-    const cache = saved && saved.location === JSON.stringify(current) ? saved : { location: JSON.stringify(current) };
-    const data = { energy: mockEnergy, city: current.name,
-        weather: fixture ? fixture.weather : cache.weather && cache.weather.value,
+    const cache = saved || {};
+    const data = { energy: mockEnergy, city: fixture && fixture.weather ? fixture.weather.name : 'Ubicación actual',
+        weather: fixture ? fixture.weather : undefined,
         news: fixture ? fixture.news : cache.news && cache.news.value,
-        weatherStatus: 'loading', newsStatus: 'loading', photo: null };
-    const next = { weather: 0, news: 0 };
+        weatherStatus: fixture ? 'ready' : 'location', newsStatus: 'loading', photo: null };
+    const next = { news: 0 };
     let photoUrl;
     let photoRequest = 0;
+    let photoPending = false;
     let closed = false;
+    const weather = createWeather({ get, parse: parseWeather, url: weatherUrl, now: clock, cache: cache.weather,
+        store(item) { cache.weather = item; save(); }
+    }, (value, status, at) => {
+        data.weather = value; data.weatherStatus = status; data.weatherUpdatedAt = at;
+        data.weatherDetail = status === 'offline' ? 'No se pudo actualizar el pronóstico' : '';
+        changed('weather');
+    });
 
     function save() {
         if (!cacheFile) return;
@@ -262,26 +264,33 @@ function createData({ cacheFile, configFile, fixture, get = download, photo = lo
 
     return {
         data,
-        refresh(now) {
+        refresh(now, location, visible = true) {
             if (fixture) return;
-            refreshItem('weather', weatherInterval, async () =>
-                parseWeather(JSON.parse((await get(weatherUrl(current), 512 * 1024)).toString('utf8')), current.name), now);
-            refreshItem('news', newsInterval, () => loadNews(get), now);
+            weather.update(location, now, visible);
+            if (visible && !closed) refreshItem('news', newsInterval, () => loadNews(get), now);
+        },
+        weatherSnapshot: weather.snapshot,
+        suspend() {
+            weather.suspend();
+            if (photoPending) { photoRequest++; photoPending = false; photoUrl = undefined; }
         },
         showPhoto(url) {
-            if (fixture || url === photoUrl) return;
+            if (closed || fixture || url === photoUrl) return;
             photoUrl = url;
             const request = ++photoRequest;
             if (data.photo) { dropImage(data.photo); data.photo = null; }
+            photoPending = !!url;
             if (!url) return;
             photo(url, get, 528, 297, false, () => !closed && request === photoRequest).then((image) => {
                 if (closed || request !== photoRequest) { dropImage(image); return; }
+                photoPending = false;
                 data.photo = image;
                 changed('photo');
-            }).catch(() => { /* The card already shows its image fallback. */ });
+            }).catch(() => { if (request === photoRequest) photoPending = false; });
         },
         close() {
             closed = true;
+            weather.close();
             if (data.photo) dropImage(data.photo);
         }
     };

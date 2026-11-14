@@ -1,5 +1,7 @@
 # Auditoría de BMWLauncher · 13 de noviembre de 2026
 
+La revisión posterior de las funciones nuevas, sus correcciones y medidas del 14-11-2026 está en [Auditoría integral](AUDITORIA-INTEGRAL.md). Este documento conserva la evidencia histórica de multimedia y mando.
+
 ## Alcance y resultado
 
 Base: `7c5b544` / `v0.2.9`, más los cambios locales previos de los iconos y centrado del cockpit, que se conservan. Revisión de OAP, servicio, sesión, proveedores, reproducción, telemetría, captura C++ y manifiestos. Incluye dos revisiones independientes de corrección y estructura, reproducción local e inspección del firmware descargado. No se ha conectado con el coche ni publicado una versión durante esta auditoría.

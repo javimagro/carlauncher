@@ -1,8 +1,8 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.10",
-  "title": "Motor gr\u00c3\u00a1fico de BMWLauncher",
+  "version": "0.2.11",
+  "title": "Motor grÃ¡fico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
     "ID8"
@@ -14,6 +14,16 @@
     "iteriodev-overlays": "0.4.0"
   },
   "files": [
+    {
+      "path": "preconditioning-model.js",
+      "from": "preconditioning-model.js",
+      "mode": "0644"
+    },
+    {
+      "path": "preconditioning-ui.js",
+      "from": "preconditioning-ui.js",
+      "mode": "0644"
+    },
     {
       "path": "bin/ffmpeg",
       "from": "bin/ffmpeg",
@@ -230,6 +240,16 @@
       "mode": "0644"
     },
     {
+      "path": "tdt-dash.js",
+      "from": "tdt-dash.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-dash-relay.js",
+      "from": "tdt-dash-relay.js",
+      "mode": "0644"
+    },
+    {
       "path": "drivehub-session.js",
       "from": "drivehub-session.js",
       "mode": "0644"
@@ -310,6 +330,31 @@
       "mode": "0644"
     },
     {
+      "path": "navigation-layout.js",
+      "from": "navigation-layout.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-scene.js",
+      "from": "navigation-scene.js",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-icons.rgba.gz",
+      "from": "navigation-icons.rgba.gz",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-icons.SOURCES.json",
+      "from": "navigation-icons.SOURCES.json",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-icons.js",
+      "from": "navigation-icons.js",
+      "mode": "0644"
+    },
+    {
       "path": "navigation-panels.js",
       "from": "navigation-panels.js",
       "mode": "0644"
@@ -327,6 +372,141 @@
     {
       "path": "radio-view.js",
       "from": "radio-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "weather-location.js",
+      "from": "weather-location.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-audio.js",
+      "from": "assistant-audio.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-client.js",
+      "from": "assistant-client.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-config.js",
+      "from": "assistant-config.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-drivehub.js",
+      "from": "assistant-drivehub.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-panel.js",
+      "from": "assistant-panel.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-protocol.js",
+      "from": "assistant-protocol.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-tools.js",
+      "from": "assistant-tools.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant-worker.js",
+      "from": "assistant-worker.js",
+      "mode": "0644"
+    },
+    {
+      "path": "assistant.js",
+      "from": "assistant.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/index.js",
+      "from": "vendor/ws/index.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/buffer-util.js",
+      "from": "vendor/ws/lib/buffer-util.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/constants.js",
+      "from": "vendor/ws/lib/constants.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/event-target.js",
+      "from": "vendor/ws/lib/event-target.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/extension.js",
+      "from": "vendor/ws/lib/extension.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/limiter.js",
+      "from": "vendor/ws/lib/limiter.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/permessage-deflate.js",
+      "from": "vendor/ws/lib/permessage-deflate.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/receiver.js",
+      "from": "vendor/ws/lib/receiver.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/sender.js",
+      "from": "vendor/ws/lib/sender.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/stream.js",
+      "from": "vendor/ws/lib/stream.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/validation.js",
+      "from": "vendor/ws/lib/validation.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/websocket-server.js",
+      "from": "vendor/ws/lib/websocket-server.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/lib/websocket.js",
+      "from": "vendor/ws/lib/websocket.js",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/LICENSE",
+      "from": "vendor/ws/LICENSE",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/package.json",
+      "from": "vendor/ws/package.json",
+      "mode": "0644"
+    },
+    {
+      "path": "vendor/ws/SOURCES.md",
+      "from": "vendor/ws/SOURCES.md",
+      "mode": "0644"
+    },
+    {
+      "path": "navigation-displays.js",
+      "from": "navigation-displays.js",
       "mode": "0644"
     }
   ],

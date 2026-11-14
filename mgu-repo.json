@@ -10,7 +10,7 @@
         "ID8"
       ],
       "requires": {
-        "javi-carlab": "0.2.10",
+        "javi-carlab": "0.2.11",
         "javi-ccu-gate": "1.0.0"
       }
     },

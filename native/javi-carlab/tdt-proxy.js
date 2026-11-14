@@ -3,11 +3,15 @@
 const crypto = require('crypto');
 const http = require('http');
 const net = require('net');
+const fs = require('fs');
+const path = require('path');
 const { URL } = require('url');
 const { lookupForUplink } = require('./drivehub-network.js');
 const { mediaUrl } = require('./tdt-catalog.js');
+const createDashRelay = require('./tdt-dash-relay');
 
 function startProxy(lookup) {
+    const dash = createDashRelay(lookup, undefined, fs.readFileSync(path.join(__dirname, 'bin/ca-certificates.crt')));
     const secret = crypto.randomBytes(24).toString('hex');
     const authorization = 'Basic ' + Buffer.from('tdt:' + secret).toString('base64');
     const sockets = new Set();
@@ -19,13 +23,14 @@ function startProxy(lookup) {
     }
 
     const server = http.createServer((req, res) => {
+        if (dash.handle(req, res)) return;
         const target = mediaUrl(req.url);
         if (req.headers['proxy-authorization'] !== authorization) {
-            res.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="TDTWorld"' }).end();
+            res.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="TDTWorld"' }); res.end();
             return;
         }
         if (!target.startsWith('http://') || !['GET', 'HEAD'].includes(req.method)) {
-            res.writeHead(403).end();
+            res.writeHead(403); res.end();
             return;
         }
         const url = new URL(target);
@@ -40,7 +45,7 @@ function startProxy(lookup) {
         });
         upstream.on('socket', track);
         upstream.on('error', () => {
-            if (!res.headersSent) res.writeHead(502).end();
+            if (!res.headersSent) { res.writeHead(502); res.end(); }
             else res.destroy();
         });
         res.on('close', () => upstream.destroy());
@@ -69,7 +74,9 @@ function startProxy(lookup) {
         server.once('error', reject);
         server.listen(0, '127.0.0.1', () => resolve({
             url: 'http://tdt:' + secret + '@127.0.0.1:' + server.address().port,
+            dashUrl: dash.attach('http://127.0.0.1:' + server.address().port),
             close() {
+                dash.close();
                 for (const socket of sockets) socket.destroy();
                 server.close();
             }
@@ -80,7 +87,7 @@ function startProxy(lookup) {
 if (require.main === module) {
     Promise.resolve().then(() => startProxy(lookupForUplink())).then((proxy) => {
         process.once('disconnect', () => proxy.close());
-        process.send(proxy.url);
+        process.send({ url: proxy.url, dashUrl: proxy.dashUrl });
     }, () => { process.exitCode = 1; if (process.connected) process.disconnect(); });
 }
 

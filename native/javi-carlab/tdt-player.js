@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const playAudio = require('./tdt-audio.js');
+const { selectDash } = require('./tdt-dash');
 const { makeImage, dropImage } = require('./vendor/kit_record.js');
 
 const videoId = 1;
@@ -33,6 +34,13 @@ function videoFailure(stderr, fallback) {
     if (http) return 'HTTP ' + http[1];
     if (/timed out/i.test(stderr)) return 'tiempo agotado';
     return fallback;
+}
+
+function decoderFailureKind(stderr) {
+    if (/Stream map[^\n]*a:0[^\n]*matches no streams/i.test(stderr)) return 'audio-missing';
+    if (/Stream map[^\n]*matches no streams/i.test(stderr)) return 'stream-map';
+    if (/(?:HTTP error |Server returned )(?:429|5\d{2})|timed out|Connection (?:reset|refused)|End of file/i.test(stderr)) return 'network';
+    return 'decoder';
 }
 
 function write(fd, bytes, offset) {
@@ -103,7 +111,7 @@ function createPcmQueue(limit) {
 }
 
 function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory = '/dev/shm', preview = false,
-    bufferSeconds = preview ? 0 : 2, get, log = console, spawnProcess = spawn, onStats = () => {} } = {}) {
+    bufferSeconds = preview ? 0 : 2, pacedInput = preview, get, log = console, spawnProcess = spawn, onStats = () => {} } = {}) {
     const w = preview ? 320 : 640;
     const h = preview ? 180 : 360;
     const fps = preview ? 8 : 20;
@@ -126,6 +134,9 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         if (current.closeAudio) { current.closeAudio(); current.closeAudio = null; }
         if (video) {
             video.kill();
+            // A paused pipe must still close after cancellation; its callbacks
+            // already reject this generation before copying any bytes.
+            if (video.stdout) video.stdout.resume();
             const force = setTimeout(() => { if (video.exitCode === null) video.kill('SIGKILL'); }, 500);
             force.unref();
         }
@@ -148,20 +159,25 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
     }
 
     function input(source, network) {
+        const relayed = network && network.dashUrl && source.startsWith(network.dashUrl);
         const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-rw_timeout', '8000000',
             '-reconnect', '1', '-reconnect_on_network_error', '1', '-reconnect_streamed', '1',
             '-reconnect_on_http_error', '429,5xx', '-reconnect_max_retries', '2', '-reconnect_delay_max', '2'];
-        if (network) args.push('-http_proxy', network.url);
-        if (caFile) args.push('-tls_verify', '1');
-        args.push('-protocol_whitelist', 'http,https,tcp,tls,httpproxy,crypto', '-re');
-        if (prebuffer) args.push('-readrate_initial_burst', String(bufferSeconds + 0.5), '-readrate_catchup', '1.5');
+        if (network && !relayed) args.push('-http_proxy', network.url);
+        if (caFile && !relayed) args.push('-tls_verify', '1');
+        // For adapted DASH, HTTPS and certificate verification belong to the
+        // network relay. FFmpeg only sees capability-protected loopback HTTP.
+        args.push('-protocol_whitelist', relayed ? 'http,tcp' : 'http,https,tcp,tls,httpproxy,crypto');
+        if (pacedInput) args.push('-re');
+        if (prebuffer && pacedInput) args.push('-readrate_initial_burst', String(bufferSeconds + 0.5), '-readrate_catchup', '1.5');
         args.push('-i', source);
         return args;
     }
 
     function decodeProcess(args, network, withAudio) {
         const options = { stdio: withAudio ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'] };
-        if (caFile) options.env = Object.assign({}, process.env, { SSL_CERT_FILE: caFile });
+        options.env = Object.assign({}, process.env, { no_proxy: '127.0.0.1' });
+        if (caFile) options.env.SSL_CERT_FILE = caFile;
         if (network && network.uid) { options.uid = network.uid; options.gid = network.uid; }
         return spawnProcess(ffmpeg, args, options);
     }
@@ -195,9 +211,13 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         let playing = false;
         let decoderEnded;
         let frame = Buffer.allocUnsafe(size);
+        let pendingBytes;
         let deadline = 0, previousFrame = 0;
-        const stats = { decoded: 0, presented: 0, underruns: 0, dropped: 0, maxGapMs: 0 };
-        current.statsTimer = setInterval(() => onStats(Object.assign({}, stats, { queued: frames.length, fps })), 5000);
+        const stats = current.stats;
+        let lastDecoded = 0;
+        stats.attempts++;
+        stats.audioEnabled = !!withAudio;
+        current.statsTimer = setInterval(() => onStats(Object.assign({}, stats, { queued: frames.length, fps, audio: output ? output.stats() : null })), 5000);
         function present(bytes) {
             try {
                 if (preview) {
@@ -225,7 +245,7 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             const tick = () => {
                 if (job !== current || current.video !== video) return;
                 try {
-                    if (decoderEnded && !frames.length) { failed(video, 'error', ready, decoderEnded); return; }
+                    if (decoderEnded && !frames.length) { failed(video, 'error', ready, decoderEnded.reason, decoderEnded.kind); return; }
                     if (!frames.length) {
                         if (playing) { playing = false; stats.underruns++; changed('buffering'); }
                         deadline = 0;
@@ -251,6 +271,12 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
                         // The pending write owns its buffer until the stream consumes it.
                         if (queue.take(pcmSize, pcm)) output.write(Buffer.from(pcm));
                     }
+                    if (video.stdout.isPaused() && frames.length <= prebuffer) {
+                        const pending = pendingBytes;
+                        pendingBytes = undefined;
+                        if (pending) receiveVideo(pending);
+                        if (job === current && current.video === video && frames.length < maxFrames) video.stdout.resume();
+                    }
                 } finally {
                     if (job === current && current.video === video) {
                         current.playout = setTimeout(tick, Math.max(1, deadline ? deadline - clock() : 1000 / fps));
@@ -259,9 +285,9 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             };
             current.playout = setTimeout(tick, 1000 / fps);
         }
-        function timedOut() { failed(video, 'error', ready, videoFailure(diagnostic, 'sin fotogramas')); }
+        function timedOut() { failed(video, 'error', ready, videoFailure(diagnostic, 'sin fotogramas'), 'timeout'); }
         current.timer = setTimeout(timedOut, 16000);
-        video.stdout.on('data', (bytes) => {
+        function receiveVideo(bytes) {
             if (current !== job || current.video !== video) return;
             let position = 0;
             while (position < bytes.length) {
@@ -273,29 +299,36 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
                 offset = 0;
                 ready = true;
                 stats.decoded++;
+                const decodedAt = clock();
+                if (lastDecoded) stats.maxDecodeGapMs = Math.max(stats.maxDecodeGapMs, Math.round(decodedAt - lastDecoded));
+                lastDecoded = decodedAt;
                 diagnostic = '';
                 if (prebuffer) {
-                    if (frames.length === maxFrames) {
-                        spareFrames.push(frames.shift());
-                        stats.dropped++;
-                        if (queue) queue.take(pcmSize);
-                    }
                     frames.push(frame);
                     frame = spareFrames.pop() || Buffer.allocUnsafe(size);
                 } else present(frame);
                 if (job !== current || current.video !== video) return;
                 clearTimeout(current.timer);
                 current.timer = setTimeout(timedOut, 12000);
+                if (prebuffer && frames.length >= maxFrames) {
+                    // HLS can decode a whole segment in a burst. Preserve those
+                    // frames in the producer instead of deleting future playout.
+                    // Audio remains drained by its independent listener.
+                    video.stdout.pause();
+                    if (position < bytes.length) pendingBytes = bytes.slice(position);
+                    break;
+                }
             }
-        });
+        }
+        video.stdout.on('data', receiveVideo);
         video.on('error', (error) => failed(video, error.code === 'ENOENT' ? 'unavailable' : 'error', ready));
         video.on('close', (code) => {
             if (job !== current || current.video !== video) return;
             const reason = videoFailure(diagnostic, code ? 'decodificador ' + code : 'fin de emisión');
             if (prebuffer && frames.length) {
                 clearTimeout(current.timer);
-                decoderEnded = reason;
-            } else failed(video, 'error', ready, reason);
+                decoderEnded = { reason, kind: decoderFailureKind(diagnostic) };
+            } else failed(video, 'error', ready, reason, decoderFailureKind(diagnostic));
         });
     }
 
@@ -306,15 +339,28 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         start(sources, changed) {
             stop();
             if (!capable) { changed('unavailable'); return; }
-            const current = {};
+            const current = { stats: { decoded: 0, presented: 0, underruns: 0, dropped: 0, maxGapMs: 0,
+                maxDecodeGapMs: 0, attempts: 0, reconnects: 0, audioEnabled: false, dashAdapted: false } };
             job = current;
             let index = 0;
             async function nextSource() {
-                const source = sources[index++];
+                let source = sources[index++];
+                current.stats.dashAdapted = false;
                 let program;
                 if (get && /\.m3u8(?:[?#]|$)/i.test(source)) {
                     try { program = hlsProgram(await get(source, 256 * 1024, 4000), w, h); }
                     catch (_) { /* Let FFmpeg open the original source. */ }
+                }
+                if (get && current.network && current.network.dashUrl && /\.mpd(?:[?#]|$)/i.test(source)) {
+                    try {
+                        const bytes = await get(source, 256 * 1024, 4000);
+                        if (job !== current) return;
+                        // Unsupported layouts retain their original path. A supported
+                        // manifest is refreshed and filtered by the network process.
+                        selectDash(bytes, source, (url) => url, w, h);
+                        source = current.network.dashUrl + encodeURIComponent(source);
+                        current.stats.dashAdapted = true;
+                    } catch (_) { /* Preserve compatibility with other DASH profiles. */ }
                 }
                 try { attempt(source, program, !!audio); }
                 catch (_) { if (job === current) { stop(); changed('error'); } }
@@ -322,13 +368,14 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             function attempt(source, program, withAudio, retry = true) {
                 if (job !== current) return;
                 const started = Date.now();
-                const fail = (video, status, decoded, detail) => {
+                const fail = (video, status, decoded, detail, kind) => {
                     if (current !== job || current.video !== video) return;
                     clearDecoder(current);
                     if (detail) log.warn('TDTWorld: vídeo: ' + detail);
-                    if (status === 'error' && program !== undefined && !decoded) attempt(source, undefined, withAudio, retry);
-                    else if (status === 'error' && withAudio && !decoded) attempt(source, program, false, retry);
-                    else if (status === 'error' && decoded && (retry || Date.now() - started >= 60000)) {
+                    if (status === 'error' && program !== undefined && !decoded && (kind === 'stream-map' || kind === 'audio-missing')) attempt(source, undefined, withAudio, retry);
+                    else if (status === 'error' && withAudio && !decoded && kind === 'audio-missing') attempt(source, program, false, retry);
+                    else if (status === 'error' && (decoded || kind === 'network' || kind === 'timeout') && (retry || Date.now() - started >= 60000)) {
+                        current.stats.reconnects++;
                         changed('reconnecting', detail);
                         current.retryTimer = setTimeout(() => attempt(source, program, withAudio, false), 1000);
                     } else if (status === 'error' && index < sources.length) {

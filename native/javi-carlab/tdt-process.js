@@ -59,9 +59,9 @@ function createIsolatedPlayer(gpu, options) {
                         }, () => { if (job === current && child.connected) child.send({ type: 'manifest', id: message.id }); });
                     }
                 });
-                child.send({ type: 'start', sources, network: network && { uid: network.uid, url: network.url },
+                child.send({ type: 'start', sources, network: network && { uid: network.uid, url: network.url, dashUrl: network.dashUrl },
                     options: { ffmpeg: options.ffmpeg, caFile: options.caFile, audio: options.audio, directory: options.directory,
-                        bufferSeconds: options.bufferSeconds } });
+                        bufferSeconds: options.bufferSeconds, pacedInput: options.pacedInput } });
             }).catch(() => { if (job === current) { stop(); changed('error', 'inicio multimedia'); } });
         }
     };

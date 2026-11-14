@@ -16,7 +16,7 @@ const raw = (id = 12, overrides) => Object.assign({ dataBaseIdentifier: id, posi
 const sample = (id = 12, changes) => Object.assign(station(raw(id), 2), changes);
 function frame(changes) { return Object.assign({ version: 1, at: Date.now(), available: true, loading: false, busy: false, listError: '',
     stations: [sample()], current: sample(), active: true, sourceKnown: true, result: null, logo: null, artwork: null }, changes); }
-function fixture() {
+function fixture(metadata) {
     let time = 1000;
     const timers = [], calls = [], removed = [], disposed = [], callbacks = {}, attributes = {};
     const values = { currentStationFmDab: { stationListEntry: raw(), radioTextName: 'Actualidad' },
@@ -25,11 +25,14 @@ function fixture() {
         return attributes[name] = { getValue: async () => values[name], subscribe: async (cb) => { callbacks[name] = cb; return name; }, unsubscribe: async (id) => removed.push(id) };
     }
     const tuner = { currentStationFmDab: attr('currentStationFmDab'), dataStationList: attr('dataStationList'),
+        triggerStationListBroadcast: async (args) => { calls.push(['broadcast', args]); },
         getStationListMetaData: async (args) => { calls.push(['list', args]); return { stationList: args.listType === 2 && !args.startPosition ? [raw()] : [] }; },
         selectStation: async (args) => { calls.push(['tune', args]); return { errorCode: 'EC_NO_ERROR' }; }, dispose: async () => disposed.push('tuner') };
     const media = { sources: attr('sources'), activeSourceId: attr('activeSourceId'),
         selectSource: async (args) => { calls.push(['source', args]); return { result: 0 }; }, dispose: async () => disposed.push('media') };
-    const builders = { buildAndInitTypedProxy: async (name, instance) => { assert.equal(instance, '1'); return name === services.tuner.name ? tuner : media; } };
+    const builders = { buildAndInitTypedProxy: async (name, instance) => { assert.equal(instance, '1');
+        if (name === services.metadata.name) { if (metadata) return metadata; throw new Error('OPTIONAL_UNAVAILABLE'); }
+        return name === services.tuner.name ? tuner : media; } };
     const radio = createRadio(builders, { now: () => time, every: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t; }, cancel: (t) => { t.cancelled = true; } });
     return { radio, tuner, media, timers, calls, callbacks, attributes, values, removed, disposed, advance: (ms) => { time += ms; }, now: () => time };
 }
@@ -40,6 +43,70 @@ test('radio converts BMW stations, PTY and sources without confusing IP or RF qu
     assert.equal(station(raw(12, { dataBaseIdentifier: -1 }), 2), null);
     assert.equal(sample().frequency, 98.5); assert.equal(sources([{ sourceId: 'app', playerType: 9, selectable: true }]).length, 0);
     assert.equal(picture(Buffer.alloc(102400)), null); assert.equal(picture(Buffer.from('Not a picture')), null);
+});
+test('BMW ByteBufferData logos decode their data member, without accepting arbitrary bytes', () => {
+    const png = Buffer.from([137,80,78,71,13,10,26,10]);
+    assert.equal(picture({ format: 1, data: png }), png.toString('base64'));
+    assert.equal(picture({ format: 1, data: Buffer.alloc(100) }), null);
+});
+test('logos use the BMW metadata cache and fall back to the tuner independently of list polling', async () => {
+    const jpeg = Buffer.from([255,216,0,0,0,0,0,0]); let metadataRequests = 0;
+    const f = fixture({ getStationListMetaData: async () => { metadataRequests++; return { stationList: [raw(12, { stationIconPicture: { format: 2, data: jpeg } })] }; }, dispose: async () => {} });
+    await f.radio.ready; await settle();
+    await f.radio.command({ id: 'img', op: 'artwork', key: '12', list: 2 });
+    assert.equal(f.radio.snapshot().artwork.bytes, jpeg.toString('base64')); assert.equal(metadataRequests, 1);
+    f.callbacks.currentStationFmDab({ stationListEntry: raw(12, { stationIconPicture: { format: 2, data: jpeg } }) });
+    assert.equal(f.radio.snapshot().logo.bytes, jpeg.toString('base64')); f.radio.stop();
+});
+test('an unavailable presets list does not prevent top stations or erase receivable stations', async () => {
+    const f = fixture(); await f.radio.ready; await settle();
+    f.tuner.getStationListMetaData = async (args) => { if (args.listType === 7) throw new Error('NOT_READY'); return { stationList: [raw(args.listType === 2 ? 12 : 13)] }; };
+    f.advance(30000); await f.radio.refresh();
+    assert.deepEqual(f.radio.snapshot().stations.map((s) => s.list), [2,10]); f.radio.stop();
+});
+test('incremental lists cannot stand in for an unknown base and unrelated broadcasts cause no refresh storm', async () => {
+    const { createLists } = require('../../apps/javi_carlauncher/radio-listas');
+    const lists = createLists(() => 1000);
+    assert.equal(lists.receive({ listType: 2, isIncrementalUpdate: 1, stationList: [raw()] }), false);
+    assert.equal(lists.all().length, 0); assert.equal(lists.receive({ listType: 6 }), true);
+    assert.equal(lists.commit(2, [raw()], lists.revision(2)), true);
+    assert.equal(lists.find('12', 2).position, 0);
+});
+test('preset membership follows the station identity even when BMW uses another database id', () => {
+    const ui = createRadioUI(); const current = sample();
+    ui.receive(frame({ current, stations: [current, sample(99, { list: 7, memoryKey: current.memoryKey })] }), Date.now());
+    assert.equal(ui.rows().length, 1); assert.equal(ui.favorite(current), true); ui.filter(0); assert.equal(ui.rows().length, 1); ui.close();
+});
+test('BMW broadcasts populate the list even when the metadata getter returns no stations', async () => {
+    const f = fixture(); await f.radio.ready; await settle();
+    f.tuner.getStationListMetaData = async () => ({ stationList: [] });
+    f.callbacks.dataStationList({ listType: 'LT_RECEIVABLE_FM_DAB', isIncrementalUpdate: 'OFF', stationList: [raw(14)] });
+    assert.deepEqual(f.radio.snapshot().stations.map((s) => s.key), ['14']);
+    assert(f.calls.some((c) => c[0] === 'broadcast' && c[1].listType === 2));
+    f.radio.stop();
+});
+test('a broadcast racing a metadata query wins and unrelated presets do not discard FM/DAB', async () => {
+    const f = fixture(); await f.radio.ready; await settle(); let resolve;
+    f.tuner.getStationListMetaData = async (args) => args.listType === 2 ? new Promise((r) => { resolve = r; }) : { stationList: [] };
+    f.advance(30000); const pending = f.radio.refresh(); await settle();
+    f.callbacks.dataStationList({ listType: 2, isIncrementalUpdate: 0, stationList: [raw(13)] });
+    resolve({ stationList: [raw()] }); await pending;
+    assert.equal(f.radio.snapshot().stations[0].key, '13');
+    f.advance(30000); const second = f.radio.refresh(); await settle();
+    f.callbacks.dataStationList({ listType: 7, isIncrementalUpdate: 0, stationList: [raw(13)] });
+    resolve({ stationList: [raw(14)] }); await second;
+    assert.equal(f.radio.snapshot().stations.find((s) => s.list === 2).key, '14'); f.radio.stop();
+});
+test('full and incremental BMW lists preserve other rows and reject tuning until an invalid update recovers', async () => {
+    const f = fixture(); await f.radio.ready; await settle();
+    f.callbacks.dataStationList({ listType: 2, isIncrementalUpdate: 0, stationList: [raw(), raw(13)] });
+    f.callbacks.dataStationList({ listType: 2, isIncrementalUpdate: 1, stationList: [raw(13, { stationLongName: 'Actualizada' })] });
+    assert.equal(f.radio.snapshot().stations.length, 2);
+    assert.equal(f.radio.snapshot().stations[1].name, 'Actualizada');
+    f.callbacks.dataStationList({ listType: 7 });
+    assert.equal(await f.radio.command({ id: 'x', op: 'tune', key: '12', list: 2 }), true);
+    f.callbacks.dataStationList({ listType: 2, isIncrementalUpdate: 0, stationList: [] });
+    assert.equal(f.radio.snapshot().stations.length, 0); f.radio.stop();
 });
 test('opening reads the tuner without starting audio; selection uses native source then BMW database id and index', async () => {
     const f = fixture(); await f.radio.ready; await settle();
@@ -82,7 +149,7 @@ test('old getters cannot overwrite station notifications and late-created proxie
     resolve({ stationListEntry: raw(12) }); await settle(); assert.equal(f.radio.snapshot().current.key, '13'); f.radio.stop();
     let dispose = 0; const waiting = [];
     const late = createRadio({ buildAndInitTypedProxy: () => new Promise((r) => waiting.push(r)) }, { every: () => 1, cancel: () => {} });
-    late.stop(); waiting.forEach((r) => r({ dispose: async () => { dispose++; } })); await late.ready; await settle(); assert.equal(dispose, 2);
+    late.stop(); waiting.forEach((r) => r({ dispose: async () => { dispose++; } })); await late.ready; await settle(); assert.equal(dispose, Object.keys(services).length);
 });
 test('radio image retrieval asks only for the selected BMW row and refuses a mismatched response', async () => {
     const f = fixture(); await f.radio.ready; await settle();
@@ -133,7 +200,7 @@ test('decorative spectrum only animates when the visible card has the original r
 test('radio modules are shipped with explicit OAP extensions and narrow permissions', () => {
     const base = path.join(__dirname, '../..'); const manifest = require('../../apps/javi_carlauncher/package/manifest.json');
     const app = require('../../apps/javi_carlauncher/mgu-app.json'); const native = require('../../native/javi-carlab/component.json');
-    ['radio-bmw.js', 'radio-datos.js'].forEach((n) => assert(app.modules.includes(n)));
+    ['radio-bmw.js', 'radio-datos.js', 'radio-listas.js'].forEach((n) => assert(app.modules.includes(n)));
     ['radio-model.js', 'radio-ui.js', 'radio-view.js'].forEach((n) => assert(native.files.some((f) => f.from === n)));
     for (const d of Object.values(services)) assert.deepEqual(manifest.proxies[d.name], { instances: ['1'], attributes: Object.fromEntries(d.attributes.map((n) => [n, 'rs'])), methods: d.methods, ...(d.broadcasts ? { broadcasts: d.broadcasts } : {}) });
     assert(fs.readFileSync(path.join(base, 'apps/javi_carlauncher/radio-bmw.js'), 'utf8').includes("require('./radio-datos.js')"));
@@ -157,6 +224,6 @@ test('unavailable BMW services retry while visible and stop retrying on close', 
     let attempts = 0;
     const r = createRadio({ buildAndInitTypedProxy: async () => { attempts++; throw new Error('NOT_AVAILABLE'); } },
         { every: (fn, ms) => { const t = { fn, ms }; callbacks.push(t); return t; }, cancel: (t) => disposed.push(t) });
-    await r.ready; assert.equal(attempts, 2); callbacks[0].fn(); await settle(); assert.equal(attempts, 4);
-    r.stop(); callbacks[0].fn(); await settle(); assert.equal(attempts, 4); assert.equal(disposed.length, 1);
+    await r.ready; assert.equal(attempts, 3); callbacks[0].fn(); await settle(); assert.equal(attempts, 6);
+    r.stop(); callbacks[0].fn(); await settle(); assert.equal(attempts, 6); assert.equal(disposed.length, 1);
 });

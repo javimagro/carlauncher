@@ -3,12 +3,15 @@
 // Commands use private search/routing sessions. Opening a panel never changes guidance.
 const ns = 'de.bmw.infotainment.navigation.';
 const contracts = {
-    search: { name: ns + 'freetextsearch.FreeTextSearch', methods: ['createSession', 'deleteSession', 'setCCPLocation', 'startSearch', 'cancelSearch', 'getValidatedLocation', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus'] },
-    poi: { name: ns + 'poisearch.POISearch', methods: ['createPOISearchSession', 'deletePOISearchSession', 'setCCPLocation', 'setCategories', 'setSearchConfiguration', 'startPOISearch', 'cancelPOISearch', 'getPOIDetail', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus'] },
+    search: { name: ns + 'freetextsearch.FreeTextSearch', methods: ['createSession', 'deleteSession', 'setCCPLocation', 'startSearch', 'cancelSearch', 'getValidatedLocation', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus', 'changedViewInfo'] },
+    poi: { name: ns + 'poisearch.POISearch', methods: ['createPOISearchSession', 'deletePOISearchSession', 'setCCPLocation', 'setCategories', 'setSearchConfiguration', 'startPOISearch', 'cancelPOISearch', 'getPOIDetail', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus', 'changedViewInfo'] },
     categories: { name: ns + 'poicategorytree.POICategoryTree', attributes: { specialCategoryList: 'r' } },
     routing: { name: ns + 'routing.Routing', methods: ['createRoutingSession', 'deleteSession', 'calculateRoute', 'getTripDefinition', 'requestRouteInfoUpdate', 'stopRouteInfoUpdate'], attributes: { userCommonOptions: 'r', routeSummary: 'r' }, broadcasts: ['routeInfoUpdate'] },
     trips: { name: ns + 'routing2.Routing2', attributes: { currentTrips: 'r' } },
-    guidance: { name: ns + 'guiding.Guidance', methods: ['startGuidance', 'stopGuidance'] }
+    guidance: { name: ns + 'guiding.Guidance', methods: ['startGuidance', 'stopGuidance'], attributes: {
+        junction3dViewInKombiEnabled: 'rw', visualizationInKombiNonNaviEnabled: 'rw',
+        additionalInformationEnabled: 'rw', guidingPopupsEnabled: 'rw', signboardPopupsEnabled: 'rw'
+    } }
 };
 const clean = (s) => typeof s === 'string' ? s.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 140) : '';
 const clone = (v) => JSON.parse(JSON.stringify(v, (key, item) => key === 'internalData' && item instanceof Uint8Array ?
@@ -81,7 +84,7 @@ function createActions(builders, options) {
     const proxies = {}, subscriptions = [];
     let closed = false, busy = false, generation = 0, search, selected, plan, routeSession, closing;
     let stops = [], rows = [], categoryIds = [];
-    let state = { status: 'idle', request: 0, query: '', results: [], selected: null, stops: [], plan: null, error: '' };
+    let state = { status: 'idle', request: 0, query: '', results: [], selected: null, stops: [], plan: null, error: '', searchPhase: 'idle' };
     const update = (values) => { if (!closed) state = Object.assign({}, state, values); };
     async function proxy(key) {
         if (!proxies[key]) proxies[key] = builders.buildAndInitTypedProxy(contracts[key].name, 'Main_Instance', { timeoutMs: 10000 })
@@ -102,6 +105,7 @@ function createActions(builders, options) {
     }
     async function clearPlan() {
         const old = routeSession; routeSession = null; plan = null;
+        update({ plan: null });
         if (old && old.infoSubscription !== undefined) {
             await ignore(() => old.p.routeInfoUpdate.unsubscribe(old.infoSubscription));
             if (old.route) await ignore(() => old.p.stopRouteInfoUpdate({ routeIdentifier: old.route }));
@@ -114,37 +118,114 @@ function createActions(builders, options) {
             proxies[key].then((p) => p.dispose && ignore(() => p.dispose()), () => {}))));
         return closing;
     }
+    function detail(owner, row) {
+        const key = String(row.key);
+        if (!owner.details[key]) owner.details[key] = call(owner.p, owner.poi ? 'getPOIDetail' : 'getValidatedLocation',
+            owner.poi ? { poiID: row.poiID } : { sessionID: owner.id, key: row.key }).catch((error) => {
+            delete owner.details[key]; throw error;
+        });
+        return owner.details[key];
+    }
+    async function locateResults(owner) {
+        // One background lookup; selecting the same row shares its pending call.
+        // Never let late coordinates replace a newer list, detail or route.
+        if (!owner || owner.locating || busy || closed || search !== owner || owner.destroyed) return;
+        const row = rows.find((r) => !owner.attempted[r.key]);
+        if (!row || owner.lookups >= 64) return;
+        owner.locating = true; owner.attempted[row.key] = true; owner.lookups++;
+        const identity = row.poiID && JSON.stringify(row.poiID);
+        try {
+            const result = await detail(owner, row);
+            if (closed || search !== owner || owner.destroyed) return;
+            const current = rows.find((r) => r.key === row.key);
+            if (!current || (current.poiID && JSON.stringify(current.poiID)) !== identity) return;
+            const point = location(result.address || result.validatedLocation);
+            update({ results: state.results.map((r) => r.id !== owner.id + ':' + row.key ? r : Object.assign({}, r,
+                point ? { latitude: point.latitude, longitude: point.longitude, positionState: 'ready' } : { positionState: 'unavailable' })) });
+        } catch (_) {
+            if (!closed && search === owner && !owner.destroyed) update({ results: state.results.map((r) =>
+                r.id === owner.id + ':' + row.key ? Object.assign({}, r, { positionState: 'unavailable' }) : r) });
+        } finally {
+            owner.locating = false;
+            if (!closed && search === owner) locateResults(owner);
+        }
+    }
     function receiveResults(owner, event) {
-        if (closed || search !== owner || !event || !event.viewUpdateInfo) return;
+        if (closed || search !== owner || owner.destroyed || !event || !event.viewUpdateInfo) return;
         const view = event.viewUpdateInfo.viewId;
         if (!view || view.listname !== String(owner.id) || (owner.view && view.view !== owner.view.view)) return;
         const list = event.resultList;
         if (owner.poi && (!list || list.sessionID !== owner.id)) return;
         const entries = list && (owner.poi ? list.poiResultElement : list.resultListElements);
         if (!Array.isArray(entries)) return;
-        rows = entries.slice(0, 32).filter((r) => Number.isInteger(r.key));
-        update({ status: 'results', results: rows.map((r) => ({ id: String(owner.id) + ':' + r.key, name: resultLabel(r),
+        const previous = rows;
+        rows = entries.slice(0, 32).filter((r) => r && Number.isInteger(r.key));
+        Object.keys(owner.details).forEach((key) => {
+            if (!rows.some((r) => String(r.key) === key)) { delete owner.details[key]; delete owner.attempted[key]; }
+        });
+        const values = { results: rows.map((r) => {
+            const oldRow = previous.find((p) => p.key === r.key);
+            const same = oldRow && JSON.stringify(oldRow.poiID) === JSON.stringify(r.poiID);
+            const old = same && state.results.find((p) => p.id === owner.id + ':' + r.key);
+            if (!same) { delete owner.details[r.key]; delete owner.attempted[r.key]; }
+            return Object.assign({}, old || {}, { id: String(owner.id) + ':' + r.key, name: resultLabel(r),
             metres: metres(r.distanceToEntry || r.distanceToPOI),
-            type: owner.poi ? 'charger' : [2, 'POI'].includes(r.type) ? 'poi' : 'address' })) });
+            type: owner.poi ? 'charger' : [2, 'POI'].includes(r.type) ? 'poi' : 'address', positionState: old && old.positionState || 'pending' });
+        }) };
+        // Search notifications can keep arriving while detail or routing owns the UI.
+        if (state.request === owner.request) {
+            values.status = rows.length || !owner.waiting ? 'results' : 'loading';
+            values.searchPhase = owner.waiting ? 'results' : 'finished';
+            values.error = '';
+        }
+        update(values);
+        locateResults(owner);
+    }
+    function receiveSearchStatus(owner, value) {
+        if (closed || search !== owner || owner.destroyed || !value || value.sessionID !== owner.id) return;
+        // Unlike FTS, POISearch publishes a SearchState struct, not the enum itself.
+        const status = owner.poi ? value.searchState && value.searchState.searchStatus : value.searchState;
+        if (![3, 'FINISHED'].includes(status)) return;
+        if (owner.waiting) owner.finishedAt = now();
+        owner.waiting = false;
+        if (state.request === owner.request) update({ status: owner.listSize > 0 && !rows.length ? 'loading' : 'results', searchPhase: 'finished' });
+    }
+    function receiveViewInfo(owner, value) {
+        if (closed || search !== owner || owner.destroyed || !value) return;
+        const info = value.view_update, list = value.list_update, view = info && info.view;
+        if (!view || view.listname !== String(owner.id) || owner.view && view.view !== owner.view.view ||
+            !list || !list.list || list.list.listname !== String(owner.id)) return;
+        if ([5, 'DESTROYED'].includes(value.operation)) {
+            owner.waiting = false; owner.destroyed = true; rows = [];
+            if (state.request === owner.request) update({ status: 'error', error: 'BMW_LIST_DESTROYED', results: [] });
+        } else if (Number.isInteger(list.size) && list.size >= 0 && list.size <= 0xffffffff) {
+            owner.listSize = list.size;
+            if (state.request === owner.request && !owner.waiting && !rows.length && list.size > 0) update({ status: 'loading' });
+        }
     }
     async function startSearch(command, token) {
         await clearSearch(); alive(token);
         const isPoi = command.action === 'chargers';
+        update({ searchPhase: 'session' });
         const p = await proxy(isPoi ? 'poi' : 'search'); alive(token);
         const result = await call(p, isPoi ? 'createPOISearchSession' : 'createSession');
         if (!Number.isInteger(result.sessionID)) throw new Error('BMW_SESSION');
-        const owner = { p, id: result.sessionID, poi: isPoi, view: null, at: now(), waiting: true };
+        const owner = { p, id: result.sessionID, poi: isPoi, request: command.request, view: null, at: now(), waiting: true,
+            details: Object.create(null), attempted: Object.create(null), locating: false, lookups: 0 };
         search = owner; alive(token);
-        for (const name of ['resultList', 'searchStatus']) {
+        for (const name of ['resultList', 'searchStatus', 'changedViewInfo']) {
             const event = p[name];
             const id = await event.subscribe((value) => {
                 if (name === 'resultList') receiveResults(owner, value);
-                else if (search === owner && value.sessionID === owner.id && [3, 'FINISHED'].includes(value.searchState)) { owner.waiting = false; update({ status: 'results' }); }
+                else if (name === 'searchStatus') receiveSearchStatus(owner, value);
+                else receiveViewInfo(owner, value);
             });
             subscriptions.push([event, id]); alive(token);
         }
+        update({ searchPhase: 'location' });
         await call(p, 'setCCPLocation', { sessionID: owner.id }); alive(token);
         if (isPoi) {
+            update({ searchPhase: 'categories' });
             const c = await proxy('categories');
             const list = await c.specialCategoryList.getValue(); alive(token);
             const group = Array.isArray(list) && list.find((g) => [3, 'CHARGING_STATION'].includes(g.type));
@@ -152,31 +233,35 @@ function createActions(builders, options) {
             if (!categoryIds.length) throw new Error('BMW_CHARGER_CATEGORY');
             await call(p, 'setCategories', { sessionID: owner.id, categoryList: categoryIds, excludedCategoryList: [] }); alive(token);
             await call(p, 'setSearchConfiguration', { sessionID: owner.id, searchRadius: 50000, maxNumberOfResult: 32 }); alive(token);
+            update({ searchPhase: 'search' });
             await call(p, 'startPOISearch', { sessionID: owner.id, inputString: '' });
         } else {
+            update({ searchPhase: 'search' });
             await call(p, 'startSearch', { sessionID: owner.id, inputString: command.query, nvc: false,
                 filterAddressLevel: [], filterDataType: ['ADDRESS', 'POI'], filterDataSource: [] });
         }
         alive(token);
         // Hmi8 CNaviSearchSession's list-name getter formats its UInt32 session as "%u".
+        update({ searchPhase: 'view' });
         const view = await call(p, 'createViewByIndex', { list: { listname: String(owner.id) }, viewsize: 32, position: 0, policy: 'START', offset: 0 });
         owner.view = view.view; alive(token);
         if (!owner.view || owner.view.listname !== String(owner.id) || !Number.isInteger(owner.view.view)) throw new Error('BMW_LIST_VIEW');
+        update({ searchPhase: owner.waiting ? 'results' : 'finished' });
     }
     async function choose(command, token) {
+        selected = null; update({ selected: null });
         const owner = search;
         const row = owner && rows.find((r) => String(owner.id) + ':' + r.key === command.id);
         if (!row) throw new Error('RESULT_EXPIRED');
-        let result;
-        if (owner.poi) result = await call(owner.p, 'getPOIDetail', { poiID: row.poiID });
-        else result = await call(owner.p, 'getValidatedLocation', { sessionID: owner.id, key: row.key });
+        const result = await detail(owner, row);
         alive(token);
         const address = result.address || result.validatedLocation;
         const point = location(address);
         if (!point) throw new Error('BMW_DESTINATION');
         selected = { name: resultLabel(row), address, latitude: point.latitude, longitude: point.longitude };
         const info = result.detail && result.detail.details;
-        update({ status: 'detail', selected: { name: selected.name, latitude: point.latitude, longitude: point.longitude,
+        update({ status: 'detail', selected: { id: command.id, type: owner.poi ? 'charger' : [2, 'POI'].includes(row.type) ? 'poi' : 'address',
+            metres: metres(row.distanceToEntry || row.distanceToPOI), name: selected.name, latitude: point.latitude, longitude: point.longitude,
             address: Buffer.byteLength(JSON.stringify(address)) <= 24000 ? clone(address) : null,
             phone: clean(result.detail && result.detail.telefonNumber),
             details: Array.isArray(info) ? info.filter((r) => r.isDisplayable === true && r.value && typeof r.value.stringValue === 'string')
@@ -209,7 +294,9 @@ function createActions(builders, options) {
                 plan = { route: result.routeIdentifier, options: prefs };
                 let displayStops = stops;
                 try { const trip = await call(p, 'getTripDefinition', { sessionID: created.sessionID }); alive(token); const found = tripStops(trip.tripDefinition); if (found.length) displayStops = found; } catch (_) { alive(token); }
-                update({ status: 'preview', plan: { charging: prefs.eRoutePreference.eRoutesOn, arrival: prefs.eRoutePreference.minSoCAtFinalDestination },
+                owner.displayStops = displayStops;
+                update({ status: 'preview', plan: { key: result.routeIdentifier.sessionID + ':' + result.routeIdentifier.routeHandle,
+                    charging: prefs.eRoutePreference.eRoutesOn, arrival: prefs.eRoutePreference.minSoCAtFinalDestination },
                     stops: displayStops.map((s) => ({ name: s.name, latitude: s.latitude, longitude: s.longitude, charging: s.charging === true })) });
                 try {
                     owner.infoSubscription = await p.routeInfoUpdate.subscribe((event) => {
@@ -232,17 +319,28 @@ function createActions(builders, options) {
     return {
         snapshot() {
             if (search && search.waiting && !busy && now() - search.at > 30000 && state.status === 'loading') update({ status: 'error', error: 'BMW_SEARCH_TIMEOUT' });
+            if (search && state.request === search.request && !busy && !search.waiting && !search.destroyed &&
+                search.listSize > 0 && !rows.length && now() - search.finishedAt > 5000) update({ status: 'error', error: 'BMW_LIST_NOT_RECEIVED' });
             return Object.assign({}, state, { busy });
         },
         async command(command) {
             if (closed || busy || !command || !Number.isInteger(command.request) || command.request <= state.request) return;
             const action = command.action;
-            if (!['search', 'chargers', 'select', 'restore', 'route', 'add-stop', 'recalculate', 'start', 'stop', 'cancel', 'itinerary'].includes(action)) return;
+            if (!['search', 'chargers', 'select', 'restore', 'route', 'add-stop', 'recalculate', 'start', 'stop', 'cancel', 'itinerary', 'guidance-setting'].includes(action)) return;
             if (action === 'search' && (typeof command.query !== 'string' || !command.query.trim() || command.query.length > 140)) return;
+            if (action === 'guidance-setting' && (!Object.prototype.hasOwnProperty.call(contracts.guidance.attributes, command.setting) || typeof command.enabled !== 'boolean')) return;
             const token = ++generation; busy = true;
-            update({ request: command.request, error: '', status: ['route', 'add-stop', 'recalculate'].includes(action) ? 'calculating' : 'loading' });
+            update({ request: command.request, error: '', status: action === 'guidance-setting' ? state.status : ['route', 'add-stop', 'recalculate'].includes(action) ? 'calculating' : 'loading' });
             try {
-                if (action === 'search' || action === 'chargers') {
+                if (action === 'guidance-setting') {
+                    const p = await proxy('guidance'); alive(token);
+                    const attribute = p[command.setting];
+                    if (!attribute || typeof attribute.setValue !== 'function') throw new Error('BMW_GUIDANCE_SETTING_UNAVAILABLE');
+                    // Explicit individual preference change. No startup writes, batch enabling or retry.
+                    await attribute.setValue(command.enabled); alive(token);
+                    if (await attribute.getValue() !== command.enabled) throw new Error('BMW_GUIDANCE_SETTING_REJECTED');
+                    alive(token);
+                } else if (action === 'search' || action === 'chargers') {
                     selected = null;
                     update({ query: action === 'chargers' ? 'Cargadores cercanos' : clean(command.query), results: [], selected: null });
                     await startSearch(command, token);
@@ -254,12 +352,14 @@ function createActions(builders, options) {
                     update({ status: 'detail', selected: { name: selected.name, address: selected.address, latitude: point.latitude, longitude: point.longitude, phone: '', details: [] } });
                 }
                 else if (action === 'itinerary') {
+                    let displayStops = routeSession && routeSession.displayStops || stops;
                     if (!stops.length) {
                         const p = await proxy('trips'); const trips = await p.currentTrips.getValue(); alive(token);
                         const activeTrip = Array.isArray(trips) && trips.find((t) => t.active === true);
-                        stops = activeTrip ? tripStops(activeTrip.tripDefinition).filter((s) => !s.charging).slice(0, 12) : [];
+                        displayStops = activeTrip ? tripStops(activeTrip.tripDefinition) : [];
+                        stops = displayStops.filter((s) => !s.charging).slice(0, 12);
                     }
-                    update({ status: plan ? 'preview' : 'results', stops: stops.map((s) => ({ name: s.name, latitude: s.latitude, longitude: s.longitude, charging: false })) });
+                    update({ status: plan ? 'preview' : 'results', stops: displayStops.map((s) => ({ name: s.name, latitude: s.latitude, longitude: s.longitude, charging: s.charging === true })) });
                 }
                 else if (['route', 'add-stop', 'recalculate'].includes(action)) await calculate(command, token);
                 else if (action === 'start') {
@@ -280,6 +380,7 @@ function createActions(builders, options) {
             } finally {
                 busy = false;
                 if (closed) await finishClose();
+                else locateResults(search);
             }
         },
         stop() {

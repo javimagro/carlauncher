@@ -1,6 +1,7 @@
 'use strict';
 
 const { StringDecoder } = require('string_decoder');
+const displays = require('./navigation-displays');
 const maxBytes = 128 * 1024;
 const validPoint = (p) => p && Number.isFinite(p.latitude) && Math.abs(p.latitude) <= 90 &&
     Number.isFinite(p.longitude) && Math.abs(p.longitude) <= 180;
@@ -53,22 +54,28 @@ function validControls(c) {
         !['idle', 'loading', 'results', 'detail', 'calculating', 'preview', 'guiding', 'error'].includes(c.status) ||
         !text(c.error, 140) || !text(c.query, 140) || !Array.isArray(c.results) || c.results.length > 32 ||
         !Array.isArray(c.stops) || c.stops.length > 24) return false;
+    if (c.searchPhase !== undefined && !['idle', 'session', 'location', 'categories', 'search', 'view', 'results', 'finished'].includes(c.searchPhase)) return false;
     if (c.results.some((r) => !r || !text(r.id, 32) || !/^\d+:\d+$/.test(r.id) || !text(r.name, 140) ||
-        !['charger', 'poi', 'address'].includes(r.type) || r.metres !== null && (!Number.isFinite(r.metres) || r.metres < 0))) return false;
+        !['charger', 'poi', 'address'].includes(r.type) || r.metres !== null && (!Number.isFinite(r.metres) || r.metres < 0) ||
+        (r.latitude !== undefined || r.longitude !== undefined) && !validPoint(r) ||
+        r.positionState !== undefined && !['pending', 'ready', 'unavailable'].includes(r.positionState))) return false;
     if (c.stops.some((s) => !s || !text(s.name, 140) || !validPoint(s))) return false;
     if (c.selected !== null && (!validPoint(c.selected) || !text(c.selected.name, 140) || !text(c.selected.phone, 140))) return false;
+    if (c.selected && (c.selected.type !== undefined && !['charger', 'poi', 'address'].includes(c.selected.type) ||
+        c.selected.id !== undefined && (!text(c.selected.id, 32) || !/^\d+:\d+$/.test(c.selected.id)))) return false;
     if (c.selected && c.selected.address != null) {
         const a = c.selected.address, p = a.optionPOILocation || a.optionLocation || a.contactLocation;
         if (!validPoint(p) || p.coordinatesValid !== true || Buffer.byteLength(JSON.stringify(a)) > 24000) return false;
     }
     if (c.selected && c.selected.details !== undefined && (!Array.isArray(c.selected.details) || c.selected.details.length > 3 || c.selected.details.some((s) => !text(s, 140)))) return false;
     return c.plan === null || c.plan && typeof c.plan.charging === 'boolean' && Number.isInteger(c.plan.arrival) && c.plan.arrival >= 0 && c.plan.arrival <= 100 &&
+        (c.plan.key === undefined || text(c.plan.key, 32) && /^\d+:\d+$/.test(c.plan.key)) &&
         (c.plan.metres === undefined || Number.isFinite(c.plan.metres) && c.plan.metres >= 0 && c.plan.metres < 50000000) &&
         (c.plan.seconds === undefined || Number.isFinite(c.plan.seconds) && c.plan.seconds >= 0 && c.plan.seconds < 604800);
 }
 
 function validate(frame) {
-    if (!frame || frame.version !== 1 || !Number.isFinite(frame.at) || !validControls(frame.controls) ||
+    if (!frame || frame.version !== 1 || !Number.isFinite(frame.at) || !validControls(frame.controls) || !displays.validate(frame.presentation) ||
         !['active', 'inactive', 'calculating', 'unavailable'].includes(frame.state) ||
         !['day', 'night', 'auto'].includes(frame.theme) ||
         !Array.isArray(frame.destinations) || frame.destinations.length > 24 ||

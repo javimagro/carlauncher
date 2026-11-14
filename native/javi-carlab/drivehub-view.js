@@ -4,6 +4,7 @@ const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehu
 const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
 const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require('./vehicle-readings.js');
 const { drawNavigation, drawToggle } = require('./navigation-view.js');
+const { drawPreconditioning } = require('./preconditioning-ui');
 const { drawRadio } = require('./radio-view.js');
 const background = '#080b0e';
 const primary = '#f2f7fb';
@@ -588,7 +589,8 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     if (card.id === 'trip') trip(cv, x, y, w, h, vehicle, data.altitudeHistory ? data.altitudeHistory.values : []);
     if (card.id === 'radio') drawRadio(cv, x, y, w, h, data.radio, now);
     if (card.id === 'weather') {
-        if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus, 'Cargando el tiempo…',
+        if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus,
+            data.weatherStatus === 'location' ? 'Esperando posición del coche…' : 'Cargando el tiempo…',
             'El tiempo no está disponible', data.weatherDetail);
         else if (state.weatherPage === 'rain') weatherRain(cv, x, y, w, h, data.weather, state.weatherDay, art);
         else weatherSummary(cv, x, y, w, h, data.weather, art);
@@ -597,6 +599,7 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     if (card.id === 'tdtworld' && data.tdt) tdtworld(cv, x, y, w, h, data.tdt, selected, clipLeft, clipRight, now);
     const freshness = data[card.id + 'Status'];
     if (freshness === 'offline' && data[card.id]) cv.text('Sin conexión', x + w - 9, y + h - 6, 9, primary, right);
+    if (card.id === 'weather' && freshness === 'stale' && data.weather) cv.text('Actualizando el tiempo…', x + w - 9, y + h - 6, 9, primary, right);
     cv.noclip();
 }
 
@@ -631,6 +634,9 @@ function drawHome(cv, state, scroll, data, art, now) {
     if (data.altitudeHistory) sampleAltitude(data.altitudeHistory, vehicle.altitude, now);
     if (data.diagnostics) { diagnostics(cv, records, vehicle, now, data); drawToggle(cv); }
     else drawNavigation(cv, data.navigation, vehicle, data.mapZoom, now, data.navigationUi);
+    const theme = data.navigationUi && data.navigationUi.state.theme;
+    const night = data.diagnostics || (theme === 'auto' || !theme ? !data.navigation || data.navigation.theme !== 'day' : theme !== 'day');
+    drawPreconditioning(cv, data.preconditioning, now, night);
     if (data.home) {
         const { x, y, w, h } = home;
         const color = data.home === 'ready' ? primary : secondary;

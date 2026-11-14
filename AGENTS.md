@@ -3,7 +3,7 @@
 ## Antes de modificar código
 
 - Lee [ARQUITECTURA.md](ARQUITECTURA.md), las entradas relacionadas de [BITACORA.md](BITACORA.md) y, para rendimiento, [AUDITORIA-RUNTIME.md](AUDITORIA-RUNTIME.md).
-- Para mapa, destinos o guiado, lee [NAVEGACION-MGU21.md](NAVEGACION-MGU21.md). Conserva la separación entre cartografía alternativa y cálculo BMW; no llames «mapa BMW» a teselas de otra fuente.
+- Para mapa, destinos o guiado, lee [NAVEGACION-MGU21.md](NAVEGACION-MGU21.md). El modo Navegación BMW usa exclusivamente cartografía local de la MGU; no añadas proveedores externos ni recuperes BMWLAUNCHER_MAP_TILES. Sin salida validada, muestra indisponibilidad explícita.
 - El código local y sus manifiestos son la fuente de verdad. Comprueba `git status` y conserva los cambios previos. No uses limpiezas destructivas ni incluyas adjuntos del usuario en commits.
 - Trabaja desde este proyecto Windows; usa PowerShell o un intérprete explícito. Las rutas de las referencias están en `README.md`. BMWLauncher Android y DriveHub son referencias de solo lectura.
 - Reproduce el síntoma y sigue el dato o evento hasta sus consumidores antes de corregirlo. Separa causa demostrada, hipótesis y comprobación pendiente. Una prueba del simulador no demuestra que funcione en el coche.

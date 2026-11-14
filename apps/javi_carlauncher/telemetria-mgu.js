@@ -2,6 +2,7 @@
 
 const net = require('net');
 const { createPowerProbe } = require('./potencia-hv.js');
+const { createPreconditioning, consumeCommands } = require('./preconditioning-bmw.js');
 
 // Candidatos del catálogo MGU21. Esta sonda conserva las lecturas sin escalar.
 const signals = [
@@ -193,6 +194,7 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout) {
 function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
     const power = createPowerProbe(builders);
     let probe;
+    let preconditioning;
     let socket;
     let timer;
 
@@ -201,13 +203,18 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
         if (!socket) {
             const peer = net.createConnection(endpoint);
             socket = peer;
+            const commands = consumeCommands((command) => {
+                if (peer === socket && preconditioning) preconditioning.command(command).catch(() => {});
+            });
+            peer.on('data', (chunk) => { if (peer !== socket || !commands(chunk)) peer.destroy(); });
             peer.on('error', () => {});
             peer.on('connect', () => { if (socket === peer) send(); });
             peer.on('close', () => { if (socket === peer) socket = undefined; });
             return;
         }
         if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
-            socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot()) }) + '\n');
+            socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot()),
+                preconditioning: preconditioning.snapshot() }) + '\n');
         }
     }
 
@@ -215,6 +222,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
         show(on) {
             if (on && !probe) {
                 probe = start(builders);
+                preconditioning = createPreconditioning(builders);
                 power.show(true);
                 timer = setInterval(send, 1000);
                 send();
@@ -222,6 +230,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
                 clearInterval(timer);
                 power.show(false);
                 probe.stop();
+                preconditioning.stop(); preconditioning = undefined;
                 probe = undefined;
                 if (socket) { socket.destroy(); socket = undefined; }
             }

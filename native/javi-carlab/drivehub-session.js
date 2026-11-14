@@ -1,7 +1,7 @@
 'use strict';
 
 const { Recorder } = require('./vendor/kit_record.js');
-const { createDriveHub, width, height, viewport, cards, home, contains } = require('./drivehub-state.js');
+const { createDriveHub, width, height, viewport, cards, home, preconditioningButton, contains } = require('./drivehub-state.js');
 const { createData, loadArtwork } = require('./drivehub-data.js');
 const { drawHome } = require('./drivehub-view.js');
 const { createTdt } = require('./tdtworld.js');
@@ -13,6 +13,9 @@ const { createNavigation } = require('./navigation-model.js');
 const { actionAt } = require('./navigation-view.js');
 const { createNavigationUI } = require('./navigation-ui');
 const { vehicleReadings } = require('./vehicle-readings');
+const { createPreconditioningUI } = require('./preconditioning-ui');
+const { createAssistant } = require('./assistant');
+const { createCommands } = require('./assistant-drivehub');
 
 module.exports = function createSession(gpu, options) {
     const photos = createPhotoLoader();
@@ -30,6 +33,7 @@ module.exports = function createSession(gpu, options) {
     let mapGesture;
     const navigation = createNavigation();
     const navigationUi = createNavigationUI(options, () => { dirty = true; });
+    const preconditioning = createPreconditioningUI(options.preconditioningCommand, () => { dirty = true; });
     let lastFrame = 0;
     let lastArticle;
     let cockpit;
@@ -50,8 +54,12 @@ module.exports = function createSession(gpu, options) {
     data.radio = radio;
     data.diagnostics = options.diagnostics;
     data.altitudeHistory = { values: [] };
-    data.mapZoom = 1;
     data.navigationUi = navigationUi;
+    data.preconditioning = preconditioning;
+    const currentVehicle = () => vehicleReadings(data.telemetry && new Map(data.telemetry.map((r) => [r.signal, r])), Date.now());
+    const assistant = createAssistant(options, createCommands({ panel, radio, tdt, navigation: navigationUi, data,
+        vehicle: currentVehicle, weather: () => provider.weatherSnapshot(Date.now()) }), () => { dirty = true; });
+    navigationUi.assistant = assistant;
     panel.setArticleCount((data.news || []).length);
 
     function reportScreen() {
@@ -66,7 +74,7 @@ module.exports = function createSession(gpu, options) {
     }
 
     function frame(now) {
-        if (panel.state.selected === 3) {
+        if (shown && onScreen && panel.state.selected === 3) {
             const item = data.news && data.news[panel.state.article];
             lastArticle = item && item.url;
             provider.showPhoto(item && item.image);
@@ -74,12 +82,15 @@ module.exports = function createSession(gpu, options) {
         cv.reset();
         data.navigation = navigation.snapshot(now);
         const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
-        navigationUi.update(data.navigation, vehicleReadings(records, now), shown && onScreen && !data.diagnostics);
+        const vehicle = vehicleReadings(records, now);
+        provider.refresh(now, vehicle.location, shown && onScreen);
+        assistant.setVisible(shown && onScreen);
+        navigationUi.update(data.navigation, vehicle, shown && onScreen && !data.diagnostics);
         if (options.loadCockpit) data.cockpitStatus = cockpit ? cockpit.status(now) : 'Falta Cluster renderer';
         if (player && player.stats) data.playbackStats = player.stats();
         const readings = drawHome(cv, panel.state, panel.position(), data, art, now);
         gpu.frame(cv);
-        if (cockpit && onScreen) cockpit.update(readings, now);
+        if (cockpit && onScreen) cockpit.update(readings, now, provider.weatherSnapshot(now));
         lastFrame = now;
         dirty = false;
     }
@@ -102,7 +113,7 @@ module.exports = function createSession(gpu, options) {
     gpu.on('touch', (phase, x, y) => {
         if (!shown || !onScreen) return;
         const rawAction = actionAt(x, y, data.diagnostics, data.navigation);
-        const action = rawAction === 'toggle' ? rawAction : null;
+        const action = contains(preconditioningButton, x, y) ? 'precondition' : rawAction === 'toggle' ? rawAction : null;
         if (phase === 'down') mapGesture = action ? { action, valid: true } : null;
         if (mapGesture) {
             if (action !== mapGesture.action) mapGesture.valid = false;
@@ -110,9 +121,7 @@ module.exports = function createSession(gpu, options) {
                 const chosen = phase === 'up' && mapGesture.valid && mapGesture.action;
                 mapGesture = null;
                 if (chosen === 'toggle') data.diagnostics = !data.diagnostics;
-                else if (chosen === 'fit') data.mapZoom = 1;
-                else if (chosen === 'zoom-in') data.mapZoom = Math.min(4, data.mapZoom * 1.5);
-                else if (chosen === 'zoom-out') data.mapZoom = Math.max(0.5, data.mapZoom / 1.5);
+                else if (chosen === 'precondition') preconditioning.toggle(Date.now());
                 if (chosen) dirty = true;
             }
             return;
@@ -132,13 +141,16 @@ module.exports = function createSession(gpu, options) {
         if (data.diagnostics || !navigationUi.controller(event)) panel.controller(event);
         else if (!navigationUi.state.focused) panel.resetInput();
     }
-    gpu.on('ccu', (event) => { if (shown && canGrab) controller(event); });
+    gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
     function hidden() {
+        assistant.setVisible(false);
+        provider.suspend();
         onScreen = false;
         confirmedOnScreen = false;
         homeGesture = undefined;
         mapGesture = null;
         navigationUi.reset();
+        preconditioning.reset();
         reportScreen();
         panel.resetInput();
         tdt.update(Date.now(), false);
@@ -159,7 +171,6 @@ module.exports = function createSession(gpu, options) {
     const timer = setInterval(() => {
         if (!shown || !area) return;
         const now = Date.now();
-        provider.refresh(now);
         const radioCard = cards[1], radioX = viewport.x + radioCard.x - panel.position();
         radio.update(now, onScreen && radioX < viewport.x + viewport.w && radioX + radioCard.w > viewport.x);
         tdt.update(now, onScreen && cards[panel.state.selected].id === 'tdtworld');
@@ -177,8 +188,9 @@ module.exports = function createSession(gpu, options) {
             data.home = status;
             dirty = true;
         },
-        telemetry(records) {
+        telemetry(records, thermal) {
             data.telemetry = records;
+            if (shown && onScreen) preconditioning.receive(thermal, Date.now());
             dirty = true;
         },
         controller(event) { if (shown && onScreen && !canGrab) controller(event); },
@@ -186,11 +198,14 @@ module.exports = function createSession(gpu, options) {
             if (shown === on) return;
             shown = on;
             if (!on) {
+                assistant.setVisible(false);
+                provider.suspend();
                 confirmedOnScreen = false;
                 homeGesture = undefined;
                 mapGesture = null;
                 navigation.receive(null, Date.now());
                 navigationUi.reset();
+                preconditioning.reset();
                 data.telemetry = null;
                 data.altitudeHistory = { values: [] };
                 tdt.update(Date.now(), false);
@@ -208,6 +223,7 @@ module.exports = function createSession(gpu, options) {
             provider.close();
             photos.close();
             navigationUi.close();
+            assistant.close();
             radio.close();
             tdt.close();
             gpu.close();

@@ -4,6 +4,8 @@ Primera inspección local sobre PSdZData 4.58.15 Full. El paquete `SWFL 000056EE
 
 ## Lecturas para validar
 
+El control manual descrito al final es independiente de estas lecturas: añade una escritura explícita solicitada por el usuario, no una activación automática de la sonda.
+
 | Dato | Interfaz y campo | Qué comprobar en el i4 |
 | --- | --- | --- |
 | Batería actual | `Efficiencytainment2.statusChargeOfBatteryHybrid` y `LSCDataSink.displayConditionHybrid` | Las dos estructuras contienen un valor de carga visible de alta tensión y tienen `255` como valor sin inicializar. Comparar ambas con el porcentaje del cuadro, también después de cargar. |
@@ -68,6 +70,20 @@ El estado se lee de `statusPredictiveThermalManagement` mediante getter `2` y no
 La sonda solicita los dos campos de estado y devuelve el indicador que corresponde al icono del HMI. Se validó el decodificador con datos simulados. La consulta UDP directa de estado térmico recibió `EPERM`. Durante la sesión no se accionó el precalentamiento. Para activar la presentación de producción, contrastar el bit en una transición observada en el i4 y mostrar **Precalentamiento HV activo** junto a la temperatura de batería en Trayecto cuando el estado sea válido y reciente.
 
 En la prueba manual posterior, el usuario inició el precalentamiento desde el menú de Carga original de BMW y confirmó que apareció una batería pequeña en el cuadro. La transición del campo SOME/IP queda pendiente de observar.
+
+### Botón de preacondicionamiento HV
+
+Revisión local 0.2.11, 2026-11-14: a la izquierda de Datos aparece una batería con ventilador y la etiqueta HV. Una pulsación completa pide activación manual; una segunda pide desactivación. El color seleccionado se basa en feedback manual o actividad real, no en una variable optimista. Automático habilitado sin actividad no se presenta como una petición manual ya activa. Mientras espera no admite pulsaciones repetidas. Mantiene la temperatura bajo control de BMW; tener preparación habilitada no prueba que el calentador esté consumiendo.
+
+Contrato comprobado con el catálogo privado 036.010.004 y desensamblado de Hmi8 (SHA-256 `7aa4f8d007ce505fada5572a9643f542e8f8056e7d0ac3d25acc524607d30e20`):
+
+- `operationMode` es un wrapper `{operationModeVWM}`, setter 1, servicio 46395/1, instancia 1. Orden 0 desactivado, 1 automático, 2 manual, 3 manual+automático.
+- **No reutilizar el enum de órdenes para interpretar el feedback:** `statusFeedbackVWM` usa 0 desactivado, 1 manual, 2 automático, 3 ambos. `getVwmManualState` en `0x7571630` reconoce 1/3 y `getVwmAutoState` en `0x7571640` reconoce 2/3. `calcOperationCommandVWM` en `0x7574630` calcula `(manual ? 2 : 0) + (automático ? 1 : 0)`; `setVwmManualState` en `0x75747a0` conserva el modo automático.
+- ON envía 2, o 3 si el feedback anterior era automático/ambos. OFF envía 0, por lo que también solicita detener la preparación iniciada por una ruta. No es el simple apagado del bit manual dejando automático habilitado. Una decisión posterior de BMW se reflejará en las nuevas muestras.
+- La confirmación de ON requiere feedback manual/ambos; OFF requiere feedback desactivado y actividad falsa. No se considera confirmación que termine la llamada al setter. Restricciones de autonomía, carga o máxima eficiencia se comunican al usuario; valores desconocidos impiden activar. OFF sigue disponible con una restricción conocida y estado válido.
+- La lectura se consulta cada dos segundos además de la suscripción, caduca a los quince; la UI descarta una conexión sin actualizaciones durante cinco segundos. Confirmación limitada a doce segundos; no se reintenta una escritura automáticamente. Si el setter queda pendiente, se indica indisponibilidad y se impide solapar órdenes. Cerrar la app libera proxy, suscripción y temporizador, sin apagar el preacondicionamiento.
+
+Verificación local: `node tools/Verificar-Preacondicionamiento-MGU.js RUTA_CATALOGO_PRIVADO`, pruebas de `emulator/split/preconditioning.test.js`, Node 8.16.2 y capturas con `node tools/Previsualizar-Preacondicionamiento.js`. El setter del SDK y la respuesta efectiva del vehículo todavía requieren una prueba en la MGU; no se ha conectado ni escrito en el coche durante este cambio. Instalada la futura versión, comprobar ON/OFF desde estado manual y desde ruta automática, rechazo por restricción y coincidencia con el menú Carga de BMW. El icono por sí solo no valida potencia térmica.
 
 ### Estado térmico para carga rápida
 

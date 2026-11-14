@@ -1,0 +1,66 @@
+{
+  "source": "BMWLauncher Android (Carlinkit), user-owned reference",
+  "conversion": "Windows WPF 72 px alpha, monochrome Android tint",
+  "files": {
+    "search": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_search.xml",
+      "sha256": "9192bceda85cc0e074825a41da0c63c0e24e8ca3d80f7568f3fba9f9205e4330"
+    },
+    "info": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_info.xml",
+      "sha256": "56c785151a3ed140a88be43541d6a115c4b87ab47a4a249c0c3643f3e2c07f1a"
+    },
+    "check": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_check.xml",
+      "sha256": "42cbfe2ce014c2b4806e5f595971f246dee6d834eed1c83baaf4a2ee106e47d7"
+    },
+    "close": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_x.xml",
+      "sha256": "39e8e4cbf64b6e24ee73820e419e1fe0fa0afa5272b783c8d0ddc455ab6e6e2a"
+    },
+    "zoom-in": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_plus.xml",
+      "sha256": "eaa8795b104478a66e380aa5007ce1469c35c6a5b1c66d231784a586dc2a2613"
+    },
+    "alert": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_triangle_alert.xml",
+      "sha256": "be02a2ad567d30bac1e2b7a31caf8fe3c997298c91f0150eab6a6074707b9601"
+    },
+    "next": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_chevron_right.xml",
+      "sha256": "31664fc6e2a83611dc846bd170483aca5933cb4faea9c6662a027e003daf0487"
+    },
+    "route-panel": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_navigation.xml",
+      "sha256": "ce88546f1d548dee16f43fe89d731c309ff43ae1eee91697c1f5c2e69d759adc"
+    },
+    "chargers": {
+      "file": "app/src/main/res/drawable/ic_navigation_charger.xml",
+      "sha256": "429ca8bf0c678a59d5a187acbf3382edfa7f703a93e128dbe16e480a1e530e2f"
+    },
+    "clock": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_clock_3.xml",
+      "sha256": "359271c7c2f0533cf89b13a77879e8a152a042fdda093bdbe4795f34ea2c9416"
+    },
+    "back": {
+      "file": "app/src/main/res/drawable/ic_navigation_reference_arrow_left.xml",
+      "sha256": "2b29a94449ff59ace33f722a6878deca3b03cc96b3a6604863e99e5228753d1c"
+    },
+    "assistant": {
+      "file": "app/src/main/res/drawable/ic_navigation_assistant.xml",
+      "sha256": "18c96cdea0984391c7e16e9e274bccd4bbef486cdba6ebab3d8fb6a58ede3cbd"
+    },
+    "settings": {
+      "file": "app/src/main/res/drawable/ic_navigation_settings.xml",
+      "sha256": "6b4af83e014f44993894c1380a94355a095fef77c87d4257e94101b2768cb26d"
+    },
+    "audio": {
+      "file": "app/src/main/res/drawable/ic_navigation_volume_on.xml",
+      "sha256": "842a180ebb32d0bb0c83555d72d15b91cde904e5c65f0628c5a2562a4c32ab14"
+    },
+    "recent": {
+      "file": "app/src/main/res/drawable/ic_navigation_bookmark.xml",
+      "sha256": "2a02f294d61cebbd3a8ba3147d7efcd90ead812c5a47124853a6c1550cf63011"
+    }
+  }
+}

@@ -10,3 +10,6 @@
 *.pem
 *.key
 .env
+/assistant-private/
+**/assistant/settings.enc
+**/assistant/device.key

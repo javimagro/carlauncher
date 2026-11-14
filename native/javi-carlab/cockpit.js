@@ -4,10 +4,8 @@ const { Recorder, play } = require('./vendor/kit_record.js');
 const { Canvas } = require('./vendor/kit_canvas.js');
 const { loadArtwork, parseWeather, weatherUrl } = require('./drivehub-data.js');
 const { drawCockpit, width, height } = require('./cockpit-view.js');
+const { createWeather } = require('./weather-location.js');
 
-const refreshMs = 10 * 60 * 1000;
-const retryMs = 60 * 1000;
-const movementKm = 5;
 const bands = [[0, 192], [192, 86], [278, 122]];
 const layerStatus = {
     shown: 'Widget visible',
@@ -18,22 +16,6 @@ const layerStatus = {
     error: 'Cluster renderer rechazó la capa'
 };
 
-function distance(a, b) {
-    const latitude = (a.latitude + b.latitude) * Math.PI / 360;
-    return 111 * Math.hypot(a.latitude - b.latitude, (a.longitude - b.longitude) * Math.cos(latitude));
-}
-
-function weatherForCockpit(data) {
-    const weather = parseWeather(data, '');
-    const current = data.current;
-    let icon = weather.kind;
-    if (icon === 'sunny' || icon === 'night' || current.weather_code === 1 || current.weather_code === 2) {
-        const day = current.is_day === 0 ? 'night' : 'day';
-        icon = (current.weather_code === 1 || current.weather_code === 2 ? 'partly_cloudy_' : 'clear_') + day;
-    }
-    return { icon, temp: weather.temp, probability: weather.probability };
-}
-
 function createCockpit(Client, get, log = console) {
     let renderer;
     let layer;
@@ -41,10 +23,7 @@ function createCockpit(Client, get, log = console) {
     let supported = false;
     let status;
     let connectingSince;
-    let weather;
-    let requested;
-    let retryAt = 0;
-    let pending = false;
+    let ownWeather, weatherTime;
     const art = loadArtwork('cockpit-weather.rgba.gz');
     const cv = new Recorder(width, height);
     const surface = new Canvas(width, height);
@@ -90,37 +69,24 @@ function createCockpit(Client, get, log = console) {
         client.connect();
     }
 
-    function requestWeather(location, now) {
-        if (!location || pending || now < retryAt ||
-            (requested && now - requested.at < refreshMs && distance(requested.location, location) < movementKm)) return;
-        // Forecast grid accuracy does not require the original GPS precision.
-        const point = { latitude: Number(location.latitude.toFixed(2)), longitude: Number(location.longitude.toFixed(2)) };
-        const request = { location, at: now };
-        requested = request;
-        pending = true;
-        Promise.resolve().then(() => get(weatherUrl(point), 512 * 1024, 8000))
-            .then((bytes) => {
-                weather = { value: weatherForCockpit(JSON.parse(bytes.toString('utf8'))), request };
-            })
-            .catch(() => {
-                requested = undefined;
-                retryAt = Date.now() + retryMs;
-            })
-            .then(() => { pending = false; });
-    }
-
     return {
         status(now) {
             if (status) return status;
             return now - connectingSince >= 5000 ? 'Cluster renderer no responde' : 'Conectando al cuadro…';
         },
-        update(readings, now) {
+        update(readings, now, sharedWeather) {
             if (!renderer) open(now);
             if (!renderer.ready || !supported || !layer) return;
-            requestWeather(readings.location, now);
-            const currentWeather = readings.location && weather &&
-                now - weather.request.at < 2 * refreshMs &&
-                distance(weather.request.location, readings.location) < movementKm ? weather.value : undefined;
+            // The rendered session owns one GPS forecast for both displays. Standalone
+            // consumers can still own a provider, with the same movement/expiry policy.
+            if (arguments.length < 3) {
+                weatherTime = now;
+                if (!ownWeather) ownWeather = createWeather({ get, url: weatherUrl, parse: parseWeather, now: () => weatherTime }, () => {});
+                ownWeather.update(readings.location, now, true);
+                sharedWeather = ownWeather.snapshot(now);
+            }
+            const currentWeather = readings.location && sharedWeather ? { icon: sharedWeather.cockpitIcon,
+                temp: sharedWeather.temp, probability: sharedWeather.probability } : undefined;
             const keys = [JSON.stringify(currentWeather),
                 JSON.stringify([readings.batteryTemperature, readings.preconditioning === true]),
                 JSON.stringify([readings.power, readings.trip.average, readings.trip.averageUnit])];
@@ -138,6 +104,7 @@ function createCockpit(Client, get, log = console) {
             frameKeys = keys;
         },
         close() {
+            if (ownWeather) { ownWeather.close(); ownWeather = undefined; }
             if (!renderer) return;
             renderer.close();
             renderer = undefined;

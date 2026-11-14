@@ -70,6 +70,7 @@ const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
 const session = createSession(gpu, {
     diagnostics: false,
     useOap: true,
+    preconditioningCommand(command) { return telemetry.send(JSON.stringify(command) + '\n'); },
     radioCommand(command) { return radio.send(JSON.stringify(command) + '\n'); },
     radioFile: path.join(dataDirectory, 'radio.json'),
     navigationCommand(command) { return navigation.send(JSON.stringify(command) + '\n'); },
@@ -83,11 +84,18 @@ const session = createSession(gpu, {
         homeRequest = true;
         session.setHome('pending');
     },
-    configFile: path.join(dataDirectory, 'drivehub.json'),
     cacheFile: path.join(dataDirectory, 'drivehub-cache.json'),
     navigationFile: path.join(dataDirectory, 'navigation.json'),
-    mapDirectory: path.join(dataDirectory, 'map-cache'),
-    mapTemplate: process.env.BMWLAUNCHER_MAP_TILES,
+    assistantDirectory: path.join(dataDirectory, 'assistant'),
+    assistantNetwork: async () => ({ uid: await onlineApp(), uplink: true }),
+    assistantAudio: {
+        ffmpeg: path.join(__dirname, 'bin/ffmpeg'),
+        playback: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true },
+        // Never select a telephone/emergency capture channel by guesswork. Set only after an ENET validation.
+        capture: process.env.JAVI_ASSISTANT_CAPTURE_DEVICE && fs.existsSync('/usr/bin/arecord') ? {
+            command: '/usr/bin/arecord', args: ['-q', '-D', process.env.JAVI_ASSISTANT_CAPTURE_DEVICE, '-t', 'raw', '-f', 'S16_LE', '-r', '24000', '-c', '1']
+        } : null
+    },
     tdtDirectory: dataDirectory,
     tdtPlayback: {
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
@@ -161,9 +169,9 @@ async function startTdtProxy() {
         const timer = setTimeout(() => { close(); reject(networkError('UPLINK_WORKER')); }, 4000);
         worker.on('error', reject);
         worker.once('exit', () => { clearTimeout(timer); reject(networkError('UPLINK_WORKER')); });
-        worker.once('message', (url) => {
+        worker.once('message', (network) => {
             clearTimeout(timer);
-            resolve({ uid, url, close });
+            resolve({ uid, url: network.url, dashUrl: network.dashUrl, close });
         });
     });
 }
