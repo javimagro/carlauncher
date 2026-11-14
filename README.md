@@ -1,5 +1,11 @@
 # BMWLauncher para iDrive 8
 
+La **0.2.12 de prueba** corrige la continuidad de TDTWorld: el usuario confirmó 90 segundos de vídeo continuo en su i4, con cero vaciados/reconexiones en el ensayo. El audio aún tiene microcortes y pierde la salida; no se da por corregido. El mapa BMW de la izquierda sigue pendiente.
+
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.12**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.12). Pasan **197 pruebas locales**; el paquete nativo y el ZIP se han verificado contra el código de la etiqueta. Esta revisión solo incorpora la corrección multimedia sobre 0.2.11. Para volver atrás, instala ambos componentes 0.2.11.
+
+## Referencia de la versión anterior
+
 La **0.2.11 de prueba** reúne las mejoras de navegación, Radio FM/DAB, tiempo por GPS, preacondicionamiento, asistente y ajustes de HUD/cuadro, junto con las correcciones de la auditoría integral. El sonido de TDT, la cartografía BMW y la exclusividad física del mando siguen pendientes de validar en el coche.
 
 

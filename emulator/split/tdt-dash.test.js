@@ -65,7 +65,7 @@ async function fixture(t, transport) {
     const relay = createRelay(undefined, transport);
     const server = http.createServer((req, res) => { if (!relay.handle(req, res)) { res.writeHead(404); res.end(); } });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const prefix = relay.attach('http://127.0.0.1:' + server.address().port);
+    const prefix = relay.attach('http://127.0.0.1:' + server.address().port).replace('master.m3u8', 'manifest.mpd');
     t.after(() => { relay.close(); server.close(); });
     return { relay, prefix };
 }
@@ -134,6 +134,36 @@ test('DASH relay rejects redirect downgrades and cancels outstanding reads when 
     for (let i = 0; i < 50 && !active; i++) await new Promise((r) => setTimeout(r, 5));
     assert(active); relay.close(); assert(cancelled);
     await pending;
+});
+
+test('DASH relay exposes HLS playlists and original media with bounded reusable TLS connections', async (t) => {
+    const xml = manifest.split('initialization="$RepresentationID$.mp4"/>').join(
+        'initialization="$RepresentationID$.mp4"><SegmentTimeline><S t="0" d="192000" r="10"/></SegmentTimeline></SegmentTemplate>');
+    let agent;
+    const { prefix, relay } = await fixture(t, transport((options) => {
+        agent = options.agent;
+        assert.equal(options.rejectUnauthorized, true);
+        return options.path === '/manifest.mpd' ? xml : 'unchanged media';
+    }));
+    const master = await get(prefix.replace('manifest.mpd', 'master.m3u8') + encodeURIComponent(source));
+    assert.equal(master.status, 200); assert(master.body.startsWith('#EXTM3U'));
+    const video = await get(master.body.split('\n').find((line) => line.startsWith('http://')));
+    assert.equal(video.headers.connection, 'close');
+    assert(video.body.includes('#EXT-X-MEDIA-SEQUENCE:12345'));
+    const segment = await get(video.body.split('\n').find((line) => line.startsWith('http://')));
+    assert.equal(segment.body, 'unchanged media'); assert.equal(segment.headers.connection, 'close');
+    assert.equal(agent.keepAlive, true); assert.equal(agent.maxSockets, 4); assert.equal(agent.maxFreeSockets, 2);
+    let destroyed = false; const destroy = agent.destroy.bind(agent);
+    agent.destroy = () => { destroyed = true; destroy(); };
+    relay.close(); assert(destroyed);
+});
+
+test('DASH relay retains its original transport for duration-only layouts', async (t) => {
+    const { prefix } = await fixture(t, transport(() => manifest));
+    const result = await get(prefix.replace('manifest.mpd', 'master.m3u8') + encodeURIComponent(source));
+    assert.equal(result.status, 302);
+    assert.equal(result.headers.location, prefix + encodeURIComponent(source));
+    assert.equal((await get(result.headers.location)).status, 200);
 });
 
 test('player selects the local DASH relay without global TLS options or a proxy loop', async (t) => {

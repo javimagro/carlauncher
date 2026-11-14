@@ -112,4 +112,4 @@ function selectDash(bytes, source, rewrite, width = 640, height = 360) {
     return '<?xml version="1.0" encoding="UTF-8"?>' + serialize(root);
 }
 
-module.exports = { selectDash, segmentParameters };
+module.exports = { selectDash, segmentParameters, parseMpd: parse };

@@ -2,6 +2,16 @@
 
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
+## 2026-11-14 · 0.2.12: continuidad de vídeo TDT comprobada en el i4
+
+- **Reproducción del fallo:** la 0.2.11 instalada incluía el filtro DASH, pero seguía cortándose. Se observaron pausas de 6766 ms sin nueva secuencia y, en otro ensayo, 80 fotogramas idénticos. El seguimiento de paquetes encontró retrocesos de DTS de aproximadamente 3,96 s. Repetir el filtro temporal anterior no bastó de forma estable.
+- **Corrección:** los DASH compatibles con SegmentTimeline se presentan a FFmpeg como listas HLS locales. Conservan los mismos segmentos AVC/AAC, tiempos, secuencias y duración de cada pista; no hay recodificación adicional ni cambio de proveedor. Los otros formatos conservan el transporte DASH anterior. Las conexiones HTTPS al CDN se reutilizan con límites y validación TLS; las respuestas HTTP locales cierran explícitamente su conexión. Se cancelan peticiones y conexiones al detener la reproducción.
+- **Ensayo físico:** 90 s con el canal que fallaba, mismo FFmpeg 9.0.2 y Node 8.16.2 de la MGU: cero vaciados, cero reconexiones, 1751 imágenes observadas, máximo un fotograma repetido y hueco máximo observado de 71 ms. El usuario confirmó vídeo continuo. Ensayo temporal restaurado al terminar; no se instaló ni reinició la unidad.
+- **Audio separado:** el receptor PCM de esa prueba no acredita altavoces. En un ensayo posterior con SmartX y foco temporal se oyó el canal durante unos 10–15 s con microcortes. Apareció contrapresión y descarte de PCM antes de liberar el foco; posteriormente ALSA dejó de avanzar y agotó los reintentos. No se publica una supuesta corrección de sonido ni se instala la sonda de foco.
+- **Verificación local:** 197 pruebas pasan en la rama de publicación; los módulos modificados cargan en Node 8.16.2. Ensayo offline con FFmpeg Windows de 2021, retirando únicamente su opción CLI no disponible `reconnect_max_retries`: 130 cuadros y audio al receptor de prueba, cero vaciados/reconexiones. Se distingue de FFmpeg 9.0.2 probado físicamente en la MGU. Paquete nativo verificado byte a byte: 100 archivos. ZIP USB: 129 entradas, sin SDK/firmware/claves.
+- **Mapa:** la sonda de contenido base devolvió ACK pero la captura de su superficie seguía completamente negra. La escena central quedó igual antes/después y el usuario confirmó cockpit intacto. Esta versión no cambia el mapa.
+- **Publicación:** cambios limitados a TDT sobre la 0.2.11; los cambios de interfaz y asistente de otros trabajos se conservan aparte. Actualizar app y motor a 0.2.12 por Tags. Para volver atrás, instalar ambos componentes 0.2.11.
+
 ## 2026-11-14 · Publicación 0.2.11 solicitada tras la auditoría
 
 - **Contenido.** Se reúnen los cambios locales acumulados desde 0.2.10 y la auditoría integral: navegación/POI y paneles, radio nativa y tiempo por GPS, botón HV, asistente, ajustes HUD/cuadro, transporte DASH y correcciones de ciclo de vida/rendimiento. Se conservan IDs, filtro 1.0.0 y dependencias del renderer. No se añaden SDK, firmware, adjuntos ni credenciales.

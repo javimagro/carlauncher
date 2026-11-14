@@ -1,5 +1,11 @@
 # TDTWorld · validación local y prueba pendiente en MGU21
 
+## Resultado vigente · 0.2.12
+
+El 14-11 se reprodujeron los cortes con la 0.2.11 instalada. La corrección ahora usa listas HLS locales para los segmentos DASH originales y reutiliza conexiones HTTPS al CDN. En la MGU: 90 segundos, cero vaciados/reconexiones, máximo un fotograma repetido y hueco máximo 71 ms; usuario confirma continuidad. Se restauró el worker original después del ensayo, sin instalación ni reinicio. **Audio aún pendiente:** se oyó unos 10–15 segundos con microcortes en un ensayo posterior; la salida ALSA terminó sin avance. Las cifras del receptor PCM no acreditan sonido. Más detalle en BITACORA.
+
+Los apartados siguientes conservan el historial de la investigación y sus limitaciones; no describen por sí solos el resultado de 0.2.12.
+
 ## Resultado actual · 0.2.11 local
 
 El usuario confirmó **vídeo continuo en una prueba temporal en su i4**, tras filtrar el DASH a una representación de vídeo y una pista española. Esa selección y la contrapresión de la cola se han incorporado al código local. **No se ha oído audio y el paquete integrado aún no se ha probado en el coche.** No se instaló una versión persistente, reinició ni publicó nada.

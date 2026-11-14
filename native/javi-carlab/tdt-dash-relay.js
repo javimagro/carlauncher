@@ -5,10 +5,12 @@ const https = require('https');
 const { URL } = require('url');
 const { mediaUrl } = require('./tdt-catalog');
 const { selectDash, segmentParameters } = require('./tdt-dash');
+const dashHls = require('./tdt-dash-hls');
 
 // This relay lives in the existing OAP-UID network process. Only registered
 // segment templates are exposed, behind a per-playback random capability.
 function createDashRelay(lookup, request = https.request, ca) {
+    const agent = new https.Agent({ keepAlive: true, maxSockets: 4, maxFreeSockets: 2, maxCachedSessions: 8 });
     const prefix = '/dash/' + crypto.randomBytes(24).toString('hex') + '/';
     const assets = new Map(), pending = new Set();
     let origin, closed = false;
@@ -21,7 +23,7 @@ function createDashRelay(lookup, request = https.request, ca) {
         if (req.headers.range && /^bytes=\d+-\d*$/.test(req.headers.range)) headers.Range = req.headers.range;
         let body, finished = false;
         const remote = request({ protocol: 'https:', hostname: url.hostname, path: url.pathname + url.search,
-            lookup, ca, rejectUnauthorized: true, headers, method: 'GET' }, (incoming) => {
+            lookup, ca, agent, rejectUnauthorized: true, headers, method: 'GET' }, (incoming) => {
             body = incoming;
             if ([301, 302, 303, 307, 308].includes(body.statusCode) && body.headers.location && redirects) {
                 const location = body.headers.location;
@@ -52,7 +54,7 @@ function createDashRelay(lookup, request = https.request, ca) {
                 }
             });
             if (!done) {
-                const outgoing = { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' };
+                const outgoing = { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', Connection: 'close' };
                 ['content-length', 'content-range', 'accept-ranges'].forEach((name) => { if (body.headers[name]) outgoing[name] = body.headers[name]; });
                 res.writeHead(body.statusCode, outgoing);
                 body.pipe(res);
@@ -78,24 +80,47 @@ function createDashRelay(lookup, request = https.request, ca) {
         return origin + prefix + 'asset/' + id + (parameters.length ? '?' + parameters.map((p) => p.key + '=' + p.match).join('&') : '');
     }
     return {
-        attach(base) { origin = base; return base + prefix + 'manifest.mpd?source='; },
+        attach(base) { origin = base; return base + prefix + 'master.m3u8?source='; },
         handle(req, res) {
             if (!req.url.startsWith('/dash/')) return false;
             if (closed || !req.url.startsWith(prefix) || req.method !== 'GET') { reply(res, 403); return true; }
             if (pending.size >= 8) { reply(res, 503); return true; }
             let url;
             try { url = new URL(req.url, origin); } catch (_) { reply(res, 400); return true; }
-            if (url.pathname === prefix + 'manifest.mpd') {
+            if (['master.m3u8', 'video.m3u8', 'audio.m3u8'].some((name) => url.pathname === prefix + name)) {
+                const source = url.searchParams.get('source');
+                upstream(source, req, res, 256 * 1024, (bytes, finalUrl) => {
+                    const kind = url.pathname.slice(prefix.length).split('.')[0];
+                    let playlists;
+                    try {
+                        playlists = dashHls(bytes, finalUrl,
+                            (target) => register(target).replace(/(\/asset\/[a-f0-9]{32})(?=\?|$)/, '$1.mp4'),
+                            (track) => origin + prefix + track + '.m3u8?source=' + encodeURIComponent(source));
+                    } catch (error) {
+                        if (kind !== 'master') throw error;
+                        // Preserve the existing bounded DASH path for layouts that
+                        // cannot be represented faithfully as an HLS timeline.
+                        selectDash(bytes, finalUrl, (target) => target);
+                        res.writeHead(302, { Location: origin + prefix + 'manifest.mpd?source=' + encodeURIComponent(source), Connection: 'close' });
+                        res.end();
+                        return;
+                    }
+                    const body = playlists[kind];
+                    if (!body) { reply(res, 404); return; }
+                    res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store', Connection: 'close' });
+                    res.end(body);
+                });
+            } else if (url.pathname === prefix + 'manifest.mpd') {
                 const source = url.searchParams.get('source');
                 upstream(source, req, res, 256 * 1024, (bytes, finalUrl) => {
                     const xml = selectDash(bytes, finalUrl, register);
                     // FFmpeg's DASH reader requires a finite, complete MPD;
                     // explicit length also avoids its chunked-EOF ambiguity.
-                    res.writeHead(200, { 'Content-Type': 'application/dash+xml', 'Content-Length': Buffer.byteLength(xml), 'Cache-Control': 'no-store' });
+                    res.writeHead(200, { 'Content-Type': 'application/dash+xml', 'Content-Length': Buffer.byteLength(xml), 'Cache-Control': 'no-store', Connection: 'close' });
                     res.end(xml);
                 });
             } else {
-                const asset = assets.get(url.pathname.slice((prefix + 'asset/').length));
+                const asset = assets.get(url.pathname.slice((prefix + 'asset/').length).replace(/\.mp4$/, ''));
                 if (!url.pathname.startsWith(prefix + 'asset/') || !asset) { reply(res, 404); return true; }
                 let target = asset.template;
                 for (const p of asset.parameters) {
@@ -107,7 +132,7 @@ function createDashRelay(lookup, request = https.request, ca) {
             }
             return true;
         },
-        close() { closed = true; pending.forEach((cancel) => cancel()); assets.clear(); }
+        close() { closed = true; pending.forEach((cancel) => cancel()); assets.clear(); agent.destroy(); }
     };
 }
 
