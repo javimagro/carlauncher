@@ -328,13 +328,16 @@ test('the trip probe maps periods by reset option and presents scaled distances 
                 init() {}, waitUntilAvailable() {},
                 bcDataAll: {
                     getValue: () => ({
-                        bcUnits: { tachoDigital: 'KILOMETERS', averageConsumptionElectric: 1 },
+                        bcUnits: { tachoDigital: 'KILOMETERS', averageConsumptionElectric: 1, currentConsumptionElectric: 1 },
+                        activeResetLogic: 3,
                         bcData3: [
                             { resetOption: 5, counterDistance: 450340, consumptionElectricAverageDigit: 65718 },
                             { resetOption: 'STARTOFDRIVING', counterDistance: 345, consumptionElectricAverageDigit: 65753,
+                                consumptionElectricCurrentDigit: 65745,
                                 speedAverage: 425, dateTimeTrip: { day: 0, hour: 1, minute: 7, second: 0 } },
                             { resetOption: 'INDIVIDUAL', counterDistance: 0xfffffffd },
-                            { resetOption: 3, counterDistance: 523, consumptionElectricAverageDigit: 65763 },
+                            { resetOption: 3, counterDistance: 523, consumptionElectricAverageDigit: 65763,
+                                consumptionElectricCurrentDigit: 65411 },
                             { resetOption: 'REFUEL', counterDistance: 900, consumptionElectricAverageDigit: 65742 }
                         ]
                     })
@@ -349,11 +352,15 @@ test('the trip probe maps periods by reset option and presents scaled distances 
     const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
         get: (target, key) => target[key] || (() => {})
     });
+    const telemetry = probe.snapshot();
+    telemetry.push({ signal: 'batteryPowerHv', status: 'error', phase: 'getter',
+        fields: { stage: 'voltage', failure: 'timeout' } });
     drawHome(canvas, { selected: 0, article: 0 }, 0,
-        { energy: [], diagnostics: true, telemetry: probe.snapshot() }, () => 1, Date.now());
+        { energy: [], diagnostics: true, telemetry }, () => 1, Date.now());
     for (const label of ['34,5 km  ·  21,8 kWh/100 km', '52,3 km  ·  22,8 kWh/100 km',
         '45034 km  ·  18,3 kWh/100 km', '34,5 km', '21,8 kWh/100 km', '18,3 kWh/100 km',
-        '43 km/h', '1 h 07 m', '7,5 kWh aprox.', '–  ·  –']) {
+        '43 km/h', '1 h 07 m', '7,5 kWh aprox.', '–  ·  –', 'Consumo instantáneo BMW', '-12,4 kWh/100 km',
+        'Tensión · TASU sin evento de respuesta']) {
         assert(labels.includes(label), label);
     }
     assert(!labels.includes('90 km  ·  20,7 kWh/100 km'));
@@ -364,6 +371,19 @@ test('the trip probe maps periods by reset option and presents scaled distances 
         'Energía consumida', 'Duración', 'Altura', 'Exterior', 'Batería HV']) assert(labels.includes(label), label);
     for (const label of ['Inicio de viaje', 'Última carga', 'Individual', 'Desde fábrica',
         'Velocidad', 'Batería', 'Autonomía', 'Carga rápida', 'Precalentamiento']) assert(!labels.includes(label), label);
+});
+
+test('consumption readings need a fresh BMW digit with a supported unit', () => {
+    const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
+    const fields = { 'bcUnits.currentConsumptionElectric': 'KWH_100MI', 'active.consumptionElectricCurrentDigit': 65535 };
+    const data = new Map([['bcDataAll', { status: 'sample', sampledAt: 1000, freshForMs: 30000, fields }]]);
+    assert.deepEqual(vehicleReadings(data, 1000).currentConsumption, { value: 0, unit: 'kWh/100 mi' });
+    assert.equal(vehicleReadings(data, 31000).currentConsumption, undefined);
+    fields['active.consumptionElectricCurrentDigit'] = 0xfffffffd;
+    assert.equal(vehicleReadings(data, 1000).currentConsumption, undefined);
+    fields['active.consumptionElectricCurrentDigit'] = 65411;
+    fields['bcUnits.currentConsumptionElectric'] = 'DEFAULT';
+    assert.equal(vehicleReadings(data, 1000).currentConsumption, undefined);
 });
 
 test('the charging limit follows the fresh BMS status independently of battery temperature', () => {
@@ -398,6 +418,78 @@ function tasuReply(did, payload, ecu = 7) {
         0, 0, 0, 0, 0, 0, ecu, 0, 0, 0x62, did >> 8, did & 0xff, ...payload
     ]) };
 }
+
+test('a slow TASU acknowledgement leaves the full reply window for the SME', async (t) => {
+    let notify;
+    let begin;
+    const firstRequest = new Promise((resolve) => { begin = resolve; });
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const probe = createPowerProbe({
+        buildAndInitTypedProxy: () => ({
+            sendTasuResponse: { subscribe(listener) { notify = listener; } },
+            sendTasuRequest(request) {
+                if (request.udsData.readUInt16BE() === 0xe54d) {
+                    return new Promise((resolve) => begin(resolve));
+                }
+                notify(tasuReply(0xe561, [0, 0, 0xec, 0x78]));
+            }
+        })
+    }, { replyMs: 30 });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    const accept = await firstRequest;
+    await delay(60);
+    accept({ TasuErrorEnum: 'NO_ERROR' });
+    await turn();
+    notify(tasuReply(0xe54d, [0x9c, 0x40]));
+    for (let i = 0; i < 25 && probe.snapshot().status === 'no-sample'; i++) await delay(10);
+    assert.deepEqual(probe.snapshot().fields, { kw: 20, volts: 400, amps: 50 });
+});
+
+test('a hung TASU method expires and releases the subscription before retrying', async (t) => {
+    const lifecycle = [];
+    const probe = createPowerProbe({
+        buildAndInitTypedProxy() {
+            lifecycle.push('open');
+            return {
+                sendTasuResponse: { subscribe: () => 0, unsubscribe: () => lifecycle.push('unsubscribe') },
+                sendTasuRequest: () => new Promise(() => {}),
+                dispose: () => lifecycle.push('dispose')
+            };
+        }
+    }, { requestMs: 25, retryMs: 1000 });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    for (let i = 0; i < 25 && lifecycle.length < 3; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(probe.snapshot().fields, { stage: 'voltage', failure: 'request-timeout', code: undefined });
+    assert.deepEqual(lifecycle, ['open', 'unsubscribe', 'dispose']);
+});
+
+test('SME timeout distinguishes silence, unrelated events and a pending reply', async (t) => {
+    const pending = tasuReply(0xe54d, []);
+    Buffer.from([0x7f, 0x22, 0x78]).copy(pending.udsResponse, 9);
+    for (const [reply, failure] of [[undefined, 'timeout'], [tasuReply(0xe561, []), 'unmatched'],
+        [pending, 'pending-timeout']]) {
+        await t.test(failure, async (t) => {
+            let notify;
+            const probe = createPowerProbe({
+                buildAndInitTypedProxy: () => ({
+                    sendTasuResponse: { subscribe(listener) { notify = listener; } },
+                    sendTasuRequest() {
+                        if (reply) notify(reply);
+                        return { TasuErrorEnum: 'NO_ERROR' };
+                    }
+                })
+            }, { replyMs: 20 });
+            t.after(() => probe.show(false));
+            probe.show(true);
+            for (let i = 0; i < 25 && probe.snapshot().status === 'no-sample'; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            assert.deepEqual(probe.snapshot().fields, { stage: 'voltage', failure, code: undefined });
+        });
+    }
+});
 
 test('the battery power probe reads only the SME voltage and signed current and displays their product', async (t) => {
     const requests = [];

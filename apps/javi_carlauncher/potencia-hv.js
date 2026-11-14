@@ -5,6 +5,7 @@ const instance = 'SystemFunctionsInternalTasuInst1';
 const batteryEcu = 0x07;
 const voltageDid = 0xe54d;
 const currentDid = 0xe561;
+const methodExpired = Symbol('TASU method timeout');
 const tasuErrors = [
     'NO_ERROR', 'REQUEST_PENDING', 'TAS_CONNECTION_ERROR', 'TIMEOUT_ERROR', 'DEACTIVATED',
     'INVALID_REQUEST', 'INVALID_LENGTH', 'APP_REQUEST_TEMPORARILY_NOT_ACCEPTED', 'INVALID_SESSION',
@@ -38,7 +39,7 @@ function readReply(event, did) {
     return { value: raw / 100, at: Date.now() };
 }
 
-function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 4000 } = {}) {
+function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 4000, requestMs = 8000 } = {}) {
     const signal = 'batteryPowerHv';
     let record = { signal, status: 'no-sample' };
     let current;
@@ -46,38 +47,59 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
 
     async function read(job, proxy, did) {
         const data = Buffer.from([did >> 8, did & 0xff]);
-        let timer;
+        let replyTimer;
+        let requestTimer;
+        let finish;
+        let done = false;
+        let pending = false;
+        let unmatched = false;
+        function waitForReply() {
+            clearTimeout(replyTimer);
+            replyTimer = setTimeout(() => {
+                finish({ failure: pending ? 'pending-timeout' : unmatched ? 'unmatched' : 'timeout' });
+            }, pending ? 2 * replyMs : replyMs);
+        }
         const response = new Promise((resolve) => {
-            const expire = () => resolve({ failure: 'timeout' });
-            job.cancel = expire;
-            timer = setTimeout(expire, replyMs);
-            let pending = false;
+            finish = (reply) => {
+                done = true;
+                clearTimeout(replyTimer);
+                resolve(reply);
+            };
+            job.cancel = () => finish({ failure: 'timeout' });
             job.onResponse = (event) => {
+                if (done) return;
                 const reply = readReply(event, did);
-                if (!reply) return;
-                if (!reply.pending) resolve(reply);
+                if (!reply) unmatched = true;
+                else if (!reply.pending) finish(reply);
                 else if (!pending) {
                     pending = true;
-                    clearTimeout(timer);
-                    timer = setTimeout(expire, 2 * replyMs);
+                    if (replyTimer) waitForReply();
                 }
             };
         });
         try {
-            const result = await proxy.sendTasuRequest({
-                sourceAddress: 0xf2, targetAddress: batteryEcu, serviceID: 0x22, subroutineID: 0,
-                udsDataLength: data.length, udsData: data, deadlockTime: 0
-            });
+            const result = await Promise.race([
+                proxy.sendTasuRequest({
+                    sourceAddress: 0xf2, targetAddress: batteryEcu, serviceID: 0x22, subroutineID: 0,
+                    udsDataLength: data.length, udsData: data, deadlockTime: 0
+                }),
+                new Promise((resolve) => { requestTimer = setTimeout(() => resolve(methodExpired), requestMs); })
+            ]);
+            clearTimeout(requestTimer);
+            if (result === methodExpired) return { failure: 'request-timeout' };
             const verdict = result && typeof result === 'object' ? result.TasuErrorEnum : result;
             const code = tasuCode(verdict);
             // Some SDK wrappers resolve without a verdict. In that case the event supplies the result.
             if (code > 1) return { failure: 'tasu', code };
             if (verdict != null && code < 0) return { failure: 'request' };
+            // Keep events received before the method returns, but measure the wait from acceptance.
+            if (!done) waitForReply();
             return await response;
         } catch (_) {
             return { failure: 'request' };
         } finally {
-            clearTimeout(timer);
+            clearTimeout(requestTimer);
+            clearTimeout(replyTimer);
             job.onResponse = null;
             job.cancel = null;
         }
@@ -117,6 +139,7 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                 if (job !== current) break;
                 if (volts.failure) {
                     failedReading('voltage', volts);
+                    if (volts.failure === 'request-timeout') break;
                     await pause(job, retryMs);
                     continue;
                 }
@@ -130,6 +153,7 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                         fields: { kw: volts.value * amps.value / 1000, volts: volts.value, amps: amps.value } };
                 } else {
                     failedReading('current', amps.failure ? amps : { failure: 'late' });
+                    if (amps.failure === 'request-timeout') break;
                 }
                 const delay = paired ? Math.max(0, periodMs - (Date.now() - start)) : retryMs;
                 await pause(job, delay);

@@ -37,6 +37,7 @@ const diagnosticRows = [
     ['Temperatura batería HV', 'statusBatteryTemperature', 'actualValueTemperatureHighVoltageStorage'],
     ['Temperatura exterior', 'ExteriorTemperature', 'temperatureExterior'],
     ['Precalentamiento HV · VWM', 'statusPredictiveThermalManagement', 'preconditioningActive', 'statusVWM'],
+    ['Consumo instantáneo BMW', 'bcDataAll', 'current'],
     ['Batería HV · potencia · tensión · corriente', 'batteryPowerHv'],
     ['Potencia relativa de tracción', 'displayPowerDrive', 'quotaImmediateElectricEngineDriveRecuperation'],
     ['Energía disponible · máxima', 'highVoltageStorageInfoToExternal',
@@ -120,6 +121,10 @@ function formatDiagnostic(signal, fields, keys, vehicle) {
     case 'batteryPowerHv': return [withUnit(fields.kw, ' kW', 1), withUnit(fields.volts, ' V', 1),
         withUnit(fields.amps, ' A', 1)].join('  ·  ');
     case 'bcDataAll': {
+        if (keys[0] === 'current') {
+            const reading = vehicle.currentConsumption;
+            return reading ? liveValue(reading.value, reading.unit, 1) : 'Sin dato válido';
+        }
         const { distance, distanceUnit, average, averageUnit } = journeyReading(fields, keys[0]);
         return liveValue(distance, distanceUnit, 1) + '  ·  ' + liveValue(average, averageUnit, 1);
     }
@@ -141,9 +146,13 @@ function diagnosticError(record) {
     if (record.signal === 'batteryPowerHv' && fields && record.phase === 'getter') {
         const stage = fields.stage === 'voltage' ? 'Tensión' : 'Corriente';
         const code = Number.isInteger(fields.code) && fields.code >= 0 && fields.code <= 255 ? fields.code : undefined;
+        const tasu = { 2: 'TASU sin conexión (2)', 3: 'TASU agotó la espera (3)', 4: 'TASU desactivado (4)',
+            7: 'TASU rechazó temporalmente la consulta (7)' };
         const reasons = {
-            timeout: 'sin respuesta', format: 'respuesta corta', request: 'fallo de consulta', late: 'muestra tardía',
-            tasu: code === undefined ? 'rechazo TASU' : 'TASU ' + code,
+            timeout: 'TASU sin evento de respuesta', unmatched: 'sin respuesta válida del SME',
+            'request-timeout': 'TASU no confirmó la consulta', 'pending-timeout': 'SME dejó la consulta pendiente',
+            format: 'respuesta corta', request: 'fallo de consulta TASU', late: 'muestra tardía',
+            tasu: code === undefined ? 'rechazo TASU' : tasu[code] || 'TASU ' + code,
             uds: code === undefined ? 'rechazo UDS' : 'UDS 0x' + code.toString(16).toUpperCase().padStart(2, '0')
         };
         return stage + ' · ' + (reasons[fields.failure] || 'error de lectura');

@@ -1,8 +1,10 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.12 de prueba** corrige la continuidad de TDTWorld: el usuario confirmó 90 segundos de vídeo continuo en su i4, con cero vaciados/reconexiones en el ensayo. El audio aún tiene microcortes y pierde la salida; no se da por corregido. El mapa BMW de la izquierda sigue pendiente.
+La **0.2.13 de prueba** reúne la corrección de continuidad de TDTWorld de la 0.2.12, la nueva espera de tensión/corriente HV y el consumo instantáneo publicado por BMW. La espera de respuesta del SME empieza después de que TASU acepte la consulta; una llamada bloqueada vence y libera la suscripción antes de reintentarlo. Esto corrige una carrera reproducida en local, pero todavía hay que comprobar que el i4 devuelve ambas lecturas.
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.12**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.12). Pasan **197 pruebas locales**; el paquete nativo y el ZIP se han verificado contra el código de la etiqueta. Esta revisión solo incorpora la corrección multimedia sobre 0.2.11. Para volver atrás, instala ambos componentes 0.2.11.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.13**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.13). Pasan **204 pruebas locales**. En **Datos**, compara **Batería HV · potencia · tensión · corriente** con el OBD2 y **Consumo instantáneo BMW** con iDrive; son lecturas diferentes y mantienen sus propias unidades. Si falla HV, anota el mensaje de la etapa de tensión o corriente.
+
+El cambio de vídeo es el mismo que mantuvo 90 segundos continuos en el ensayo del i4. **El audio aún tiene microcortes y pierde la salida; sigue pendiente.** El mapa BMW de la izquierda tampoco se da por resuelto. Para volver atrás, instala app y motor de la 0.2.12.
 
 ## Referencia de la versión anterior
 

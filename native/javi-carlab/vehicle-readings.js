@@ -27,6 +27,12 @@ function thermalStatus(value) {
     return thermalLabels[index];
 }
 
+function currentConsumption(fields) {
+    const unit = consumptionUnits[fields['bcUnits.currentConsumptionElectric']];
+    const raw = fields['active.consumptionElectricCurrentDigit'];
+    if (unit && valid(raw, 0xfffffffc)) return { value: (raw - 65535) / 10, unit };
+}
+
 function journeyReading(fields, period) {
     const distanceUnit = distanceUnits[fields['bcUnits.tachoDigital']];
     const averageUnit = consumptionUnits[fields['bcUnits.averageConsumptionElectric']];
@@ -67,6 +73,7 @@ function vehicleReadings(records, now) {
         location: position['position.coordinatesValid'] === true && Number.isFinite(lat) && Math.abs(lat) <= 90 &&
             Number.isFinite(lon) && Math.abs(lon) <= 180 ? { latitude: lat, longitude: lon } : undefined,
         power: field('batteryPowerHv').kw,
+        currentConsumption: currentConsumption(journey),
         trip: journeyReading(journey, 'trip'),
         factory: journeyReading(journey, 'factory')
     };

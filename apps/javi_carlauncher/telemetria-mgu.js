@@ -33,7 +33,7 @@ const signals = [
         driveSegment: ['r', 'bcBeDurationDrive', 'bcBeTripDistanceKm', 'bcBeConsElectricVisible', 'bcBeSpeedAvgDrive']
     }],
     ['de.bmw.infotainment.resetlogic.ResetLogic3', '1', {
-        bcDataAll: ['rs', 'bcUnits.tachoDigital', 'bcUnits.averageConsumptionElectric',
+        bcDataAll: ['rs', 'activeResetLogic', 'bcUnits.tachoDigital', 'bcUnits.averageConsumptionElectric',
             'bcUnits.currentConsumptionElectric', 'bcData3[].resetOption', 'bcData3[].counterDistance',
             'bcData3[].consumptionElectricAverageDigit', 'bcData3[].consumptionElectricCurrentDigit',
             'bcData3[].speedAverage', 'bcData3[].dateTimeTrip.day', 'bcData3[].dateTimeTrip.hour',
@@ -53,10 +53,8 @@ const signals = [
     }]
 ];
 
-const journeyPeriods = {
-    1: 'individual', 3: 'charge', 4: 'trip', 5: 'factory',
-    INDIVIDUAL: 'individual', CHARGE: 'charge', STARTOFDRIVING: 'trip', LONGTERM: 'factory'
-};
+const resetOptionIds = { DEFAULT: 0, INDIVIDUAL: 1, REFUEL: 2, CHARGE: 3, STARTOFDRIVING: 4, LONGTERM: 5, AVERAGE: 6 };
+const journeyPeriods = { 1: 'individual', 3: 'charge', 4: 'trip', 5: 'factory' };
 
 function sample(value, paths) {
     if (!paths.length) {
@@ -83,10 +81,17 @@ function sampleJourney(value, paths) {
     const result = sample(value, paths.filter((path) => !path.startsWith(prefix))) || {};
     const entries = value && value.bcData3;
     if (Array.isArray(entries)) {
+        const active = result.activeResetLogic;
         const members = paths.filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length));
         for (const entry of entries.slice(0, 5)) {
             const fields = sample(entry, members);
-            const period = fields && journeyPeriods[fields.resetOption];
+            if (!fields) continue;
+            // Hmi8 feeds the live consumption from the entry selected by activeResetLogic.
+            const option = Number.isInteger(fields.resetOption) ? fields.resetOption : resetOptionIds[fields.resetOption];
+            if (Number.isInteger(active) && active === option && fields.consumptionElectricCurrentDigit !== undefined) {
+                result['active.consumptionElectricCurrentDigit'] = fields.consumptionElectricCurrentDigit;
+            }
+            const period = journeyPeriods[option];
             if (!period) continue;
             for (const key of Object.keys(fields)) {
                 if (key !== 'resetOption') result[period + '.' + key] = fields[key];

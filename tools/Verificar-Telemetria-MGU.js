@@ -15,15 +15,17 @@ function verifyCatalog(catalog) {
         if (!definition || !Number.isInteger(instanceId)) {
             throw new Error('Falta la instancia ' + service + ' / ' + instance);
         }
-        const attributes = {};
+        const proxy = manifest.proxies[service];
+        assert(proxy && proxy.instances.includes(instance), service + ': falta permiso para ' + instance);
         for (const [name, [mode, ...paths]] of Object.entries(fields)) {
             const field = definition.fields[name];
-            attributes[name] = mode;
             for (const access of mode) {
                 const operation = field && field[access === 'r' ? 'getter' : 'notifier'];
                 if (!operation || !Number.isInteger(operation.id) || operation.id <= 0) {
                     throw new Error('Falta la lectura de ' + service + '.' + name);
                 }
+                assert(proxy.attributes && (proxy.attributes[name] || '').includes(access),
+                    service + '.' + name + ': falta permiso ' + access);
             }
             for (const memberPath of paths) {
                 let type = catalog.datatypes[field.dataRef];
@@ -38,12 +40,13 @@ function verifyCatalog(catalog) {
                 }
             }
         }
-        assert.deepStrictEqual(manifest.proxies[service], { instances: [instance], attributes }, service);
     }
     const { methods, events } = catalog.interfaces[tasu];
     assert.strictEqual(catalog.instanceIDs[tasu][tasuInstance], 128);
     assert.strictEqual(methods.sendTasuRequest.methodId, 1);
     assert.strictEqual(events.sendTasuResponse.eventId, 32769);
+    assert.strictEqual(events.sendTasuResponse.selective, true);
+    assert.deepStrictEqual(events.sendTasuResponse.eventgroups, [1]);
     assert.deepStrictEqual(manifest.proxies[tasu], {
         instances: [tasuInstance], methods: ['sendTasuRequest'], broadcasts: ['sendTasuResponse']
     }, tasu);
@@ -61,4 +64,4 @@ function readCatalog(file) {
 const catalogPath = process.argv[2];
 if (!catalogPath) throw new Error('Uso: node tools/Verificar-Telemetria-MGU.js <someip-interfaces.json o SWFL 000056EE>');
 verifyCatalog(readCatalog(catalogPath));
-console.log('Catálogo y permisos de lectura de telemetría verificados.');
+console.log('Catálogo y permisos OAP de telemetría verificados.');
