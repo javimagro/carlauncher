@@ -11,6 +11,10 @@ Se analizó el ejecutable `Hmi8` copiado del i4, las bibliotecas x86-64 de la re
 
 BMWLauncher 0.2.3 observaba `0x8002` mediante el OAP cuando el renderizador carecía de captura. El OAP recibía su copia y mandaba al servicio los giros y las inclinaciones verticales. `Hmi8` recibía la suya y ejecutaba su comportamiento normal. El setter `rotaryEncoderControl` configura la aceleración y la posición central del mando. La definición del servicio carece de un método para que un OAP adquiera la entrada en exclusiva.
 
+Los botones anterior y siguiente del volante se leen de `SteeringWheelPushButton.statusSearchSwitch1`, instancia 1. El catálogo 036.010.004 declara getter 3, notificador `0x8003`, grupo 1. La estructura contiene `operationPushButtonAudioAutomaticTuningSteeringWheel`: valores 1 para izquierda, 2 para derecha y 0 para reposo. El OAP envía un salto por flanco, separado del giro de FrontCCU. DriveHub sintoniza la emisora o cambia el canal enfocado. En otras tarjetas pasa a la tarjeta contigua. Un panel de navegación abierto conserva su propio mando y recorre elementos con las inclinaciones verticales. El cierre lo devuelve a DriveHub.
+
+La suscripción del volante es de lectura. La copia original sigue llegando a iDrive. El efecto físico y la convivencia con la sintonización de BMW están pendientes de comprobación en el i4.
+
 En `Hmi8`, `CHmiFwStateManager::performShiftLeftInternal` llama a `performBackInternal` en `0x425db77`, `0x425dda7` y `0x425e9f8`. La inclinación izquierda puede retroceder en el historial según el estado de la interfaz. BMW documenta que la inclinación hacia arriba abre el acceso rápido de iDrive 8. El binario contiene el servicio `CHmiToolbeltService` y el estado de los accesos directos. [Funcionamiento de iDrive 8 según BMW](https://www.press.bmwgroup.com/usa/article/detail/T0327734EN_US/the-all-new-bmw-idrive?showMedia=photo)
 
 ## Dónde interceptar los eventos

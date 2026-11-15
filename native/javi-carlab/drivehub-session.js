@@ -143,9 +143,16 @@ module.exports = function createSession(gpu, options) {
         }
     });
     function controller(event) {
-        if (!data.diagnostics && !navigationUi.state.focused && panel.state.selected === 0 && [10, 11].includes(event.tilt)) navigationUi.focus();
-        if (data.diagnostics || !navigationUi.controller(event)) panel.controller(event);
-        else if (!navigationUi.state.focused) panel.resetInput();
+        const navigationOwnsInput = !data.diagnostics && navigationUi.state.panel !== 'none';
+        if (event.skip) {
+            if (!navigationOwnsInput) panel.skip(event.skip);
+        } else if (navigationOwnsInput) {
+            panel.trackInput(event);
+            navigationUi.controller(event);
+        } else {
+            navigationUi.trackInput(event);
+            panel.controller(event);
+        }
     }
     gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
     function hidden() {

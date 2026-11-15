@@ -8,7 +8,7 @@ const filters = ['favorites', 'popular', 'music', 'sports'];
 const empty = () => ({ stations: [], current: null, active: false, sourceKnown: false, loading: false, listError: '', result: null });
 function createRadioUI(options, invalidate) {
     options = options || {}; invalidate = invalidate || (() => {});
-    const state = { mode: 'playing', filters: [], index: 0, top: 0, filterFocus: -1, message: '', frame: empty() };
+    const state = { mode: 'playing', filters: [], index: 0, top: 0, message: '', frame: empty() };
     const favorites = new Map(), images = new Map(), attempted = new Map(), decoding = new Set();
     let received = 0, serial = 0, pending = null, closed = false, writeBusy = false, writeAgain = false;
     let preferencesReady = !options.radioFile;
@@ -136,7 +136,7 @@ function createRadioUI(options, invalidate) {
                 if (frame.active && frame.current && frame.current.memoryKey === assistantRequest.memoryKey) endAssistant({ status: 'confirmed', station: frame.current.name });
             }
             state.message = frame.result.message;
-            if (frame.result.ok) { state.mode = 'playing'; state.filterFocus = -1; }
+            if (frame.result.ok) state.mode = 'playing';
             pending = null;
         }
         if (enabled) {
@@ -172,7 +172,7 @@ function createRadioUI(options, invalidate) {
         });
         levels.forEach((value, i) => { levels[i] = value + (targets[i] - value) * .46; }); invalidate();
     }
-    function open() { state.mode = 'list'; state.filterFocus = -1; clamp(); invalidate(); }
+    function open() { state.mode = 'list'; clamp(); invalidate(); }
     return { state, rows, favorite, levels, images, receive, update, open, filter, toggleFavorite, allStations,
         playNamed(name, alive) {
             if (closed || !alive() || !received || Date.now() - received >= 5000) return Promise.resolve({ status: 'unavailable', message: 'No hay una lista vigente de BMW' });
@@ -186,22 +186,20 @@ function createRadioUI(options, invalidate) {
                 timer: setTimeout(() => { endAssistant({ status: 'timeout', message: 'BMW no ha confirmado la emisora activa' }); }, 18000) }; });
         },
         rotate(delta) {
-            if (state.mode !== 'list') { open(); return; }
-            if (state.filterFocus >= 0) state.filterFocus = Math.max(0, Math.min(3, state.filterFocus + delta));
-            else { state.index += delta; clamp(); } invalidate();
+            if (pending) return;
+            const stations = rows(), current = state.frame.current;
+            const tuned = current ? stations.findIndex((s) => s.memoryKey === current.memoryKey) : -1;
+            state.index = tuned < 0 ? state.index : tuned + delta;
+            clamp();
+            if (state.index !== tuned) tune(stations[state.index]);
         },
         press(long) {
             if (state.mode !== 'list') { if (long) toggleFavorite(state.frame.current); else open(); }
-            else if (state.filterFocus >= 0) filter(state.filterFocus);
             else if (long) toggleFavorite(rows()[state.index]); else tune(rows()[state.index]);
         },
         tilt(direction) {
-            if (direction === 'left') { if (state.mode === 'list') { state.mode = 'playing'; state.filterFocus = -1; invalidate(); return true; } return false; }
-            if (direction === 'right') return false;
             if (state.mode !== 'list') open();
-            else if (direction === 'up') state.filterFocus = 0;
-            else state.filterFocus = -1;
-            invalidate(); return true;
+            else { state.index += direction === 'up' ? -1 : 1; clamp(); invalidate(); }
         },
         touch(x, y, w, h, swipe) {
             if (swipe) { open(); state.index += swipe; clamp(); invalidate(); return; }
