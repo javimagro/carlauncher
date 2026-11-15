@@ -83,11 +83,13 @@ function drawNavigation(cv, nav, vehicle, zoom, now, ui) {
             cv.noclip();
         }
         if ((!s.camera || !status.ready) && !s.keyboard && s.panel !== 'detail') {
-            const v = layout.viewport(s), cx = v.x + v.w / 2;
+            const v = layout.viewport(s), right = v.x + v.w;
+            const eta = nav.state === 'active' && s.panel === 'none' ? layout.eta() : null;
+            const left = eta ? Math.max(v.x, eta.x + eta.w + 18) : v.x;
             // Wide settings panels leave too little map space for a readable notice.
-            // Keep the central availability message inside the map viewport.
-            if (v.w >= 360) {
-                cv.clip(v.x, v.y, v.w, v.h);
+            if (right - left >= 360) {
+                const cx = (left + right) / 2;
+                cv.clip(left, v.y, right - left, v.h);
                 cv.text(status.issue || 'Esperando posición GPS del coche', cx, map.y + 214, 23, p.text, center);
                 cv.text(status.ready ? 'La posición se actualizará al recibir señal' : 'Cartografía local pendiente de integrar', cx, map.y + 244, 17, p.secondary, center);
                 cv.noclip();

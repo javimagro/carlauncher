@@ -16,11 +16,12 @@ Proyecto Android `BMWLauncher`, revisión base `427786f4bdb1216a0d2e4c7721318320
 | `googlemaps/GoogleNavigationEngine.java`: `showDestinationMarkers`, `fitResultMarkers`, `fitCompleteRouteBesidePanel` | Encuadre de marcadores visibles; exclusión del área ocupada por panel; encuadre de origen, trazado completo, recargas y destino. Implementación propia de geometría, sin usar Google SDK. |
 | `res/layout/view_navigation_poi_details.xml` | Ficha con información y acciones Cómo llegar, favorito y añadir parada. No se inventan fotos, horarios, conectores, precios ni disponibilidad. |
 | `res/layout/view_navigation_route_panel.xml` | Resumen, información detallada, batería, paradas y acción Iniciar. La entrada Añadir parada conserva el destino final. |
+| `res/layout/view_navigation_guidance_panel.xml` | ETA de guiado con duración, distancia, reloj de llegada y batería BMW, sobre las paletas Porcelain/Azure. Botones de finalizar, añadir parada y detalles. El panel se desplaza lo necesario para dejar libre la columna del mapa en iDrive. |
 | `ui/NavigationMapPanelStack.java`, `NavigationNavigationController.java` | Pila de paneles; cierre distinto de retroceso; volver del resumen a resultados; no mezclar una ficha antigua con un destino recién seleccionado. |
 | `res/layout/view_navigation_keyboard.xml` | Teclado, símbolos, espacio, borrado, vaciado y movimiento de cursor. Envío explícito con Buscar/Listo. |
 | `res/values/colors_navigation_design.xml`, `dimens_navigation*.xml` | Paletas Porcelain/Azure y proporciones adaptadas a 1038 × 468. No se copia el tamaño en dp de la pantalla Android de otra resolución. |
 
-Los 15 vectores originales se convierten en PC con WPF y Pillow; hashes individuales y procedencia en `native/javi-carlab/navigation-icons.SOURCES.json`. Generación: `python tools/Preparar-IconosNavegacion.py RUTA_BMWLAUNCHER_ANDROID`. El atlas contiene 165 variantes de tinta (89.880 bytes comprimidos), se carga una vez de forma asíncrona y reutiliza el protocolo de imágenes existente. La MGU no convierte SVG/XML ni incorpora un runtime nuevo. Geometría de respaldo y primitivas de mapa siguen siendo código.
+Los 16 vectores originales se convierten en PC con WPF y Pillow. Los hashes individuales y la procedencia están en `native/javi-carlab/navigation-icons.SOURCES.json`. Se generan con `python tools/Preparar-IconosNavegacion.py RUTA_BMWLAUNCHER_ANDROID`. El atlas tiene 176 variantes de tinta, ocupa 101.304 bytes comprimido y se carga una vez de forma asíncrona mediante el protocolo de imágenes existente. La MGU usa geometría de respaldo y primitivas propias.
 
 ## Separación y reglas
 
@@ -39,7 +40,7 @@ La cuenta de resultados visibles se adapta a esta pantalla: dos tarjetas de carg
 ## Verificación reproducible
 
 - `node --test emulator/split/*.test.js`: pruebas de navegación más resto del producto; no sustituye el ensayo SOME/IP real.
-- `node tools/Previsualizar-Navegacion.js`: 18 capturas en `dist/navigation-preview`. Dieciséis con el proveedor instalado indisponible y dos ensayos rotulados «SIN CARTOGRAFÍA» para revisar encuadre y marcadores. Datos sintéticos, sin teselas ni rutas reales. Comprueba DriveHub y barra inferior idénticos píxel a píxel.
+- `node tools/Previsualizar-Navegacion.js` genera 26 capturas en `dist/navigation-preview`. En PowerShell, `$env:JAVI_DRIVEHUB_TALL='1'` selecciona el perfil de 572 píxeles y las guarda en `dist/navigation-preview-tall`. Incluye ETA de día y de noche, ETA sin batería y dos ensayos rotulados «SIN CARTOGRAFÍA». Usa datos sintéticos, comprueba DriveHub píxel a píxel y compara la barra inferior entre capturas con el mismo estado de energía.
 - Referencia previa conservada en `dist/navigation-before-carlinkit`; no se publica como recurso.
 - Sintaxis y carga de los nueve módulos instalados modificados con Node 8.16.2, comprobación de permisos y de archivos del paquete.
 

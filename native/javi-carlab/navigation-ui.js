@@ -103,6 +103,7 @@ function createNavigationUI(options, invalidate) {
         if (pending || state.controls && state.controls.busy) { notify('Espera a que termine BMW'); return; }
         request = Math.max(request + 1, Date.now());
         const command = Object.assign({ action, request }, extra);
+        if (action === 'add-stop' && state.addingStop === 'active') command.activeRoute = true;
         if (!options.navigationCommand || !options.navigationCommand(command)) { notify('Sin conexión con navegación BMW'); return; }
         pending = request; state.pending = true; deadline = Date.now() + 90000;
         presentRequest = action === 'guidance-setting' ? 0 : request;
@@ -173,7 +174,8 @@ function createNavigationUI(options, invalidate) {
         if (commandAction && (pending || state.controls && state.controls.busy)) {
             notify('Espera a que termine BMW'); invalidate(); return;
         }
-        if (id === 'search' || id === 'add-stop-search') openSearch(id === 'add-stop-search');
+        if (id === 'search') openSearch(false);
+        else if (id === 'add-stop-search') openSearch(state.panel === 'none' && state.nav && state.nav.state === 'active' ? 'active' : true);
         else if (id === 'settings') show('settings');
         else if (id === 'route-settings') show('route-settings');
         else if (id === 'guidance-displays') show('guidance-displays');
@@ -308,7 +310,8 @@ function createNavigationUI(options, invalidate) {
                 if (pending && c.request >= pending) pending = 0;
                 if (c !== state.controls && (!state.controls || c.request !== state.controls.request || c.status !== state.controls.status)) {
                     if (presentRequest && c.request === presentRequest) {
-                        if (c.status === 'error' && state.panel !== 'search') notify('BMW: ' + (c.error || 'No se ha podido completar la operación'));
+                        if (c.status === 'error' && state.panel !== 'search') notify(c.error === 'BMW_ACTIVE_TRIP_UNAVAILABLE'
+                            ? 'BMW no ha facilitado el itinerario activo para añadir la parada' : 'BMW: ' + (c.error || 'No se ha podido completar la operación'));
                         if (c.status === 'detail' && c.request !== suggestionRequest) show('detail');
                         if (c.status === 'preview') { show('route'); state.routePage = 'summary'; state.addingStop = false;
                             if (c.plan && savedPreferences.arrival === undefined) state.preferences.arrival = c.plan.arrival; }

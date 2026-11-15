@@ -13,6 +13,9 @@ function viewport(state) {
     const box = panel(state), inset = state.panel !== 'none' && !state.keyboard ? box.x + box.w + 18 : map.x + 78;
     return { x: inset, y: map.y + 64, w: map.x + map.w - 20 - inset, h: map.h - 112 };
 }
+function eta() {
+    return { x: map.x + 78, y: map.y + map.h - 200, w: 388, h: 184 };
+}
 function pageSize(state) { return state.panel === 'search' && state.searchKind === 'chargers' ? 2 : 4; }
 function listBounds(state) {
     const b = panel(state);
@@ -23,4 +26,4 @@ function visibleResults(state) {
     const offset = Math.max(0, Math.min(state.offset, Math.max(0, list.length - pageSize(state))));
     return list.slice(offset, offset + pageSize(state)).map((item, i) => Object.assign({ number: offset + i + 1 }, item));
 }
-module.exports = { panel, viewport, pageSize, listBounds, visibleResults };
+module.exports = { panel, viewport, eta, pageSize, listBounds, visibleResults };

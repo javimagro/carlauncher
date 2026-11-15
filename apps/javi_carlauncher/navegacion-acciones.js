@@ -270,8 +270,23 @@ function createActions(builders, options) {
     async function calculate(command, token) {
         if (!selected && !stops.length) throw new Error('NO_DESTINATION');
         if (command.action === 'add-stop') {
-            if (!selected || stops.length >= 12) throw new Error('STOP_LIMIT');
+            if (!selected) throw new Error('NO_DESTINATION');
+            let remaining = stops;
+            if (command.activeRoute === true) {
+                const p = await proxy('trips'); const trips = await p.currentTrips.getValue(); alive(token);
+                const active = Array.isArray(trips) ? trips.filter((trip) => trip && trip.active === true) : [];
+                const definition = active.length === 1 && active[0].tripDefinition;
+                const segments = definition && definition.tripSegment;
+                const final = Array.isArray(segments) && segments[segments.length - 1];
+                const pending = (segment) => segment && [2, 4, 'ACTIVATED', 'UPCOMING'].includes(segment.destinationStatus);
+                if (!pending(final) || final.isERouteTripSegment === true || segments.length > 24) throw new Error('BMW_ACTIVE_TRIP_UNAVAILABLE');
+                const manual = segments.filter((segment) => pending(segment) && segment.isERouteTripSegment !== true);
+                remaining = tripStops({ tripSegment: manual });
+                if (remaining.length !== manual.length) throw new Error('BMW_ACTIVE_TRIP_UNAVAILABLE');
+            }
+            if (remaining.length >= 12) throw new Error('STOP_LIMIT');
             // Insert before the final destination; manual stops are not automatic charging stops.
+            stops = remaining.slice();
             stops.splice(Math.max(0, stops.length - 1), 0, selected);
         } else if (command.action === 'route') stops = [selected];
         await clearPlan(); alive(token);
