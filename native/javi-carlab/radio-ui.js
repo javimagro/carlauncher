@@ -8,7 +8,7 @@ const filters = ['favorites', 'popular', 'music', 'sports'];
 const empty = () => ({ stations: [], current: null, active: false, sourceKnown: false, loading: false, listError: '', result: null });
 function createRadioUI(options, invalidate) {
     options = options || {}; invalidate = invalidate || (() => {});
-    const state = { mode: 'playing', filters: [], index: 0, top: 0, message: '', frame: empty() };
+    const state = { mode: 'playing', filters: [], index: 0, top: 0, message: '', logoDiagnostic: null, frame: empty() };
     const favorites = new Map(), images = new Map(), attempted = new Map(), decoding = new Set();
     let received = 0, serial = 0, pending = null, closed = false, writeBusy = false, writeAgain = false;
     let preferencesReady = !options.radioFile;
@@ -109,20 +109,27 @@ function createRadioUI(options, invalidate) {
     function image(p) {
         if (!p || !p.bytes || !options.photo || decoding.has(p.key)) return;
         const epoch = imageEpoch;
+        const diagnostic = { key: p.key, status: 'decoding', attempts: p.attempts || [] };
+        state.logoDiagnostic = diagnostic;
         decoding.add(p.key);
         options.photo('https://radio.invalid/' + p.key, () => Promise.resolve(Buffer.from(p.bytes, 'base64')), 160, 160, true,
             () => !closed && enabled && epoch === imageEpoch).then((img) => {
                 if (closed || !enabled || epoch !== imageEpoch) { dropImage(img); return; }
                 if (images.has(p.key)) dropImage(images.get(p.key));
                 images.delete(p.key); images.set(p.key, img);
+                diagnostic.status = 'ready';
                 if (images.size > 20) { const key = images.keys().next().value; dropImage(images.get(key)); images.delete(key); }
                 invalidate();
-            }, () => {}).then(() => decoding.delete(p.key));
+            }, () => {
+                if (closed || !enabled || epoch !== imageEpoch) return;
+                diagnostic.status = 'decode-failed';
+                console.warn('BMWLauncher: logo de radio recibido pero no decodificable');
+            }).then(() => decoding.delete(p.key));
     }
     function receive(frame, now) {
         if (closed) return;
         const selected = rows()[state.index];
-        if (!frame || !valid(frame)) { state.frame = empty(); received = 0; images.forEach(dropImage); images.clear(); attempted.clear(); lastArt = lastLogo = ''; artRequest = null; imageEpoch++; invalidate(); return; }
+        if (!frame || !valid(frame)) { state.frame = empty(); state.logoDiagnostic = null; received = 0; images.forEach(dropImage); images.clear(); attempted.clear(); lastArt = lastLogo = ''; artRequest = null; imageEpoch++; invalidate(); return; }
         state.frame = frame; received = now;
         if (assistantRequest && assistantRequest.accepted && frame.active && frame.current && frame.current.memoryKey === assistantRequest.memoryKey) {
             endAssistant({ status: 'confirmed', station: frame.current.name, message: 'BMW informa de esta emisora activa; no se ha medido el sonido' });
@@ -144,6 +151,7 @@ function createRadioUI(options, invalidate) {
                 lastLogo = frame.logo.key + ':' + frame.logo.serial; image(frame.logo);
             }
             if (frame.artwork && frame.artwork.key + ':' + frame.artwork.serial !== lastArt) {
+                if (!frame.artwork.bytes) state.logoDiagnostic = { key: frame.artwork.key, status: 'unavailable', attempts: frame.artwork.attempts || [] };
                 lastArt = frame.artwork.key + ':' + frame.artwork.serial; image(frame.artwork);
                 if (artRequest && artRequest.key === frame.artwork.key) artRequest = null;
             }

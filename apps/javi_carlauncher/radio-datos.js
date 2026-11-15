@@ -14,13 +14,23 @@ const clean = (v, size) => typeof v === 'string' ? v.replace(/[\x00-\x1f\x7f]/g,
 const uint = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 const on = (v) => v === 1 || v === 'ON';
 const bandNames = { WB_FM: 1, WB_MW: 2, WB_DAB: 3, WB_FM_DAB: 4 };
-function picture(value) {
+function pictureDetails(value) {
+    const format = value && Number.isInteger(value.format) && value.format >= 0 && value.format <= 255 ? value.format : null;
     // BMW ByteBufferData is a struct, not the encoded image itself.
     if (value && value.data !== undefined) value = value.data;
-    if (!(Buffer.isBuffer(value) || value instanceof Uint8Array || Array.isArray(value)) || value.length > 96 * 1024 || value.length < 8) return null;
+    const bytes = Buffer.isBuffer(value) || value instanceof Uint8Array || Array.isArray(value);
+    const size = bytes ? value.length : 0;
+    const result = (status, data) => ({ bytes: data || null, status, format, size });
+    if (!value || bytes && !size) return result('empty');
+    if (!bytes) return result('invalid');
+    if (size > 96 * 1024) return result('too-large');
+    if (size < 8) return result('invalid');
     const b = Buffer.from(value);
-    return (b[0] === 255 && b[1] === 216) || b.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? b.toString('base64') : null;
+    if ((b[0] === 255 && b[1] === 216) || b.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return result('ready', b.toString('base64'));
+    return result(format === 6 || format === 7 || /^GIF8[79]a/.test(b.toString('ascii', 0, 6)) ||
+        b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' ? 'unsupported' : 'invalid');
 }
+function picture(value) { return pictureDetails(value).bytes; }
 function seconds(time) {
     return time && uint(time.hour, 23) && uint(time.minute, 59) && uint(time.second, 59) ? time.hour * 3600 + time.minute * 60 + time.second : null;
 }
@@ -55,4 +65,4 @@ function sources(values) {
 }
 const listNames = { LT_RECEIVABLE_FM_DAB: 2, LT_PRESETS_RADIO: 7, LT_TOPSTATIONS_RADIO: 10 };
 function listType(value) { return lists.includes(value) ? value : listNames[value]; }
-module.exports = { services, lists, station, sources, picture, clean, seconds, listType };
+module.exports = { services, lists, station, sources, picture, pictureDetails, clean, seconds, listType };

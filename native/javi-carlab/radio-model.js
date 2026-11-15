@@ -13,7 +13,10 @@ function validStation(s) {
 }
 function validImage(p) {
     return p === null || p && str(p.key, 20) && Number.isInteger(p.serial) &&
-        (p.bytes === null || str(p.bytes, 131072) && /^[A-Za-z0-9+/]*={0,2}$/.test(p.bytes));
+        (p.bytes === null || str(p.bytes, 131072) && /^[A-Za-z0-9+/]*={0,2}$/.test(p.bytes)) &&
+        (p.attempts === undefined || Array.isArray(p.attempts) && p.attempts.length <= 2 && p.attempts.every((a) => a &&
+            ['metadata', 'tuner'].includes(a.source) && ['ready', 'empty', 'invalid', 'too-large', 'unsupported', 'missing-row', 'query-failed'].includes(a.status) &&
+            Number.isSafeInteger(a.size) && a.size >= 0 && (a.format === null || Number.isInteger(a.format) && a.format >= 0 && a.format <= 255)));
 }
 function valid(frame) {
     return frame && frame.version === 1 && Array.isArray(frame.stations) && frame.stations.length <= 1500 && frame.stations.every(validStation) &&
