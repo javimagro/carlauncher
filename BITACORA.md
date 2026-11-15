@@ -7,6 +7,7 @@
 - `/tmp` comprobado root:root1777, aapd activo sin drop-ins experimentales y formato propio todavía no instalado. La instalación de los preloads difiere su carga al próximo arranque completo. No repetir el reinicio aislado de aapd que dejó los controles originales sin respuesta.
 - Se integra la PR11 de Radio, revisada sin hallazgos. La copia principal de trabajo conserva cambios locales de otras tareas sin integrar; no se mezclan automáticamente con esta versión. Se publica desde el commit integrado limpio, con paquetes y hash verificados. El estado definitivo de publicación se comunica con el enlace de release.
 - **Límite físico:** imagen/toque/rueda con formato ancho y tamaño adaptado se validaron en ensayos separados. Falta comprobarlos juntos en esta revisión instalada, restauración y alternancia repetida. Se distribuye expresamente como prueba, no como validación física completada. El micrófono sigue pendiente.
+- **Verificación del candidato.** 453/453 pruebas JS; recompilación del puente con avisos como errores y406 checks portables sin fallos, mismo SHA-256 `f0f863…`. Los cuatro hashes de firmware de su perfil coinciden por lectura SSH. ZIP candidato de166 archivos; el lector oficial Store en Node8.16.2 acepta los cuatro componentes, y genera guard/drop-in para hmi8.service y aapd.service sin reinicio al instalar. Enlace OAP con donante sintético correcto; no acredita ejecución del SDK en la unidad.
 
 ## 2026-11-15 · Asistente: micrófono aún sin integrar y foco de respuesta corregido
 
