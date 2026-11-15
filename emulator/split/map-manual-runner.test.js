@@ -7,6 +7,17 @@ const id = 0x4d410008;
 const baselineText = 'screen 4\n layers: 100\nscreen 5\n layers: 200\n' +
   'layer 100\n surfaces: 100\nlayer 200\n surfaces: 200\nsurface 100\nsurface 200\n';
 const baseline = diagnostic.parseScene(baselineText);
+
+test('la inicialización aislada no envía SHOW ni activa modos combinados', () => {
+  assert.equal(runner.trialCommand({ initializationOnly: true }), 'INITIALIZE');
+  assert.equal(runner.trialCommand({}), 'SHOW');
+  assert.equal(runner.trialCommand({ baseline: true }), 'SHOW_BASELINE');
+  ['createOnly', 'composeOnly'].forEach((mode) => {
+    assert.equal(runner.trialCommand({ [mode]: true }), null);
+    assert.throws(() => runner.trialCommand({ [mode]: true, initializationOnly: true }), /excluyentes/);
+  });
+  assert.throws(() => runner.trialCommand({ baseline: true, initializationOnly: true }), /excluyentes/);
+});
 function created(producer) {
   return baselineText + 'layer ' + id + '\n visibility: 0\n size: 0x0\n surfaces: ' + id + '\n' +
     'surface ' + id + '\n process: ' + producer + ' (12)\n size: 1038x468\n frames: 0\n';
@@ -38,7 +49,7 @@ test('el ensayo conserva la propiedad de la capa aunque se observen cuadros prop
 test('la creación exige IDs libres, productor NavigationBasic y pertenencia exclusiva', function () {
   ['/usr/bin/NavigationBasic', '././usr/bin/NavigationBasic'].forEach(function (producer) {
     const text = created(producer), scene = diagnostic.parseScene(text);
-    assert.equal(runner.validateNewObjects(baseline, scene, id, text).status, 'NO_FRAMES');
+    assert.equal(runner.validateNewObjects(baseline, scene, id, text).status, 'SURFACE_REQUIRES_IMAGE_CHECK');
     assert.throws(function () { runner.validateNewObjects(scene, scene, id, text); }, /ya existe/);
   });
   const other = created('/usr/bin/Other');

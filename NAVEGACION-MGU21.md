@@ -176,6 +176,10 @@ Faltan las pruebas offline solicitadas: zona nueva cubierta, versión/procedenci
 
 La instalación de prueba debe comprobar: búsqueda con tildes, cero resultados, cargadores, detalle, guardar/reabrir favorito, calcular sin iniciar, recargas de una ruta larga, Iniciar, maniobras, vuelta a BMW Maps, ocultación de BMWLauncher y Finalizar. Repetir toque y mando con la captura de Hmi8 activa. Comprobar aparte conectividad online BMW y Uplink: que la Store tenga internet no garantiza ConnectedDrive.
 
+## Estado del ensayo de cartografía local
+
+Investigación local del 15-11-2026: el arranque original pasa por `INITIALIZATION` y espera el modo confirmado de su propia vista, además del ACK. Se ha preparado un ensayo aislado con lectura del evento, conservando opacidad cero y sin encadenar VISIBLE automáticamente. La cartografía aún no está validada: ni un ACK, ni el evento de modo, ni el contador IVI acreditan imagen. Contrato, hashes, pruebas y siguiente ensayo en [MAPA-ENSAYO-LOCAL.md](MAPA-ENSAYO-LOCAL.md#15-11-2026--fase-initialization-y-confirmación-de-modo-por-instancia).
+
 ## Reversión
 
 Los cambios no parchean NavController ni el motor de mapa. Para volver, restaurar la app y el motor gráfico publicados anteriormente mediante una versión de paquete superior; conservar sus IDs y UUID. La función no modifica las preferencias globales de rutas y no se debe borrar una ruta activa como parte de la reversión. Los favoritos propios pueden conservarse. La prueba de esta versión no autoriza una conexión SSH o instalación automática.

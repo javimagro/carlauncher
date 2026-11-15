@@ -1,5 +1,14 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Mapa BMW: inicialización propia y confirmación del motor
+
+- **Síntoma de referencia.** La vista propia creaba superficie negra y seguía en DLS 1; no se ha repetido en el coche durante este trabajo. La omisión de objeto 15 ya estaba corregida en una sonda candidata, todavía sin validar por ENET. Se conserva la integración AA local.
+- **Hallazgo nuevo.** El flujo normal `MapController::start → ensureMapReadyToRender` del NavController 21.47 pide `INITIALIZATION` (FA94:3B, modo 0x42) con el handle propio y vector vacío. Exige éxito RPC y modo confirmado por handle mediante FA94:8002/grupo 2. Nuestra prueba iba directamente a VISIBLE. Se ha contrastado el pseudocódigo con ensamblador; **no se demuestra todavía que esta diferencia sea la causa única**. Direcciones, hashes y límites en [MAPA-ENSAYO-LOCAL.md](MAPA-ENSAYO-LOCAL.md#15-11-2026--fase-initialization-y-confirmación-de-modo-por-instancia).
+- **Implementación local.** Nueva variante manual `--initialize-only`, una sola orden de inicialización y ninguna transición automática a VISIBLE. Suscripción filtrada por servicio, versión, tipo, longitud, handle nuevo y enum. Registro acotado de modo observado y retirada de la suscripción al cerrar. Se conserva la capa transparente, la liberación del handle propio y el supervisor. Si falta ACK del setter, la sonda devuelve 8 tras observar y retirar; no confunde retirada correcta con configuración aceptada.
+- **Diagnóstico corregido.** El contador IVI cero también aparecía en mapas originales visibles; ya no se etiqueta como ausencia de cuadros. `imageValidated` sigue falso con contador cero, positivo o aviso de modo: hace falta ver cartografía real en la captura de la superficie propia.
+- **Verificación.** `node --test --test-concurrency=4 emulator/split/*.test.js`: **433/433**. Los dos scripts finales cargan y pasan sintaxis con Node 8.16.2. C++14 compila con `-Wall -Wextra -Werror`, incluidas las regresiones constexpr de payload y descarte de eventos ajenos/malformados. ELF x86-64, intérprete Linux esperado, GLIBC ≤2.14 y GLIBCXX ≤3.4.22. SHA-256 **`79891c7fc83e532ed8261daf447dd9e421f324c7b8faf22b523262b779335d8e`**; herramienta y fuentes en `dist/map-manual-initialization/build.json`. El nativo no se ejecutó en Linux/MGU.
+- **Pendiente y reversión.** Comparar VISIBLE e INITIALIZATION en instancias nuevas, contrastar ACK/evento, carga/proveedores y píxeles antes de hacer visible una capa. `--run` conserva VISIBLE y `--run-baseline` omite objeto 15. Sin SSH, instalación, cambios al cockpit ni publicación; estas sondas no se empaquetan en Store.
+
 ## 2026-11-15 · Integración local AA con formato, reapertura y cierre comprobable
 
 - Tras recuperar el toque y la rueda de AA original con el reinicio completo autorizado, se continúa en local. El último intento de SSH no respondió; no se ha instalado esta integración ni se han ejecutado más pruebas en la MGU.
