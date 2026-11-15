@@ -362,9 +362,11 @@ int main(int argc, char **argv) {
       u32(metadata, 1);
       Bytes item;
       u32(item, 1);
-      const char *id = "00000001";
-      u32(item, 8);
-      item.insert(item.end(), id, id + 8);
+      // ByteBuffer contains the numeric track identifier in big-endian order.
+      // ASCII "00000001" becomes 0x3030303030303031 in CDeviceOAPDynamic;
+      // QueueAddOAP then uses its low 32 bits as a media position, not track 1.
+      u32(item, 4);
+      u32(item, 1);
       u32(item, metadata.size());
       item.insert(item.end(), metadata.begin(), metadata.end());
       Bytes playlist = token;

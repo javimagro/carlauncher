@@ -507,6 +507,8 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         }
         const audioError = {
             'audio-unavailable': 'Audio no disponible', 'audio-alsa': 'Audio · ALSA no disponible',
+            'audio-focus-wait': 'Audio · conectando con BMW', 'audio-focus-lost': 'Audio · otra fuente activa',
+            'audio-focus-error': 'Audio · foco BMW no disponible',
             'audio-open': 'Audio · no se abre la salida', 'audio-format': 'Audio · formato no admitido',
             'audio-timeout': 'Audio · la salida no arranca', 'audio-stall': 'Audio · ALSA sin avance',
             'audio-pipe': 'Audio · el auxiliar no responde',
