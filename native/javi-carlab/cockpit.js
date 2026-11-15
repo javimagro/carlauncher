@@ -3,10 +3,9 @@
 const { Recorder, play } = require('./vendor/kit_record.js');
 const { Canvas } = require('./vendor/kit_canvas.js');
 const { loadArtwork, parseWeather, weatherUrl } = require('./drivehub-data.js');
-const { drawCockpit, width, height } = require('./cockpit-view.js');
+const { drawCockpit, telemetry, bands } = require('./cockpit-view.js');
 const { createWeather } = require('./weather-location.js');
 
-const bands = [[0, 192], [192, 86], [278, 122]];
 const layerStatus = {
     shown: 'Widget visible',
     waiting: 'Widget en espera',
@@ -17,6 +16,7 @@ const layerStatus = {
 };
 
 function createCockpit(Client, get, log = console) {
+    const { x, y, w: width, h: height } = telemetry;
     let renderer;
     let layer;
     let frameKeys;
@@ -43,7 +43,7 @@ function createCockpit(Client, get, log = console) {
             status = layerStatus.waiting;
             if (layer) return;
             layer = client.image({ target: 'widget', klass: 'overlay', contend: false,
-                x: 820, y: 185, w: 600, h: 500, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
+                x, y, w: width, h: height, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
         });
         client.on('layer', (ref, state) => {
             if (renderer === client && ref === layer) status = layerStatus[state] || status;
