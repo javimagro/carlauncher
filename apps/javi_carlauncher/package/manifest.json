@@ -72,6 +72,14 @@
         "statusRotaryEncoderState": "rs"
       }
     },
+    "de.bmw.infotainment.controlelements.SteeringWheelPushButton": {
+      "instances": [
+        "1"
+      ],
+      "attributes": {
+        "statusSearchSwitch1": "rs"
+      }
+    },
     "de.bmw.infotainment.drivingexcitement.Efficiencytainment2": {
       "instances": [
         "1"

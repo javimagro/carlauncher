@@ -41,13 +41,13 @@ function drawRadio(cv, x, y, w, h, ui, now) {
         const bw = (w - 47) / 4;
         filters.forEach((type, i) => {
             const left = x + 16 + i * (bw + 5), on = state.filters.includes(type);
-            cv.roundRect(left, y + 48, bw, 52, 7, state.filterFocus === i ? '#3b7084' : '#21495c');
-            if (on || state.filterFocus === i) cv.roundRect(left + 1, y + 49, bw - 2, 50, 6, on ? '#376c79' : '#315a70');
+            cv.roundRect(left, y + 48, bw, 52, 7, '#21495c');
+            if (on) cv.roundRect(left + 1, y + 49, bw - 2, 50, 6, '#376c79');
             icon(cv, type, left + bw / 2, y + 74, on ? gold : white);
         });
         const rows = ui.rows();
         rows.slice(state.top, state.top + 4).forEach((s, i) => {
-            const at = y + 112 + i * 84, focused = state.filterFocus < 0 && state.index === state.top + i;
+            const at = y + 112 + i * 84, focused = state.index === state.top + i;
             cv.roundRect(x + 16, at, w - 32, 80, 8, focused ? '#51899b' : '#102331');
             cv.rampRect(x + 18, at + 2, w - 36, 76, 7, focused ? ['#1c5066', '#142e40'] : ['#162e40', '#0c1927']);
             if (focused) cv.line(x + 22, at + 77, x + w * .42, at + 77, 3, accent);

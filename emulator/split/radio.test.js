@@ -4,11 +4,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const { createRadio } = require('../../apps/javi_carlauncher/radio-bmw');
 const { services, station, sources, picture, seconds } = require('../../apps/javi_carlauncher/radio-datos');
 const { valid, consume } = require('../../native/javi-carlab/radio-model');
 const { createRadioUI } = require('../../native/javi-carlab/radio-ui');
 const { createDriveHub, cards, viewport } = require('../../native/javi-carlab/drivehub-state');
+const createSession = require('../../native/javi-carlab/drivehub-session');
 const settle = async () => { for (let i = 0; i < 30; i++) await new Promise(setImmediate); };
 const until = async (fn) => { const deadline = Date.now() + 2000; while (!fn() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10)); assert(fn()); };
 const raw = (id = 12, overrides) => Object.assign({ dataBaseIdentifier: id, positionNumber: id - 12, waveBand: 1, stationLongName: 'Radio ' + id,
@@ -175,19 +177,28 @@ test('native favorites, popular and PTY filters use BMW metadata and local overr
         restored.filter(0); restored.filter(1); assert.deepEqual(restored.rows().map((s) => s.key), ['13']); restored.close();
     } finally { fs.rmSync(dir, { recursive: true }); }
 });
-test('rotary and touch select radio rows, long press toggles favorite and lateral tilt returns to the cards', () => {
+test('radio rotation and steering skip tune directly, while list filters require touch', () => {
     const commands = [], ui = createRadioUI({ radioCommand: (c) => { commands.push(c); return true; } });
     ui.receive(frame({ stations: [sample(), sample(13)] }), Date.now()); ui.update(Date.now(), true);
     let clock = 0; const panel = createDriveHub(() => {}, () => clock, null, ui);
     panel.controller({ knob: 10, press: 0, tilt: 0 }); panel.controller({ knob: 11, press: 0, tilt: 0 });
-    assert.equal(panel.state.selected, 1); panel.controller({ knob: 12, press: 0, tilt: 0 }); assert.equal(ui.state.mode, 'list');
-    panel.controller({ knob: 13, press: 0, tilt: 0 }); assert.equal(ui.state.index, 1);
-    panel.controller({ knob: 13, press: 1, tilt: 0 }); panel.controller({ knob: 13, press: 2, tilt: 0 }); panel.controller({ knob: 13, press: 0, tilt: 0 });
-    assert(ui.favorite(ui.rows()[1])); assert(!commands.some((c) => c.op === 'tune'));
-    panel.controller({ knob: 13, press: 1, tilt: 0 }); panel.controller({ knob: 13, press: 0, tilt: 0 });
-    assert.equal(commands[commands.length - 1].key, '13');
-    panel.controller({ knob: 13, press: 0, tilt: 10 }); assert.equal(ui.state.mode, 'playing'); assert.equal(panel.state.selected, 1);
-    panel.controller({ knob: 13, press: 0, tilt: 0 }); panel.controller({ knob: 13, press: 0, tilt: 10 }); assert.equal(panel.state.selected, 0);
+    assert.equal(panel.state.selected, 1);
+    panel.controller({ knob: 12, press: 0, tilt: 0 });
+    assert.equal(ui.state.mode, 'playing');
+    assert.equal(commands.at(-1).op, 'tune'); assert.equal(commands.at(-1).key, '13');
+    ui.receive(frame({ stations: [sample(), sample(13)], current: sample(13),
+        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), Date.now());
+    panel.skip(-1);
+    assert.equal(commands.at(-1).key, '12');
+    ui.receive(frame({ stations: [sample(), sample(13)],
+        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), Date.now());
+    panel.controller({ knob: 12, press: 0, tilt: 7 });
+    assert.equal(ui.state.mode, 'list');
+    panel.controller({ knob: 12, press: 0, tilt: 0 }); panel.controller({ knob: 12, press: 0, tilt: 1 });
+    assert.equal(ui.state.index, 0); assert.deepEqual(ui.state.filters, []);
+    ui.touch(22, 65, cards[1].w, viewport.h);
+    assert.deepEqual(ui.state.filters, ['favorites']);
+    panel.controller({ knob: 12, press: 0, tilt: 10 }); assert.equal(panel.state.selected, 0);
     clock = 300; const x = viewport.x + cards[1].x + 80;
     panel.touch('down', x, 90); panel.touch('up', x, 90); assert.equal(ui.state.mode, 'list'); ui.close();
 });
@@ -196,6 +207,25 @@ test('decorative spectrum only animates when the visible card has the original r
     ui.receive(frame({ active: false }), 1200); ui.update(1300, true); assert(ui.levels.every((n) => n === .025));
     ui.receive(frame(), 1400); ui.update(1500, false); assert(ui.levels.every((n) => n === .025));
     ui.update(7000, true); assert.equal(ui.state.frame.current, null); ui.close();
+});
+test('navigation borrows the knob while open and the first turn after closing tunes the focused radio', (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    const gpu = new EventEmitter(), commands = [];
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, frame() {}, close() {} });
+    const session = createSession(gpu, { useOap: true, area: () => ({ scale: 1 }), fixture: { news: [] },
+        radioCommand(command) { if (command.op === 'tune') commands.push(command); return true; } });
+    t.after(() => session.close());
+    gpu.emit('ready', {}, { touch: true }); session.show(true);
+    session.radio(frame({ stations: [sample(), sample(13)] })); t.mock.timers.tick(33);
+    const input = (knob, tilt = 0) => session.controller({ knob, press: 0, tilt });
+    input(10); input(11);
+    gpu.emit('touch', 'down', 38, 39); gpu.emit('touch', 'up', 38, 39); t.mock.timers.tick(33);
+    input(12);
+    session.controller({ skip: 1 });
+    assert.equal(commands.length, 0);
+    input(12, 10); t.mock.timers.tick(33);
+    input(13);
+    assert.equal(commands.length, 1); assert.equal(commands[0].key, '13');
 });
 test('radio modules are shipped with explicit OAP extensions and narrow permissions', () => {
     const base = path.join(__dirname, '../..'); const manifest = require('../../apps/javi_carlauncher/package/manifest.json');

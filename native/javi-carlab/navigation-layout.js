@@ -6,7 +6,7 @@ const { map } = require('./drivehub-state');
 function panel(state) {
     const wide = state.keyboard || state.panel === 'detail' || state.panel === 'guidance-displays' || state.panel.indexOf('assistant') === 0;
     return { x: map.x + 78, y: map.y + 10,
-        w: wide ? 744 : state.panel === 'route' ? 380 : 420,
+        w: wide ? 744 : state.panel === 'route' ? 380 : state.panel === 'suggestions' ? 440 : 420,
         h: map.h - 38 };
 }
 function viewport(state) {

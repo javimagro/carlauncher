@@ -13,7 +13,7 @@ const { fitArea } = require('../../native/javi-carlab/layout');
 const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = require('../../native/javi-carlab/drivehub-data');
 const { appUid, authorizeApp } = require('../../native/javi-carlab/drivehub-uplink');
 const { consume } = require('../../native/javi-carlab/controller-input');
-const { sample } = require('../../apps/javi_carlauncher/controller');
+const { sample, steeringInput } = require('../../apps/javi_carlauncher/controller');
 const { createLease } = require('../../native/javi-carlab/controller-lease');
 const { parseContext, isLauncher, openContext } = require('../../native/javi-carlab/home-context');
 const createSession = require('../../native/javi-carlab/drivehub-session');
@@ -230,6 +230,19 @@ test('the rendered session uses OAP rotation and releases capture when hidden or
     session.controller(turn(102));
     await new Promise((resolve) => setTimeout(resolve, 55));
     assert.equal(last, beforeExit);
+});
+
+test('wheel skip notifications are edge-triggered and independent of the rotary position', () => {
+    const events = [], receive = steeringInput(consume((event) => events.push(event)));
+    const button = (value) => ({ operationPushButtonAudioAutomaticTuningSteeringWheel: value });
+    receive(button(2), true);
+    receive(button(2));
+    receive(button(0));
+    receive(button('SUCHLAUF_ABWAERTS_MENUE_SKIP_LINKS'));
+    receive(button(1)); receive(button(3)); receive(button(1));
+    receive(button('KEINE_AKTION'));
+    receive(button('SUCHLAUF_AUFWAERTS_MENUE_SKIP_RECHTS'));
+    assert.deepEqual(events, [{ skip: -1 }, { skip: 1 }]);
 });
 
 test('the whole content receives touch and the house exits only on a completed tap', (t) => {

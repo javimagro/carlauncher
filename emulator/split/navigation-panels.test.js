@@ -2,19 +2,22 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fsCallbacks = require('node:fs');
 const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
 const { createNavigationUI } = require('../../native/javi-carlab/navigation-ui');
 const { controls } = require('../../native/javi-carlab/navigation-panels');
 const layout = require('../../native/javi-carlab/navigation-layout');
 const scene = require('../../native/javi-carlab/navigation-scene');
 const { project, fit } = require('../../native/javi-carlab/navigation-map');
+const { remember, suggest, loadHistory } = require('../../native/javi-carlab/navigation-suggestions');
 const { map, home, contains } = require('../../native/javi-carlab/drivehub-state');
 const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
 const origin = { latitude: 40.4, longitude: -3.7 };
+const bookmark = (name, latitude) => ({ name, address: { optionPOILocation: { latitude, longitude: -3.7, coordinatesValid: true } } });
 const results = Array.from({ length: 9 }, (_, i) => ({ id: '11:' + i, name: 'Cargador ' + i, metres: 1000 * i,
     type: 'charger', latitude: 40.41 + .01 * i, longitude: -3.71 + .01 * i }));
-function rig() {
-    const sent = [], ui = createNavigationUI({ navigationCommand(c) { sent.push(c); return true; } }, () => {});
+function rig(options = {}) {
+    const sent = [], ui = createNavigationUI({ ...options, navigationCommand(c) { sent.push(c); return true; } }, () => {});
     const nav = { state: 'inactive', points: [], destinations: [], segments: [], theme: 'day' };
     function receive(extra) {
         nav.controls = Object.assign({ request: sent.length ? sent[sent.length - 1].request : 0, busy: false, status: 'results',
@@ -38,23 +41,35 @@ function insideFrame(s, points) {
     }
 }
 
-test('route settings save as they change and load even when edited before the file finishes reading', async (t) => {
+test('route settings save during loading even if the first replacement is temporarily blocked', async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-prefs-'));
     const navigationFile = path.join(root, 'navigation.json');
     await fs.writeFile(navigationFile, JSON.stringify({ preferences: { arrival: 25, motorways: false }, theme: 'day' }));
+    const rename = fsCallbacks.rename;
+    let replacements = 0;
+    t.mock.method(fsCallbacks, 'rename', (file, dest, callback) => {
+        if (dest === navigationFile && replacements++ === 0) {
+            setImmediate(() => callback(Object.assign(new Error('test blocked replacement'), { code: 'EPERM' })));
+        } else rename(file, dest, callback);
+    });
     const ui = createNavigationUI({ navigationFile }, () => {});
     let restored;
     t.after(async () => { ui.close(); if (restored) restored.close(); await fs.rm(root, { recursive: true, force: true }); });
     ui.activate('route-settings'); ui.activate('pref:tolls');
-    for (let i = 0; i < 40; i++) {
-        const stored = JSON.parse(await fs.readFile(navigationFile, 'utf8'));
-        if (stored.preferences.tolls === false) break;
-        await new Promise((resolve) => setTimeout(resolve, 15));
-    }
-    const saved = JSON.parse(await fs.readFile(navigationFile, 'utf8'));
+    let saved;
+    const saveDeadline = Date.now() + 4000;
+    do {
+        saved = JSON.parse(await fs.readFile(navigationFile, 'utf8'));
+        if (saved.preferences.tolls === false) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    } while (Date.now() < saveDeadline);
     assert.deepEqual(saved.preferences, { tolls: false, arrival: 25, motorways: false });
+    assert(replacements >= 2);
     restored = createNavigationUI({ navigationFile }, () => {});
-    for (let i = 0; i < 40 && restored.state.preferences.arrival !== 25; i++) await new Promise((resolve) => setTimeout(resolve, 15));
+    const loadDeadline = Date.now() + 4000;
+    while (restored.state.preferences.arrival !== 25 && Date.now() < loadDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     assert.deepEqual(restored.state.preferences, { charging: true, tolls: false, arrival: 25, motorways: false });
 });
 test('charger list frames only its visible numbered rows beside the panel, including after scrolling', () => {
@@ -92,7 +107,7 @@ test('closing during a destination lookup keeps late detail and repeated snapsho
     r.ui.close();
 });
 test('wheel traverses offscreen results, scrolls into view and never starts guidance by browsing', () => {
-    const r = rig(); r.ui.activate('chargers'); r.receive(); r.draw(); r.ui.focus();
+    const r = rig(); r.ui.activate('chargers'); r.receive(); r.draw();
     r.ui.controller({ knob: 0, press: 0, tilt: 0 });
     for (let i = 1; i <= 7; i++) { r.ui.controller({ knob: i, press: 0, tilt: 0 }); r.draw(); }
     assert.equal(r.ui.state.focus, 'result:11:6'); assert.equal(r.ui.state.offset, 5);
@@ -100,6 +115,103 @@ test('wheel traverses offscreen results, scrolls into view and never starts guid
     r.ui.controller({ knob: 7, press: 1, tilt: 0 }); r.ui.controller({ knob: 7, press: 0, tilt: 0 });
     assert.equal(r.sent[1].action, 'select'); assert.equal(r.sent[1].id, '11:6'); r.ui.close();
 });
+test('vertical controller steps advance the navigation results one item at a time', () => {
+    const r = rig(); r.ui.activate('chargers'); r.receive(); r.draw();
+    const input = (tilt) => r.ui.controller({ knob: 0, press: 0, tilt });
+    input(0); input(7); input(8);
+    assert.equal(r.ui.state.focus, 'result:11:0');
+    input(0); input(7); input(0); input(7);
+    assert.equal(r.ui.state.focus, 'result:11:2');
+    assert.equal(r.ui.state.offset, 1);
+    input(0); input(1);
+    assert.equal(r.ui.state.focus, 'result:11:1');
+    assert.equal(r.sent.length, 1); r.ui.close();
+});
+test('CarLauncher suggestions combine habits and distance, exclude the current site and cap the list at three', () => {
+    const now = new Date(2026, 10, 15, 9).getTime(), day = 86400000;
+    let history = [];
+    const habitual = bookmark('Habitual', 40.9);
+    for (let i = 8; i >= 1; i--) history = remember(history, habitual, now - i * day, true, origin);
+    const recent = bookmark('Otra zona', 40.85), nearby = bookmark('Cerca', 40.42);
+    history = remember(history, recent, now - 1000, false, { latitude: 41, longitude: -3.7 });
+    history = remember(history, nearby, now - 2000, false, origin);
+    history = remember(history, bookmark('Aquí', origin.latitude), now - 3000, true, origin);
+    assert.equal(remember(history, nearby, now, false, origin), history, 'a repeated selection is deduplicated');
+    const data = loadHistory(JSON.parse(JSON.stringify(history)), []);
+    const ranked = suggest(data, [habitual, bookmark('Otro favorito', 40.5)], origin, now);
+    assert.equal(ranked[0].name, 'Habitual');
+    assert.equal(ranked.length, 3);
+    assert(!ranked.some((row) => row.name === 'Aquí'));
+    assert(suggest(data, [], null, now).every((row) => row.metres === null));
+});
+
+test('opening search drops down up to three saved places and tapping one calculates without starting guidance', () => {
+    const r = rig();
+    const favorite = bookmark('Destino conocido', 40.45);
+    r.ui.state.favorites = [favorite, bookmark('Otro', 40.5), bookmark('Tercero', 40.6), bookmark('Cuarto', 40.7)];
+    r.tap('search');
+    assert.equal(r.ui.state.panel, 'suggestions');
+    assert.deepEqual(r.ui.state.suggestions.map((s) => s.name), ['Destino conocido', 'Otro', 'Tercero']);
+    assert.equal(r.ui.state.keyboard, false);
+    r.tap('suggestion:0');
+    assert.equal(r.sent[0].action, 'restore');
+    assert.deepEqual(r.sent[0].bookmark, favorite);
+    r.receive({ busy: true, status: 'detail', selected: { ...favorite, latitude: 40.45, longitude: -3.7 } });
+    assert.equal(r.sent.length, 1);
+    r.receive({ status: 'detail', selected: { ...favorite, latitude: 40.45, longitude: -3.7 } });
+    assert.equal(r.sent[1].action, 'route');
+    assert.equal(r.ui.state.panel, 'route');
+    assert(!r.sent.some((command) => command.action === 'start'));
+    r.receive({ status: 'preview', plan: { key: '80:3', arrival: 15, charging: false } });
+    r.ui.activate('close'); r.tap('search'); r.tap('query');
+    assert.equal(r.ui.state.keyboard, true); r.ui.activate('back'); assert.equal(r.ui.state.panel, 'none');
+    r.ui.close();
+});
+
+test('closing a recent destination before the response never opens or calculates a route', () => {
+    const r = rig(), saved = bookmark('Destino', 40.45);
+    r.ui.state.favorites = [saved]; r.tap('search'); r.tap('suggestion:0'); r.tap('close');
+    r.receive({ status: 'detail', selected: saved });
+    assert.equal(r.ui.state.panel, 'none');
+    assert.deepEqual(r.sent.map((command) => command.action), ['restore']); r.ui.close();
+});
+
+test('confirmed navigation persists a visit with its departure position and suggests it after reopening', async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-history-'));
+    const navigationFile = path.join(root, 'navigation.json'), r = rig({ navigationFile });
+    let restored;
+    t.after(async () => {
+        r.ui.close();
+        if (restored) restored.ui.close();
+        await fs.rm(root, { recursive: true, force: true });
+    });
+    r.ui.assistantSearch('Estación', false); r.receive();
+    r.ui.activate('result:11:0');
+    const selected = bookmark('Estación', 40.45);
+    r.receive({ status: 'detail', selected });
+    r.ui.activate('route');
+    r.receive({ status: 'preview', selected, plan: { key: '80:3', arrival: 15, charging: false } });
+    r.ui.activate('start');
+    r.receive({ status: 'guiding', selected });
+    let history;
+    const deadline = Date.now() + 3000;
+    while (!history && Date.now() < deadline) {
+        try {
+            const record = JSON.parse(await fs.readFile(navigationFile, 'utf8')).destinationHistory[0];
+            if (record && record.uses.some((use) => use.navigated)) history = record;
+        } catch (_) {}
+        if (!history) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert(history);
+    assert.deepEqual(history.uses.map((use) => [use.navigated, use.origin]), [[false, origin], [true, origin]]);
+    r.ui.close();
+    restored = rig({ navigationFile });
+    const reloadDeadline = Date.now() + 3000;
+    while (!restored.ui.state.recent.length && Date.now() < reloadDeadline) await new Promise((resolve) => setTimeout(resolve, 25));
+    restored.tap('search');
+    assert.equal(restored.ui.state.suggestions[0].name, 'Estación');
+});
+
 test('touch scroll cannot activate the crossed row and a map drag cannot scroll the list', () => {
     const r = rig(); r.ui.activate('chargers'); r.receive(); r.draw(); const b = layout.listBounds(r.ui.state);
     r.ui.touch('down', b.x + 20, b.y + 220); r.ui.touch('move', b.x + 20, b.y + 70); r.ui.touch('up', b.x + 20, b.y + 70);

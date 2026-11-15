@@ -326,16 +326,21 @@ test('charger panel reports waiting, failure and empty results separately and re
     ui.close();
 });
 
-test('navigation wheel selects controls only with map focus and a covered press never clicks on return', () => {
+test('navigation wheel selects items only with an open panel and drops a covered press', () => {
     const ui = createNavigationUI({}, () => {}), cv = new Recorder(1960, 520);
     const nav = { state: 'inactive', points: [], destinations: [], segments: [], theme: 'day' };
     ui.update(nav, {}, true); controls(cv, ui, nav);
-    assert.equal(ui.controller({ knob: 0, press: 0, tilt: 0 }), false);
-    ui.state.focused = true; ui.controller({ knob: 0, press: 0, tilt: 0 }); ui.controller({ knob: 1, press: 0, tilt: 0 });
-    assert.notEqual(ui.state.focus, -1);
-    ui.state.focus = 'search'; ui.controller({ knob: 1, press: 1, tilt: 0 }); ui.reset();
-    ui.controller({ knob: 1, press: 0, tilt: 0 }); assert.equal(ui.state.panel, 'none');
-    ui.controller({ knob: 1, press: 1, tilt: 0 }); ui.controller({ knob: 1, press: 0, tilt: 0 }); assert.equal(ui.state.panel, 'search'); ui.close();
+    ui.controller({ knob: 0, press: 0, tilt: 0 });
+    ui.controller({ knob: 1, press: 0, tilt: 0 });
+    assert.equal(ui.state.focus, -1);
+    ui.activate('settings'); controls(cv, ui, nav);
+    ui.trackInput({ knob: 1, press: 0, tilt: 0 });
+    ui.controller({ knob: 1, press: 0, tilt: 7 });
+    assert.equal(ui.state.focus, 'back');
+    ui.controller({ knob: 1, press: 1, tilt: 0 }); ui.reset();
+    ui.controller({ knob: 1, press: 0, tilt: 0 }); assert.equal(ui.state.panel, 'settings');
+    ui.controller({ knob: 1, press: 1, tilt: 0 }); ui.controller({ knob: 1, press: 0, tilt: 0 });
+    assert.equal(ui.state.panel, 'none'); ui.close();
 });
 
 test('BMW local map never requests tiles or reads an external cache, including legacy options', async () => {
@@ -371,5 +376,6 @@ test('all navigation modules are shipped with the OAP and native component', () 
     }
     const native = require('../../native/javi-carlab/component.json');
     ['navigation-model.js', 'navigation-view.js', 'navigation-map.js', 'navigation-ui.js', 'navigation-panels.js',
-        'navigation-layout.js', 'navigation-scene.js', 'navigation-icons.js', 'navigation-icons.rgba.gz', 'navigation-icons.SOURCES.json'].forEach((file) => assert(native.files.some((f) => f.path === file)));
+        'navigation-layout.js', 'navigation-suggestions.js', 'navigation-scene.js', 'navigation-icons.js', 'navigation-icons.rgba.gz',
+        'navigation-icons.SOURCES.json'].forEach((file) => assert(native.files.some((f) => f.path === file)));
 });

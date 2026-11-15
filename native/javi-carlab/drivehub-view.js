@@ -620,6 +620,8 @@ function energy(cv, readings, art, vehicle, navigation) {
     const { x, y, w, h } = energyBar;
     cv.roundRect(x, y, w, h, 8, '#05080b');
     const column = w / 4;
+    const textSize = 22;
+    const baseline = y + h / 2 + 8;
     const prediction = navigation && navigation.state === 'active' && navigation.energy;
     const values = readings.map((r, i) => i === 0 ? r : Object.assign({}, r, {
         soc: prediction && prediction.source === 'bmw' ? prediction[['', 'stopSoc', 'chargedSoc', 'destinationSoc'][i]] : undefined,
@@ -627,16 +629,26 @@ function energy(cv, readings, art, vehicle, navigation) {
     }));
     energyPanels(values, navigation).forEach(({ label, soc, range }, index) => {
         const left = x + index * column + 9;
+        const end = left + column - 16;
+        const socX = index ? end - 75 : left + 44;
+        const batteryX = index ? socX - 32 : left - 3;
         if (!index && vehicle) ({ soc, range } = vehicle);
-        if (index) cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
-        cv.text(label, left, y + 19, 14, secondary);
+        if (index) {
+            cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
+            fit(cv, label, left, baseline, textSize, batteryX - left - 3, secondary);
+        }
         if (Number.isFinite(soc)) {
             const band = soc < 20 ? 'low' : soc < 70 ? 'mid' : 'high';
-            cv.image(art('battery-' + band), left - 3, y + 32, 44, 24);
+            const iconHeight = index ? 18 : 24;
+            cv.image(art('battery-' + band), batteryX, y + (h - iconHeight) / 2, index ? 30 : 44, iconHeight);
         }
-        fit(cv, Number.isFinite(soc) ? number(soc, 1) + '%' : '–', left + 44, y + 54, 23, 64, primary, bold);
-        if (Number.isFinite(range)) cv.image(art('range'), left + 112, y + 32, 24, 24);
-        fit(cv, Number.isFinite(range) ? range + ' km' : '–', left + 140, y + 54, 22, column - 150, primary, bold);
+        fit(cv, Number.isFinite(soc) ? number(soc, 1) + '%' : '–', socX, baseline, textSize, index ? 61 : 73, primary, bold);
+        if (index) {
+            cv.text('–', end, baseline, textSize, primary, Object.assign({}, bold, right));
+        } else {
+            if (Number.isFinite(range)) cv.image(art('range'), left + 118, y + (h - 24) / 2, 22, 24);
+            fit(cv, Number.isFinite(range) ? range + ' km' : '–', left + 144, baseline, textSize, end - left - 144, primary, bold);
+        }
     });
 }
 

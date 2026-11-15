@@ -5,6 +5,7 @@ const { map, home, contains } = require('./drivehub-state');
 const { createMap, world, geo, fit } = require('./navigation-map');
 const layout = require('./navigation-layout');
 const scene = require('./navigation-scene');
+const { loadHistory, remember, suggest } = require('./navigation-suggestions');
 const assistantPanel = require('./assistant-panel');
 const displayPanel = require('./navigation-displays');
 const directions = { 1: 'up', 2: 'up', 4: 'right', 5: 'right', 7: 'down', 8: 'down', 10: 'left', 11: 'left' };
@@ -13,7 +14,7 @@ function createNavigationUI(options, invalidate) {
     const releaseIcons = require('./navigation-icons').preload(() => { if (!closed) invalidate(); });
     const tiles = createMap(options, invalidate);
     const state = { panel: 'none', query: '', cursor: 0, searchKind: 'text', keyboard: false, keyboardNumbers: false, focus: -1, offset: 0, buttons: [],
-        focused: false, camera: null, follow: true, theme: 'auto', recent: [], favorites: [], savedTab: 'recent',
+        camera: null, follow: true, theme: 'auto', recent: [], favorites: [], suggestions: [], savedTab: 'recent',
         preferences: { charging: true, arrival: 10, tolls: true, motorways: true }, nav: null, controls: null,
         stack: [], routePage: 'summary', addingStop: false };
     let gesture, knob, press = false, tilt, request = 0, pending = 0, deadline = 0, on = false, closed = false, saving = false, saveAgain = false;
@@ -21,13 +22,14 @@ function createNavigationUI(options, invalidate) {
     const savedPreferences = {};
     let presentRequest = 0, cameraSignature = '', cameraRoute;
     let displayRequest;
+    let destinationHistory = [], usageRequest, plannedDestination, suggestionRequest = 0;
     function show(panel) {
         if (state.panel !== panel) {
             state.stack.push({ panel: state.panel, keyboard: state.keyboard, searchKind: state.searchKind,
                 offset: state.offset, focus: state.focus, camera: state.camera, follow: state.follow, routePage: state.routePage, addingStop: state.addingStop });
             if (state.stack.length > 8) state.stack.shift();
         }
-        state.panel = panel; state.keyboard = false; state.offset = 0; state.focus = -1;
+        state.panel = panel; state.keyboard = false; state.offset = 0; state.focus = -1; state.buttons = [];
     }
     function syncCamera(force) {
         if (!state.nav) return;
@@ -51,6 +53,7 @@ function createNavigationUI(options, invalidate) {
             const saved = err ? {} : JSON.parse(text);
             if (Array.isArray(saved.recent)) state.recent = Array.from(new Set(state.recent.concat(saved.recent.filter((s) => typeof s === 'string' && s.length <= 140)))).slice(0, 12);
             if (Array.isArray(saved.favorites)) state.favorites = state.favorites.concat(saved.favorites.filter(validSaved)).slice(0, 12);
+            destinationHistory = loadHistory(saved.destinationHistory, destinationHistory);
             if (!changedTheme && ['auto', 'day', 'night'].includes(saved.theme)) state.theme = saved.theme;
             if (saved.preferences) Object.keys(state.preferences).forEach((key) => {
                 const value = saved.preferences[key];
@@ -72,14 +75,24 @@ function createNavigationUI(options, invalidate) {
         if (!options.navigationFile) return;
         if (saving || !loadedState) { saveAgain = true; return; }
         saving = true;
-        const content = JSON.stringify({ recent: state.recent, favorites: state.favorites, theme: state.theme, preferences: savedPreferences });
+        const content = JSON.stringify({ recent: state.recent, favorites: state.favorites, destinationHistory,
+            theme: state.theme, preferences: savedPreferences });
         function done(error) {
             saving = false;
             if (error && !closed) notify('No se han podido guardar los ajustes y destinos');
             if (saveAgain) { saveAgain = false; save(); }
         }
-        fs.writeFile(options.navigationFile + '.tmp', content, { mode: 0o600 }, (err) => {
-            if (err) done(err); else fs.rename(options.navigationFile + '.tmp', options.navigationFile, done);
+        const temporary = options.navigationFile + '.tmp';
+        function replace(attempt) {
+            fs.rename(temporary, options.navigationFile, (error) => {
+                // Windows can temporarily refuse replacing a file held open by a reader.
+                if (error && ['EPERM', 'EBUSY'].includes(error.code) && attempt < 4) {
+                    setTimeout(() => replace(attempt + 1), 25 * (attempt + 1));
+                } else done(error);
+            });
+        }
+        fs.writeFile(temporary, content, { mode: 0o600 }, (error) => {
+            if (error) done(error); else replace(0);
         });
     }
     function setPreference(key, value) {
@@ -95,6 +108,34 @@ function createNavigationUI(options, invalidate) {
         presentRequest = action === 'guidance-setting' ? 0 : request;
         if (action === 'guidance-setting') displayRequest = { request, setting: command.setting, enabled: command.enabled };
         if (action === 'search' || action === 'chargers') state.controls = null;
+        if (['select', 'restore', 'route', 'start'].includes(action)) {
+            usageRequest = { request, action, at: Date.now(), origin: state.location, addingStop: state.addingStop,
+                destination: action === 'start' ? plannedDestination : state.controls && state.controls.selected };
+        }
+        return request;
+    }
+    function recordDestination(c) {
+        const use = usageRequest;
+        if (!use || c.request !== use.request || c.busy) return;
+        if (c.status === 'error') { usageRequest = undefined; return; }
+        if (use.action === 'route' && c.status === 'preview') {
+            plannedDestination = use.destination;
+            usageRequest = undefined;
+            return;
+        }
+        const navigated = use.action === 'start';
+        if (navigated ? c.status !== 'guiding' : c.status !== 'detail') return;
+        usageRequest = undefined;
+        if (use.addingStop && !navigated) return;
+        const next = remember(destinationHistory, navigated ? use.destination : c.selected, use.at, navigated, use.origin);
+        if (next !== destinationHistory) { destinationHistory = next; save(); }
+    }
+    function openSearch(addingStop) {
+        state.suggestions = addingStop || !state.nav || state.nav.state !== 'active'
+            ? suggest(destinationHistory, state.favorites, state.location, Date.now()) : [];
+        show(state.suggestions.length ? 'suggestions' : 'search');
+        state.searchKind = 'text'; state.keyboard = !state.suggestions.length;
+        state.cursor = state.query.length; state.addingStop = addingStop;
     }
     function search(query) {
         state.query = query.trim().slice(0, 140); state.searchKind = 'text';
@@ -105,7 +146,6 @@ function createNavigationUI(options, invalidate) {
         send('search', { query: state.query });
     }
     function activate(id) {
-        state.focused = true;
         if (id === 'audio') {
             const presentation = state.nav && state.nav.presentation;
             const enabled = presentation && presentation.options.voiceGuidanceEnabled;
@@ -128,11 +168,12 @@ function createNavigationUI(options, invalidate) {
         }
         if (['back', 'close'].includes(id) && state.assistantEditor) { state.assistantEditor.draft = ''; state.assistantEditor = null; }
         const commandAction = ['chargers', 'keyboard-done', 'route-panel', 'route', 'add-stop', 'recalculate', 'start', 'confirm-stop'].includes(id) ||
-            id.indexOf('result:') === 0 || id.indexOf('favorite:') === 0 || id.indexOf('history:') === 0;
+            id.indexOf('result:') === 0 || id.indexOf('favorite:') === 0 || id.indexOf('history:') === 0 ||
+            id.indexOf('suggestion:') === 0;
         if (commandAction && (pending || state.controls && state.controls.busy)) {
             notify('Espera a que termine BMW'); invalidate(); return;
         }
-        if (id === 'search' || id === 'add-stop-search') { show('search'); state.searchKind = 'text'; state.keyboard = true; state.cursor = state.query.length; state.addingStop = id === 'add-stop-search'; }
+        if (id === 'search' || id === 'add-stop-search') openSearch(id === 'add-stop-search');
         else if (id === 'settings') show('settings');
         else if (id === 'route-settings') show('route-settings');
         else if (id === 'guidance-displays') show('guidance-displays');
@@ -146,7 +187,14 @@ function createNavigationUI(options, invalidate) {
             else if (state.stack.length) Object.assign(state, state.stack.pop());
             else { state.panel = 'none'; state.focus = -1; }
         }
-        else if (id === 'query') { state.searchKind = 'text'; state.keyboard = true; state.cursor = state.query.length; }
+        else if (id === 'query') {
+            if (state.panel === 'suggestions') show('search');
+            state.searchKind = 'text'; state.keyboard = true; state.cursor = state.query.length;
+        }
+        else if (id.indexOf('suggestion:') === 0 && state.panel === 'suggestions') {
+            const suggestion = state.suggestions[Number(id.slice(11))];
+            if (suggestion) suggestionRequest = send('restore', { bookmark: { name: suggestion.name, address: suggestion.address } }) || 0;
+        }
         else if (id === 'keyboard-done') search(state.query);
         else if (id === 'clear') { state.query = ''; state.cursor = 0; }
         else if (id === 'erase' && state.cursor > 0) {
@@ -195,7 +243,8 @@ function createNavigationUI(options, invalidate) {
         else if (id.indexOf('pref:') === 0) { const key = id.slice(5); if (['charging', 'tolls', 'motorways'].includes(key)) setPreference(key, !state.preferences[key]); }
         const keepFocus = id.indexOf('key:') === 0 || id.indexOf('pref:') === 0 || id.indexOf('result:') === 0 ||
             ['erase', 'clear', 'cursor-left', 'cursor-right', 'numbers', 'arrival-up', 'arrival-down', 'zoom-in', 'zoom-out', 'theme', 'save-destination'].includes(id);
-        state.focus = keepFocus ? id : id === 'back' ? state.focus : -1;
+        state.focus = keepFocus ? id : id === 'back' ? state.focus :
+            ['search', 'add-stop-search'].includes(id) && state.panel === 'suggestions' ? 'query' : -1;
         syncCamera();
         invalidate();
     }
@@ -204,31 +253,31 @@ function createNavigationUI(options, invalidate) {
         return b && b.id;
     }
     function controller(event) {
-        if (!state.focused) return false;
+        if (state.panel === 'none' || event.knob === 65535 || event.press === 15 && event.tilt === 15) return;
         const down = event.press === 1 || event.press === 2, direction = directions[event.tilt];
-        if (knob !== undefined && event.knob !== 65535) {
+        if (knob !== undefined) {
             const delta = (event.knob - knob + 65535 + 32767) % 65535 - 32767;
-            const buttons = state.buttons.filter((b) => !b.disabled);
-            if (delta && Math.abs(delta) <= 64 && buttons.length) {
+            const deflected = direction && direction !== tilt;
+            const move = deflected && direction === 'up' ? -1 : deflected && direction === 'down' ? 1 :
+                !deflected && Math.abs(delta) <= 64 ? Math.sign(delta) : 0;
+            const panelX = layout.panel(state).x;
+            const buttons = state.buttons.filter((b) => !b.disabled && b.x >= panelX);
+            if (move && buttons.length) {
                 const results = state.panel === 'search' && !state.keyboard && !state.pending && !(state.controls && state.controls.busy) ? state.controls && state.controls.results || [] : [];
                 const first = buttons.findIndex((b) => b.id.indexOf('result:') === 0);
                 const order = Array.from(new Set(buttons.filter((b) => b.id.indexOf('result:') !== 0).map((b) => b.id)));
                 if (results.length) order.splice.apply(order, [first < 0 ? 0 : first, 0].concat(results.map((r) => 'result:' + r.id)));
                 const old = order.indexOf(state.focus);
                 state.focus = old < 0 && results.length ? 'result:' + results[Math.min(state.offset, results.length - 1)].id :
-                    order[old < 0 ? delta > 0 ? 0 : order.length - 1 : (old + (delta > 0 ? 1 : -1) + order.length) % order.length];
+                    order[old < 0 ? move > 0 ? 0 : order.length - 1 : (old + move + order.length) % order.length];
                 const index = results.findIndex((r) => 'result:' + r.id === state.focus), count = layout.pageSize(state);
                 if (index >= 0) { if (index < state.offset) state.offset = index; else if (index >= state.offset + count) state.offset = index - count + 1; syncCamera(); }
             }
             if (!down && press && state.focus !== -1) activate(state.focus);
-            if (direction && direction !== tilt) {
-                if (direction === 'left') activate('back');
-                else if (direction === 'right' && state.panel === 'none') state.focused = false;
-                else if (direction === 'up' || direction === 'down') activate(direction === 'up' ? 'page-up' : 'page-down');
-            }
+            if (deflected && direction === 'left') activate('back');
         }
-        if (event.knob !== 65535) knob = event.knob;
-        press = down; tilt = direction; invalidate(); return true;
+        knob = event.knob;
+        press = down; tilt = direction; invalidate();
     }
     const api = {
         state, tiles, activate, controller, syncCamera,
@@ -238,7 +287,10 @@ function createNavigationUI(options, invalidate) {
             invalidate(); return { status: pending ? 'requested' : 'error', message: 'Selecciona un resultado para ver y calcular su ruta' };
         },
         setTheme(theme) { if (['auto', 'day', 'night'].includes(theme)) { changedTheme = true; state.theme = theme; save(); invalidate(); } },
-        focus() { state.focused = true; knob = undefined; press = false; tilt = undefined; invalidate(); },
+        trackInput(event) {
+            if (event.knob === 65535 || event.press === 15 && event.tilt === 15) return;
+            knob = event.knob; press = false; tilt = directions[event.tilt];
+        },
         update(nav, vehicle, visible) {
             state.nav = nav; on = visible;
             state.location = vehicle.location;
@@ -257,7 +309,7 @@ function createNavigationUI(options, invalidate) {
                 if (c !== state.controls && (!state.controls || c.request !== state.controls.request || c.status !== state.controls.status)) {
                     if (presentRequest && c.request === presentRequest) {
                         if (c.status === 'error' && state.panel !== 'search') notify('BMW: ' + (c.error || 'No se ha podido completar la operación'));
-                        if (c.status === 'detail') show('detail');
+                        if (c.status === 'detail' && c.request !== suggestionRequest) show('detail');
                         if (c.status === 'preview') { show('route'); state.routePage = 'summary'; state.addingStop = false;
                             if (c.plan && savedPreferences.arrival === undefined) state.preferences.arrival = c.plan.arrival; }
                         if (c.status === 'guiding' || c.status === 'idle') {
@@ -267,6 +319,15 @@ function createNavigationUI(options, invalidate) {
                     }
                 }
                 state.controls = c;
+                recordDestination(c);
+                if (suggestionRequest === c.request && !c.busy && ['detail', 'error'].includes(c.status)) {
+                    suggestionRequest = 0;
+                    if (on && c.status === 'detail' && c.request === presentRequest && state.panel === 'suggestions') {
+                        const action = state.addingStop ? 'add-stop' : 'route';
+                        show('route'); state.routePage = 'summary';
+                        send(action, { preferences: state.preferences });
+                    }
+                }
             } else if (!c) state.controls = null;
             if (pending && Date.now() > deadline) { pending = 0; displayRequest = undefined; notify('BMW no ha respondido. Vuelve a intentarlo.'); }
             state.pending = !!pending;
@@ -278,9 +339,7 @@ function createNavigationUI(options, invalidate) {
         touch(phase, x, y) {
             if (contains(home, x, y) && !gesture) return false;
             if (phase === 'down') {
-                if (!contains(map, x, y)) { state.focused = false; return false; }
-                if (!state.focused) { knob = undefined; press = false; tilt = undefined; }
-                state.focused = true;
+                if (!contains(map, x, y)) return false;
                 gesture = { x, y, action: actionAt(x, y), camera: state.camera && Object.assign({}, state.camera), valid: true,
                     list: state.panel !== 'none' && contains(layout.listBounds(state), x, y) };
             }
@@ -299,7 +358,12 @@ function createNavigationUI(options, invalidate) {
             }
             return true;
         },
-        reset() { gesture = null; knob = undefined; press = false; tilt = undefined; state.assistantEditor = null; if (state.panel === 'assistant-edit') state.panel = 'assistant-settings'; tiles.update(state.camera, false); },
+        reset() {
+            gesture = null; knob = undefined; press = false; tilt = undefined; state.assistantEditor = null;
+            if (suggestionRequest && suggestionRequest === presentRequest) presentRequest = 0;
+            if (state.panel === 'assistant-edit') state.panel = 'assistant-settings';
+            tiles.update(state.camera, false);
+        },
         close() { closed = true; releaseIcons(); tiles.close(); }
     };
     return api;
