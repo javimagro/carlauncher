@@ -656,7 +656,6 @@ function drawToast(cv, message, night) {
     const boxWidth = Math.min(maxWidth, Math.max(240, Math.ceil(Math.max(...lines.map((line) => cv.textWidth(line, 17))) + 48)));
     const boxHeight = 38 + (lines.length - 1) * 22;
     const x = Math.round(map.x + (map.w - boxWidth) / 2);
-    // The bar itself moves up 30 px; another 20 raises toasts 50 px in total.
     const y = energyBar.y - 24 - boxHeight;
     cv.roundRect(x, y + 3, boxWidth, boxHeight, 7, [0, 0, 0, 56]);
     cv.roundRect(x, y, boxWidth, boxHeight, 7, night ? '#293747' : '#ffffff');

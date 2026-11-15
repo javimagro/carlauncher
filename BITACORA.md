@@ -12,6 +12,11 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - La app y el motor pasan a 0.2.18 y el filtro de FrontCCU conserva la 1.0.0. La distribución se prepara desde el commit integrado con la app OAP fuente y los dos componentes nativos. La reversión consiste en reinstalar la app y el motor de la 0.2.17.
 - Antes de etiquetar se reprodujo en Windows que un lector con el archivo abierto puede bloquear `rename` con `EPERM`. El guardado reintenta el reemplazo atómico con un límite de cuatro reintentos. La regresión fuerza el primer fallo y comprueba que se conserva el cambio realizado mientras cargaban los ajustes.
 
+## 2026-11-15 · Altura de la barra de batería y autonomía
+
+- La franja inferior pasa de 70 a 44 píxeles lógicos y el mapa gana 26 en ambos perfiles. El texto de los valores y los iconos mantienen su tamaño y siguen centrados en el alto disponible.
+- Pasaron 260 pruebas de la suite y 36 de navegación, energía y avisos en el perfil alto. Se comprobaron capturas antes y después a 520 y 572 píxeles, con los temas de día y de noche y una ruta con parada. DriveHub se mantuvo idéntico píxel a píxel. Los módulos cargaron en Node 8.16.2.
+
 ## 2026-11-15 · Integración de cambios entre worktrees
 
 - El checkout principal tenía cambios locales sobre la 0.2.11. El segundo worktree terminó su publicación en 0.2.17 y quedó limpio. La comparación a tres bandas con `origin/main` confirmó que los cambios funcionales del primer checkout ya estaban integrados o tenían una revisión posterior. Se preservó la implementación publicada, incluidas la vista alta, la prueba BMW de audio, las previsiones BMW y la corrección TASU.

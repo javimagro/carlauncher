@@ -179,6 +179,7 @@ test('the app uses the full default panoramic content area on iDrive 8', () => {
     assert.equal(map.w, 954 + 84);
     assert.equal(energyBar.x, map.x);
     assert.equal(energyBar.w, map.w);
+    assert.equal(energyBar.h, 44);
     assert.equal(energyBar.y - (map.y + map.h), 4);
     assert.equal(viewport.y + viewport.h, energyBar.y + energyBar.h);
 });
