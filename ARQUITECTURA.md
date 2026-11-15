@@ -8,6 +8,12 @@ BMWLauncher es una sola app OAP de iDrive 8. La izquierda reúne el mapa o la pr
 
 La versión 0.2.0 usa Node.js 8 para el código que se ejecuta en la MGU, un acceso OAP con RHMI y un servicio de interfaz que manda órdenes de dibujo a `mgu-render`. El renderizador ejecuta esas órdenes con EGL y OpenGL ES y coloca la capa en Winston. El modo `layer` es el punto de partida de ID8. La documentación de `embed` describe el entorno de HmiMain3D y su disponibilidad no está establecida para nuestra ID8. La pantalla virtual de Android es una API de Android. [Empaquetado OAP](https://github.com/cauliflowermossgrape/idrive7-apps) · [Renderizador y compatibilidad ID8](https://github.com/robertnisipeanu/mgu-store/tree/main/native/mgu-render) · [VirtualDisplay de Android](https://developer.android.com/reference/android/hardware/display/VirtualDisplay)
 
+## Android Auto central: límite entre prueba e integración
+
+El ensayo del 15-11-2026 mostró el mapa de MAIN en una capa propia del panel izquierdo, manteniendo DriveHub y cockpit. MAIN es `GetDisplay(0)`; el puente AVB del segundo display no sustituye esa fuente. La sonda actual con uprobes/perf, captura limitada y recorte fijo es una herramienta de diagnóstico, no el servicio de producción ni un motivo para activarla al iniciar la app. La integración necesita colas ordenadas/acotadas, recuperación de keyframes, caducidad del foco, cancelación y una vía independiente para toque/mando. [Evidencia y pendientes](ANDROID-AUTO-MGU21.md).
+
+Para FFmpeg enlazado estáticamente con musl, el build declara `-Wl,-z,stack-size=8388608`: la prueba A/B en MGU resolvió un SIGSEGV de decodificación AA al ampliar la pila de hilos. Se mantiene pila RW, no ejecutable. El cambio en el script no sustituye el ELF: antes de publicar hay que reconstruir, comprobar GNU_STACK/dependencias y repetir AA/TDT. No trasladar la capacidad de 8 MiB por hilo a una afirmación de memoria física consumida.
+
 ## Qué se programa en cada lenguaje
 
 | Función | Lenguaje y ubicación | Responsabilidad |

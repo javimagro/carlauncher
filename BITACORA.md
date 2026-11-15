@@ -1,5 +1,13 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · AA visible a la izquierda, ensayo temporal
+
+- Con ENET/SSH autorizados y coche parado se distinguió MAIN del AVB del segundo display. La lectura diferida de memoria perdía datos y BPF no está disponible. La captura síncrona acotada con uprobes/perf conservó SPS/PPS/IDR y permitió decodificar el vídeo central.
+- Muestra de 342 unidades H.264 válida; ensayo final en la MGU con 421 unidades y 174 cuadros entregados al anillo. El usuario vio Google Maps a la izquierda y confirmó DriveHub/cockpit sin cambios. Se retiraron los recursos temporales y se devolvió el foco MAIN. No se ha instalado ni publicado una nueva versión.
+- Fallo adicional: SIGSEGV del FFmpeg estático con pila musl predeterminada. Misma entrada/argumentos y único cambio GNU_STACK a 8 MiB en copia privada: salida correcta. Se deja el flag en `tools/tdt-runtime/build-ffmpeg.sh`, sin reemplazar aún el binario distribuido. Falta reconstruir y pasar regresión TDT antes de publicación.
+- Nativo compilado con avisos como errores, ELF revisado, pruebas de ensamblaje/parser y muestra real decodificada. Una unidad superó 61.440 bytes y se descartó; hubo un DTS fuera de orden entre CPU. Coste total, sesiones largas, recorte adaptable, toque y mando siguen pendientes. Fuentes de diagnóstico, registros y muestras permanecen fuera de Git. [Evidencia y límites](ANDROID-AUTO-MGU21.md).
+- Pasaron 272/272 pruebas generales, sintaxis del build y revisión del diff. Tras un reinicio realizado por el usuario, SSH volvió a responder y se verificaron cero auxiliares y ausencia de archivos, anillo y eventos temporales. No se ha cerrado SSH. Cambios locales en documentación/build; el binario publicado permanece intacto.
+
 ## 2026-11-15 · 0.2.20: rótulo, logos TDT y cockpit integrados
 
 - Petición: esperar a terminar e integrar también los cambios del otro hilo. PR #7: rótulo completo con ocultación, recuperación por toque/OK y logos locales. PR #8: composición de cockpit ampliada, indicadores a la derecha a escala 1:1, transparencia y máscaras del arte. PR #9: iconos del mapa reducidos y ETA compacto de 334 × 150. Se conserva el foco de audio de la 0.2.19 y el resto de mejoras ya integradas.

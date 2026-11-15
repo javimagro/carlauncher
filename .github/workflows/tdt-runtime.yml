@@ -26,11 +26,14 @@ jobs:
         run: |
           cd tdt-runtime-build
           readelf -h ffmpeg | grep 'Advanced Micro Devices X86-64'
+          readelf -lW ffmpeg | grep -E 'GNU_STACK.*0x800000 RW '
           if readelf -d ffmpeg | grep -q NEEDED; then exit 1; fi
           ffmpeg_path="$PWD/ffmpeg"
           "$ffmpeg_path" -version
           "$ffmpeg_path" -demuxers | grep -E ' dash +'
           "$ffmpeg_path" -demuxers | grep -E ' hls +'
+          "$ffmpeg_path" -demuxers | grep -E ' h264 +'
+          "$ffmpeg_path" -filters | grep -E ' crop +'
           latest="$(readelf --version-info tdt-pcm | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | cut -d_ -f2)"
           test "$(printf '%s\n' "$latest" 2.27 | sort -V | tail -1)" = '2.27'
           test "$(head -c 4096 /dev/zero | /lib64/ld-linux-x86-64.so.2 ./tdt-pcm null)" = 'ready'
@@ -38,6 +41,7 @@ jobs:
         run: |
           command -v ffmpeg || sudo apt-get install -y --no-install-recommends ffmpeg
           sh tools/tdt-runtime/check-playback.sh tdt-runtime-build/ffmpeg
+          sh tools/tdt-runtime/check-aa-playback.sh tdt-runtime-build/ffmpeg
       - uses: actions/upload-artifact@v4
         with:
           name: tdt-runtime-linux-x64
