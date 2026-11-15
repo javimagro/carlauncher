@@ -1,5 +1,32 @@
 # Audio nativo de TDT · MGU21
 
+## Foco del directo validado en el i4 · 15-11-2026
+
+El usuario ha confirmado **sonido continuo y limpio del canal** en dos pruebas temporales: primero manteniendo únicamente el foco `DynamicMediaPlayerMedia`, y después con el nuevo controlador de foco. Se mantiene FFmpeg → PCM → SmartX; no se reproduce un segundo archivo BMW. La segunda prueba estaba programada para 90 s, pero el usuario reinició iDrive durante ella: no se atribuyen 90 s completos ni una medición de sincronía a esa confirmación.
+
+### Qué impedía avanzar
+
+- El firmware HWGEN21/highf anuncia `DynamicMediaPlayer` (`0xb0c0`, v1.0), instancias Media=1 y TempMedia=2. No anuncia `MediaPlayer/OapGenericMedia` (`0xb042`, v2, instancia 40), aunque el catálogo enumere esa instancia. La configuración HWGEN18 sí registra OapGenericMedia; no copiar esa ruta al i4 ni habilitarla modificando el firmware.
+- El directo abría ALSA sin adquirir el foco de BMW. Retunar mientras se conservaba un foco temporal permitió oír el canal; al terminar el ensayo dejaba de sonar. La prueba de solo foco, con el auxiliar PCM recién abierto y sin crear playlist/PLAY, permitió sonido limpio confirmado por el usuario.
+- La sonda de archivos tenía además un identificador incorrecto: ASCII `00000001` se transforma en `0x3030303030303031`; el consumidor usa sus 32 bits bajos como posición del medio. El ByteBuffer binario `00 00 00 01` sí selecciona la pista 1. La sonda C++ queda corregida y compilada.
+- Corregido el identificador, `mediaengine` abre el archivo y anuncia 1/1, pero devuelve `informationError` **17** y DynamicMediaPlayer `ITEM_UNPLAYABLE`, tanto con WAV como MP3. No equivale a formato no compatible: la tabla del firmware traduce 17 desde el error interno 18, que agrupa `CinemoErrorResources` (12) y `CinemoErrorVideoResources` (100). No se ha determinado cuál de los dos originó el rechazo. La reproducción de archivos por Cinemo sigue pendiente y no se presenta como arreglada.
+
+### Implementación y cierre
+
+`tdt-audio.js` espera al foco antes de abrir `tdt-pcm`; sigue drenando el PCM y presentando vídeo durante la espera o el fallo. `tdt-audio-focus.js` crea un supervisor y un propietario en `tdt-focus-process.js`. El contrato mínimo observado vive en `tdt-focus-session.js` y usa el módulo SOME/IP nativo ya instalado, en Node 8, fuera del hilo de interfaz. Los tres archivos se declaran en `component.json`.
+
+El supervisor está conectado antes de que el propietario solicite foco; vigila un permiso local renovado cada 750 ms, con caducidad de 3,5 s. Solo libera el token cuyo `clientId` aleatorio de esa sesión y nombre de aplicación coinciden. Si muere el propietario, cubre también la posible respuesta tardía de adquisición. No modifica volumen, autoplay, playlist, conexiones globales ni canales de avisos. Pérdida de foco, cierre o agotamiento de reintentos de ALSA cierran el auxiliar. No se recupera el foco automáticamente frente a otra fuente activa.
+
+Tras reiniciar, esta MGU puede anunciar CONNECTED/HAS_FOCUS con los tres campos de propietario vacíos y `PLAYER_STATE_STOP`. Ese estado se admite como selección inactiva; con reproducción activa, propietario presente o lecturas incompletas se rechaza. LOST_FOCUS con propietario antiguo y conexión cerrada no se «limpia» volviendo a adquirir el foco.
+
+### Evidencia y límites
+
+- Pruebas físicas de cierre normal, SIGKILL del propietario y SIGKILL del cliente: fuente sin propietario y desconectada después de cada una. No se reinició la MGU desde nuestras herramientas; el reinicio observado lo confirmó el usuario como suyo. Sin modificaciones del cockpit.
+- Verificación final: `node --test --test-concurrency=4 emulator/split/*.test.js`, **260/260**; las ocho regresiones de foco también pasaron aisladas. Carga de los módulos modificados y sintaxis del servicio comprobadas con Node 8.16.2; los tres auxiliares figuran en el componente. La primera ejecución simultánea tuvo un fallo temporal en la espera de escritura de preferencias de navegación; ese archivo pasó aislado y no se modifica navegación para ocultar el resultado.
+- El ELF manual se compiló con C++14, `-Wall -Wextra -Werror`; x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, versiones requeridas hasta GLIBC 2.14 y GLIBCXX 3.4.22; SHA-256 `0c5db9476fa609ce32ff004845f3f6b539a2a549df1f81bcd232667f7dd0e911`. El cambio de payload se probó físicamente con la sonda JS equivalente; ese ELF concreto no se ejecutó en la MGU.
+- Cierre de la sesión física: cero procesos temporales propios, foco libre y conexión cerrada. Retirados únicamente los tres módulos del directorio temporal de validación. SSH permanece abierto.
+- Falta instalar una versión con esta integración y repetir cambios de canal, visibilidad y convivencia con otras fuentes durante una sesión larga. No hay todavía una nueva release por este cambio. Los contratos completos, bibliotecas y trazas de la unidad permanecen fuera del repositorio.
+
 ## Muestra BMW de 30 segundos · 0.2.17
 
 Añadido modo explícito de prueba en TDTWorld, separado del directo. Captura acotada del mismo canal, WAV completo y vídeo I420, presentación por reloj BMW, limpieza y rechazo de fuente ocupada. No reclama que HLS continuo funcione con el reproductor nativo.

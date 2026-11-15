@@ -16,6 +16,21 @@
   },
   "files": [
     {
+      "path": "tdt-focus-session.js",
+      "from": "tdt-focus-session.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-focus-process.js",
+      "from": "tdt-focus-process.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-audio-focus.js",
+      "from": "tdt-audio-focus.js",
+      "mode": "0644"
+    },
+    {
       "path": "tdt-dash-hls.js",
       "from": "tdt-dash-hls.js",
       "mode": "0644"

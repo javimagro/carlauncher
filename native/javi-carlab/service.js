@@ -108,7 +108,7 @@ const session = createSession(gpu, {
         caFile: path.join(__dirname, 'bin/ca-certificates.crt'),
         proxy: startTdtProxy,
         get: downloadAsApp,
-        audio: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true }
+        audio: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true, bmwFocus: true }
     },
     get: downloadAsApp,
     area(screen, info) {

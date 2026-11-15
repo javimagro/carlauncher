@@ -1,4 +1,5 @@
 'use strict';
+const { createFocus } = require('./tdt-audio-focus');
 
 // Audio failure never pauses FFmpeg's PCM pipe or restarts its video decoder.
 function playAudio(pcm, changed, queue, audio, spawn, log) {
@@ -10,6 +11,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
     let tail = Buffer.alloc(0);
     const retryMs = audio.retryMs || 2000;
     const maxRetries = audio.maxRetries === undefined ? 3 : audio.maxRetries;
+    let focus, focusReady = !audio.bmwFocus, focusPending = false, focusFailed = false;
 
     function release() {
         clearTimeout(timer);
@@ -32,9 +34,29 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         log.warn('TDTWorld: salida de audio: ' + reason + (detail ? ' (' + detail + ')' : ''));
         changed('audio-' + reason, detail);
         if (failures++ < maxRetries && !stopped) retry = setTimeout(() => { retry = null; open(); }, retryMs * failures);
+        else if (focus) { focusFailed = true; focusReady = false; focus.close(); }
     }
     function open() {
         if (stopped || sink) return;
+        if (!focusReady) {
+            if (focusPending || focusFailed) return;
+            focusPending = true;
+            changed('audio-focus-wait');
+            const lost = (reason) => {
+                if (stopped) return;
+                focusFailed = true; focusReady = false;
+                clearTimeout(retry); retry = null; release();
+                if (focus) focus.close();
+                changed(reason === 'lost' ? 'audio-focus-lost' : 'audio-focus-error');
+            };
+            focus = (audio.createFocus || createFocus)(lost);
+            focus.start().then(() => {
+                focusPending = false;
+                if (stopped) { focus.close(); return; }
+                focusReady = true; open();
+            }, () => { focusPending = false; lost('error'); });
+            return;
+        }
         let peer;
         try { peer = spawn(audio.command, audio.args, { stdio: ['pipe', audio.handshake ? 'pipe' : 'ignore', 'pipe'] }); }
         catch (_) { fail(sink, 'unavailable'); return; }
@@ -116,7 +138,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
             peer.stdin.end();
         },
         stats: () => Object.assign({}, stats, { ready, blocked }),
-        close() { stopped = true; clearTimeout(retry); release(); }
+        close() { stopped = true; clearTimeout(retry); release(); if (focus) focus.close(); }
     };
 }
 
