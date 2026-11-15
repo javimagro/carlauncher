@@ -569,6 +569,101 @@
       "path": "tdt-bmw-sample.js",
       "from": "tdt-bmw-sample.js",
       "mode": "0644"
+    },
+    {
+      "path": "aa-context.js",
+      "from": "aa-context.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-control.js",
+      "from": "aa-control.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-focus-lock.js",
+      "from": "aa-focus-lock.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-focus-process.js",
+      "from": "aa-focus-process.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-focus.js",
+      "from": "aa-focus.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-frame.js",
+      "from": "aa-frame.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-input-process.js",
+      "from": "aa-input-process.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-input-worker.js",
+      "from": "aa-input-worker.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-input.js",
+      "from": "aa-input.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-integration.js",
+      "from": "aa-integration.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-player.js",
+      "from": "aa-player.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-process.js",
+      "from": "aa-process.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-ts-mux.js",
+      "from": "aa-ts-mux.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-ui.js",
+      "from": "aa-ui.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-underlay.js",
+      "from": "aa-underlay.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-view.js",
+      "from": "aa-view.js",
+      "mode": "0644"
+    },
+    {
+      "path": "aa-worker.js",
+      "from": "aa-worker.js",
+      "mode": "0644"
+    },
+    {
+      "path": "bin/aa-capture",
+      "from": "bin/aa-capture",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/AA-CAPTURE-LICENSE.txt",
+      "from": "bin/AA-CAPTURE-LICENSE.txt",
+      "mode": "0644"
     }
   ],
   "units": [

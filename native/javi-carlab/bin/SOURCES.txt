@@ -34,3 +34,20 @@ SHA-256: ca661eec5f32594b130fe1a8bca717821168a7a5a7e8b4d073970319bc783456
 Source SHA-256 (LF): ecbd312c48a78a566c4e4c654c1f0ffa80f42f8d67b13972279b5e3df010512d
 ELF and symbol versions were inspected on Windows; this new helper has not
 yet been executed with the car's ALSA/SmartX. The FFmpeg binary is unchanged.
+
+Android Auto runtime build, 2026-11-15:
+The FFmpeg recipe adds raw H.264 demuxing, the crop filter and an 8 MiB
+PT_GNU_STACK request for musl-created worker threads. Source remains unmodified.
+Recipe and workflow revision: df1aeac1711a1f099e1aead99912858c18be83b3
+https://github.com/javimagro/carlauncher/actions/runs/43712405844
+FFmpeg SHA-256: 5e2789d8377dbe5b9513715118b8a9d1e4be708f31771ad94b7d87678ecebf46
+Artifact ZIP SHA-256: 1af9e1644f60e49b0b66e220675d6c7b1a90b6377f7ab0ddeee91ac7e8b40749
+Verified static Linux x86-64 ELF, GNU_STACK RW size 0x800000, HLS/DASH HTTPS
+playback and a synthetic AA decode in CI. On the MGU, a private real AA sample
+decoded to 134 I420 frames at 960x280 with exit 0 and no reported errors.
+The PCM helper from the previous audit is retained, not replaced by this build.
+
+aa-capture is MIT-licensed project code, built from tools/aa-runtime.
+Source, build command, ELF inspection, hashes and validation limits are there.
+It contains no BMW firmware or proprietary library. Its runtime profile is
+restricted to the verified aapd/library SHA-256 pair.

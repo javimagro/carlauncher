@@ -156,7 +156,7 @@ test('installation and gate discovery use the actual OAP identity and invalidate
 test('installing BMWLauncher requests its ID8 controller filter and every worker is packaged', () => {
     const repository = require('../../mgu-repo.json');
     const app = repository.components.find((item) => item.id === 'javi_carlauncher');
-    assert.equal(app.requires['javi-ccu-gate'], '1.0.0');
+    assert.equal(app.requires['javi-ccu-gate'], '1.1.0');
     const renderer = require('../../native/javi-carlab/component.json');
     for (const name of ['photo-loader.js', 'photo-worker.js', 'tdt-process.js', 'tdt-worker.js', 'tdt-audio.js', 'tdt-dash.js', 'tdt-dash-relay.js', 'installation.js']) {
         assert(renderer.files.some((item) => item.path === name));

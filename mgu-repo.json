@@ -11,7 +11,7 @@
       ],
       "requires": {
         "javi-carlab": "0.2.20",
-        "javi-ccu-gate": "1.0.0"
+        "javi-ccu-gate": "1.1.0"
       }
     },
     {
@@ -23,9 +23,9 @@
       "id": "javi-ccu-gate",
       "kind": "tool",
       "path": "native/javi-ccu-gate",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "title": "Captura del mando de BMWLauncher",
-      "description": "Entrega el mando a BMWLauncher mientras está visible en iDrive 8.",
+      "description": "Entrega el mando a BMWLauncher y permite giro y pulsación en Android Auto cuando tiene el foco.",
       "mguHmi": [
         "ID8"
       ],

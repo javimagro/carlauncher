@@ -8,6 +8,7 @@ const { report: reportNavigation } = require('./navegacion-bmw.js');
 
 const { report: reportRadio } = require('./radio-bmw.js');
 const { report: reportAudio } = require('./audio-bmw-transport.js');
+const { observeLease } = require('./visibility-lease.js');
 
 function truth(value) { return value === true || value === 1 || value === '1'; }
 
@@ -21,20 +22,66 @@ module.exports = function run() {
     let entry;
     let ready = false;
     let visible = false;
+    let hmiVisible = false;
+    let externallyVisible = false;
+    let closed = false;
+    let activeReported, hmiReported;
+    let registration = Promise.resolve(), hmiRegistration = Promise.resolve();
+    let visibilityGeneration = 0;
     let pending;
 
-    function show(value) {
-        if (visible === value) return;
-        visible = value;
-        if (controller) controller.show(visible);
-        if (!ready) return;
-        telemetry.show(visible);
-        navigation.show(visible);
-        radio.show(visible);
-        audio.show(visible);
-        const reports = visible ? [app.registerActive(), app.registerHmiVisible()] : [app.unregisterHmiVisible(), app.registerInactive()];
-        Promise.all(reports).catch((err) => console.warn(err.message));
+    function registerHmiVisibility() {
+        hmiRegistration = hmiRegistration.then(async () => {
+            if (!ready || closed) return;
+            const actual = hmiVisible;
+            if (hmiReported !== actual) {
+                await (actual ? app.registerHmiVisible() : app.unregisterHmiVisible());
+                hmiReported = actual;
+            }
+        }).catch((err) => console.warn(err.message));
     }
+    function registerVisibility() {
+        registerHmiVisibility();
+        registration = registration.then(async () => {
+            if (!ready || closed) return;
+            // Serialize transitions so a slow old activation cannot undo a later hide.
+            const active = visible;
+            if (activeReported !== active) {
+                await (active ? app.registerActive() : app.registerInactive());
+                activeReported = active;
+            }
+        }).catch((err) => console.warn(err.message));
+        return registration;
+    }
+    function publish(force) {
+        if (closed) return;
+        const effective = hmiVisible || externallyVisible;
+        const changed = effective !== visible;
+        visible = effective;
+        if (!ready) return;
+        if (changed || force) {
+            if (controller) controller.show(visible);
+            telemetry.show(visible);
+            navigation.show(visible);
+            radio.show(visible);
+            audio.show(visible);
+        }
+        registerVisibility();
+    }
+    function show(value) {
+        if (hmiVisible === value) return;
+        hmiVisible = value;
+        const generation = ++visibilityGeneration;
+        // Withdraw real HMI visibility independently of a slow active-register
+        // call. Before tearing down data/audio, inspect an AA lease that may have
+        // been created since the observer's last 250 ms poll.
+        registerHmiVisibility();
+        if (!value && !externallyVisible) visibilityLease.refresh(() => {
+            if (!closed && generation === visibilityGeneration) publish();
+        });
+        else publish();
+    }
+    const visibilityLease = observeLease((value) => { externallyVisible = value; publish(); });
 
     function open(uuid) {
         if (!ready) { pending = uuid; return; }
@@ -47,6 +94,7 @@ module.exports = function run() {
     app.on('error', (err) => console.warn(err.message));
     app.on('initialized', async () => {
         try {
+            if (closed) return;
             const rhmi = app.rhmiApplication;
             if (!rhmi) { await app.initialized(); return; }
             const state = rhmi.getByName('ST_CarLab');
@@ -63,18 +111,16 @@ module.exports = function run() {
                 await app.registerActive();
             }
             await app.initialized();
+            if (closed) return;
             ready = true;
             controller = observe(someipBuilders);
-            controller.show(visible);
-            telemetry.show(visible);
-            navigation.show(visible);
-            radio.show(visible);
-            audio.show(visible);
-            if (visible) await app.registerHmiVisible();
+            publish(true);
             await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
     });
     app.on('shutdown', () => {
+        closed = true;
+        visibilityLease.close();
         if (controller) controller.close();
         telemetry.show(false);
         navigation.show(false);

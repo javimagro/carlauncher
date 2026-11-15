@@ -1,5 +1,44 @@
 # Vídeo de Android Auto en MGU21
 
+## Toque y rueda confirmados; encuadre pendiente · 15-11-2026
+
+En otro ensayo temporal el usuario confirmó **toque, arrastre y rueda funcionando dentro del panel izquierdo**, con el cockpit igual. Después señaló que el mapa se veía pequeño y con franjas negras. Esa observación limita la validación: la entrada funciona, pero el formato panorámico original aún no se adapta al área del producto. La integración completa y su publicación siguen pendientes; no se instaló ni reinició la MGU en este ensayo.
+
+### Entrada y contexto MAIN
+
+- El contexto original observado es `state=1, applet=50`. Un cliente root de mgu-render puede superponer su capa mientras ese contexto permanece debajo. No se mueve la superficie de Hmi8 ni se utiliza el display IC.
+- Con AA original visible, InputRelay 128 recibió 24 eventos táctiles y ocho del mando; giro horario `key=6`, antihorario `key=5`, ambos con `status=0`. El getter del relay también valía cero: no equivale a ausencia de entrada.
+- El toque se entrega directamente a Hmi8 por UDP loopback 30567, PDU `0xB0048002`, 96 bytes de payload, presión 50 y tipos down/move/up 1/2/3. Referencia: [screencast de IterioDev](https://github.com/IterioDev/car-apps/blob/main/tools/iteriodev-screencast/screencast.js), blob `15fa2a5a5cc8c027f516f9740ecdf303953da635`. Una sonda del consumidor aapd confirmó down/up, no solo envío UDP.
+- Geometría observada: vídeo 1920×1080; rectángulo HMI `[120,0,2880,840]`; ratio 1,4375; margen vertical total 496. Coordenadas del cuadro completo: `xHmi=120+x*1,4375`, `yHmi=(y-248)*1,4375`. Recorte visual vigente `[0,260,1920,560]`. No aplicar a otro perfil sin validarlo.
+- El ensayo del panel registró 11 gestos y cerró con «Terminar prueba». La última generación entregó 557 cuadros; declaró cero pérdidas/incompletos/malformados, tamaño H.264 máximo 69.113 bytes y hueco máximo del productor 140,6 ms. Hubo una recuperación previa al superar 61.440 bytes: no se presenta toda la sesión como libre de interrupciones.
+- Tras cerrar: contexto BMWLauncher restaurado, cero eventos propios y cero auxiliares de prueba. SSH permaneció abierto.
+
+### Integración local y límites
+
+La interfaz distingue los dos modos solicitados: AA dispone de todo el panel izquierdo, con energía debajo y sin controles BMW superpuestos; BMW conserva sus iconos, búsquedas y ETA. El selector y las acciones adicionales se abren desde la barra, en un panel temporal sobre DriveHub. Se verificaron capturas de día/noche a 1960×520 y 1960×572 y 351 pruebas locales; no sustituyen una prueba de esta integración instalada.
+
+El anillo actual es 1536×448, frente a 960×280 del primer ensayo. En la misma muestra de 134 cuadros, tres decodificaciones MGU a 1536×448 tardaron 2,957/2,932/2,830 s, con 32,6–33,7 MiB RSS. Solo se midió decodificación; no es latencia de interacción. En una repetición posterior de 40 segundos, el usuario confirmó nitidez y ausencia de la franja original de AA por encima de la capa, con cockpit igual. Sigue viendo contenido pequeño y franjas dentro del panel: el formato panorámico está pendiente de renegociar. Ese ensayo registró 18 gestos, 750 cuadros, máximo H.264 113.222 bytes y hueco máximo 520,4 ms, sin pérdidas/incompletos/malformados. No prueba cadencia perfecta.
+
+Una solicitud temporal `AndroidAutoProjectedManagerInst1.requestProjectedUi(MAPS=2)` terminó correctamente y cerró el proxy. Su respuesta vacía se declara `retSchema: {}`; el addon rechazó antes `Struct` con `e: []` sin enviar la orden. El firmware traduce Maps a una tecla nativa; no garantiza desactivar el escritorio dividido. Se restauró contexto BMWLauncher y se verificaron cero sondas y auxiliares propios tras el ensayo. No se instaló ni reinició nada.
+
+Se corrigió además el timeout al arrancar el auxiliar de toque: su primer ACK tardó 840 ms en un ensayo real, superando el antiguo límite de 700 ms. Se admite hasta 2000 ms únicamente antes del primer ACK, sin entregar entrada; después se conserva la caducidad de 700 ms. El ensayo posterior con perfil alto recibió ACK a 822 ms, no registró error de entrada y entregó 745 cuadros en la generación final, sin pérdidas ni registros incompletos/malformados. La capacidad inicial H.264 pasa de 60 a 120 KiB tras observar keyframes de 72.717 bytes. No hubo recuperación de captura en ese ensayo. El hueco máximo de producción fue 235,9 ms; no se presenta como cadencia perfecta.
+
+`aa-capture` valida firmware y captura solo MAIN, con lease y guardián. `aa-worker` contiene captura/decodificación; MGVF transporta píxeles. `aa-underlay` conserva AA debajo de la capa y retorna al contexto guardado solo mientras conserva su propiedad. Pérdida de capa o contexto externo cede a AA nativo, sin reanudar automáticamente la superposición.
+
+`aa-input-process` aísla el emisor táctil y envía up al cancelar, caducar o desconectarse. Las pruebas de muerte del proceso en PC/Node 8 no demuestran todos los fallos conjuntos en MGU. `aa-ui` asigna el mando a AA o DriveHub; tocar la derecha lo devuelve a DriveHub. El filtro nuevo permite a Hmi8 giro/pulsación central únicamente con foco AA; mantiene neutralizadas inclinaciones y botones. Se comprueba el ELF realmente mapeado. **Falta validar físicamente ese filtro tras cargarlo.**
+
+El OAP observa una lease root de 700 ms para conservar lecturas/audio bajo la superposición; mantiene separado el registro de visibilidad HMI real.
+
+Al recibir hide se retira el registro HMI inmediatamente y, si aún no se había observado la lease, se realiza una comprobación asíncrona nueva de hasta 50 ms. Así se evita apagar y reabrir audio/datos/mando entre la creación del archivo y el sondeo periódico. La lectura no renueva la lease, no admite respuestas previas al hide ni posteriores al plazo y falla cerrada. Después de esta corrección, 358/358 pruebas locales y Node 8.16.2 aprobados.
+
+El teléfono produce el formato de la pantalla central completa. El primer ensayo lo reducía a 960×280 y lo encajaba conservando proporción. Aumentar el anillo conserva más píxeles, pero no adapta la composición del teléfono. Google documenta márgenes/DPI para otros formatos en [DHU](https://developer.android.com/training/cars/testing/dhu#video-configuration); eso no demuestra renegociación en vivo en MGU21. El catálogo MAIN no publica setter de geometría; `streamConfig` pertenece a IC y no se utiliza. Se ha localizado `SetMargins` en la interfaz local de Cinemo: requiere ejecutar sobre la instancia viva de aapd, observar la respuesta y restaurar la configuración original dentro de la misma sesión. No se ha ejecutado ni instalado ese puente. Sigue la investigación exclusiva de MAIN.
+
+Una observación escalar de `sourceVideoConfigCallback` en `libNmeAndroidAuto.so+0x82d30` registró MAIN (`display=0`, `cfg=0`) con caché de VideoInterface vacía (`ui=0`, `mask=0`). No era la configuración seleccionada: el adaptador de VideoEndpoint conserva una copia distinta. Por tanto, `GetMargins` de VideoInterface no sirve como baseline inicial. Una segunda sonda en `0x132f48`, sobre el registro seleccionado, obtuvo **resolution=3 (1920×1080), marginW=0, marginH=496, UiConfig flags=0x9, insets mask=0xf y T/B=248, L/R=0**. Ambas observaciones tuvieron un evento y cero pérdidas/overrun. El baseline debe tomarse de ese registro y conservar los demás campos de UiConfig; no deducirlo del recorte visual de 260/560 ni del archivo de configuración. Todavía no se aplicó SetMargins. Se retiraron las instancias y sondas propias, sin cambiar trazado global ni IC.
+
+FFmpeg final `5e2789d8377dbe5b9513715118b8a9d1e4be708f31771ad94b7d87678ecebf46`, Actions 43712405844: decodificó en MGU 134 cuadros de 960×280, salida 0, sin errores. Capturador final `b5a6a197ec1c6685580e39101bce155ee0b0b68ccb202f6d9a43ea7e115c55ad`: EOF, caducidad y SIGKILL terminaron con cero probes propias. [Medidas](tools/aa-runtime/VALIDATION.md).
+
+Evidencia privada fuera de Git: `D:/Usuarios/javie/BMW/MGU21-20261115-aa`, archivos `observe-physical-input.txt`, `test-touch-geometry.txt`, `input-trial-1.txt` y `check-trial-cleanup.txt`. No publicar capturas, firmware ni registros privados.
+
 ## Vista izquierda confirmada · 15-11-2026
 
 **Resultado físico:** con BMWLauncher abierto y el teléfono conectado, se recibió el vídeo MAIN, se decodificó **en la MGU** y se dibujó la región de Google Maps en una capa propia dentro del panel izquierdo. El usuario confirmó «Sí, aparece el mapa y el resto sigue igual», incluyendo DriveHub y cockpit. Es un **ensayo temporal**, todavía sin integrar en la app instalada. No se reinstaló, reinició ni sustituyó ningún componente. SSH permanece abierto por indicación del usuario.

@@ -292,6 +292,11 @@ test('the controller lease is renewed and removed on release', (t) => {
     fs.utimesSync(file, new Date(0), new Date(0));
     update(true);
     assert.ok(fs.statSync(file).mtimeMs > 0);
+    update(true, 'aa');
+    assert.equal(fs.readFileSync(file, 'utf8'), 'aa');
+    assert.equal(fs.statSync(file).size, 2);
+    update(true, 'all');
+    assert.equal(fs.statSync(file).size, 0);
     update(false);
     assert.equal(fs.existsSync(file), false);
 });

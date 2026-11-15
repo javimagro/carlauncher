@@ -12,6 +12,13 @@
 
 #include "frontccu-filter.h"
 
+// Immutable exported capability marker. The supervisor checks the mapped inode,
+// so replacing a file on disk cannot claim that the old Hmi8 preload supports AA.
+extern "C" {
+__attribute__((visibility("default")))
+extern const char BMWLauncherAAKnobGate1[] = "BMWLauncherAAKnobGate1";
+}
+
 namespace {
 
 constexpr char leaseFile[] = "/run/javi-carlab/frontccu.lease";
@@ -38,13 +45,13 @@ void resolve() {
     hmiProcess = name && strcmp(name + 1, "Hmi8") == 0;
 }
 
-bool capture() {
+frontccu::Mode capture() {
     struct stat info;
-    if (lstat(leaseFile, &info) || !S_ISREG(info.st_mode) || info.st_uid != 0 || (info.st_mode & 0022)) return false;
+    if (lstat(leaseFile, &info) || !S_ISREG(info.st_mode) || info.st_uid != 0 || (info.st_mode & 0022)) return frontccu::Mode::None;
     timespec now;
-    if (clock_gettime(CLOCK_REALTIME, &now)) return false;
-    if (now.tv_sec - info.st_mtim.tv_sec > 1 || now.tv_sec < info.st_mtim.tv_sec) return false;
-    return frontccu::leaseFresh((now.tv_sec - info.st_mtim.tv_sec) * 1000000000LL + now.tv_nsec - info.st_mtim.tv_nsec);
+    if (clock_gettime(CLOCK_REALTIME, &now)) return frontccu::Mode::None;
+    if (now.tv_sec - info.st_mtim.tv_sec > 1 || now.tv_sec < info.st_mtim.tv_sec) return frontccu::Mode::None;
+    return frontccu::leaseMode(info.st_size, (now.tv_sec - info.st_mtim.tv_sec) * 1000000000LL + now.tv_nsec - info.st_mtim.tv_nsec);
 }
 
 } // namespace

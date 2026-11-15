@@ -6,6 +6,7 @@ const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require(
 const { drawNavigation, drawToggle } = require('./navigation-view.js');
 const { drawPreconditioning } = require('./preconditioning-ui');
 const { drawRadio } = require('./radio-view.js');
+const { drawAA, drawSource, drawSettings, drawMenu, layout: aaLayout } = require('./aa-view');
 const background = '#080b0e';
 const primary = '#f2f7fb';
 const secondary = '#a9b8c7';
@@ -660,10 +661,10 @@ function energyPanels(readings, navigation) {
     return readings.filter((_, index) => index === 0 || (active && (index === 3 || stop)));
 }
 
-function energy(cv, readings, art, vehicle, navigation) {
+function energy(cv, readings, art, vehicle, navigation, reserved = 0) {
     const { x, y, w, h } = energyBar;
     cv.roundRect(x, y, w, h, 8, '#05080b');
-    const column = w / 4;
+    const column = (w - reserved) / 4;
     const textSize = 22;
     const baseline = y + h / 2 + 8;
     const prediction = navigation && navigation.state === 'active' && navigation.energy;
@@ -679,7 +680,7 @@ function energy(cv, readings, art, vehicle, navigation) {
         if (!index && vehicle) ({ soc, range } = vehicle);
         if (index) {
             cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
-            fit(cv, label, left, baseline, textSize, batteryX - left - 3, secondary);
+            fit(cv, label, left, baseline, reserved ? 20 : textSize, batteryX - left - (reserved ? 1 : 3), secondary);
         }
         if (Number.isFinite(soc)) {
             const band = soc < 20 ? 'low' : soc < 70 ? 'mid' : 'high';
@@ -717,12 +718,15 @@ function drawHome(cv, state, scroll, data, art, now) {
     const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
     const vehicle = vehicleReadings(records, now);
     if (data.altitudeHistory) sampleAltitude(data.altitudeHistory, vehicle.altitude, now);
-    if (data.diagnostics) { diagnostics(cv, records, vehicle, now, data); drawToggle(cv); }
-    else drawNavigation(cv, data.navigation, vehicle, data.mapZoom, now, data.navigationUi);
     const theme = data.navigationUi && data.navigationUi.state.theme;
     const night = data.diagnostics || (theme === 'auto' || !theme ? !data.navigation || data.navigation.theme !== 'day' : theme !== 'day');
-    drawPreconditioning(cv, data.preconditioning, now, night);
-    if (data.home) {
+    const aaVisible = !data.diagnostics && data.aaUi && data.aaUi.state.source === 'aa';
+    if (data.diagnostics) { diagnostics(cv, records, vehicle, now, data); drawToggle(cv); }
+    else if (aaVisible) drawAA(cv, data.aaUi, night);
+    else drawNavigation(cv, data.navigation, vehicle, data.mapZoom, now, data.navigationUi);
+    if (!data.diagnostics) drawSource(cv, data.aaUi, night);
+    if (!aaVisible) drawPreconditioning(cv, data.preconditioning, now, night);
+    if (data.home && !aaVisible) {
         const { x, y, w, h } = home;
         const color = data.home === 'ready' ? primary : secondary;
         cv.roundRect(x, y, w, h, 8, '#253642');
@@ -732,8 +736,11 @@ function drawHome(cv, state, scroll, data, art, now) {
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, vehicle));
-    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, data.navigation);
+    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, data.navigation,
+        aaVisible ? aaLayout.energyInset : 0);
+    drawSettings(cv, data.aaUi);
     if (data.toast && now < data.toast.until) drawToast(cv, data.toast.message, night);
+    drawMenu(cv, data.aaUi, night, data.preconditioning, now);
     return vehicle;
 }
 
