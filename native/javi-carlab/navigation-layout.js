@@ -14,7 +14,8 @@ function viewport(state) {
     return { x: inset, y: map.y + 64, w: map.x + map.w - 20 - inset, h: map.h - 112 };
 }
 function eta() {
-    return { x: map.x + 78, y: map.y + map.h - 200, w: 388, h: 184 };
+    const h = 150;
+    return { x: map.x + 78, y: map.y + map.h - 16 - h, w: 334, h };
 }
 function pageSize(state) { return state.panel === 'search' && state.searchKind === 'chargers' ? 2 : 4; }
 function listBounds(state) {

@@ -50,9 +50,11 @@ test('ETA shows CarLauncher actions and reads arrival time and zero battery from
     const text = cv.text.bind(cv);
     cv.text = (label, ...args) => { labels.push(label); return text(label, ...args); };
     controls(cv, r.ui, r.nav);
-    assert.deepEqual(r.ui.state.buttons.filter((b) => b.x >= layout.panel(r.ui.state).x && b.y > map.y + map.h / 2).map((b) => b.id),
-        ['stop', 'add-stop-search', 'route-panel']);
-    assert.equal(r.ui.state.buttons.filter((b) => b.id === 'settings').length, 1);
+    const eta = layout.eta();
+    const actions = r.ui.state.buttons.filter((b) => b.x >= eta.x && b.y >= eta.y);
+    assert.deepEqual(actions.map((b) => [b.id, b.h]), [['stop', 46], ['add-stop-search', 46], ['route-panel', 46]]);
+    assert(actions.every((b) => b.x + b.w <= eta.x + eta.w && b.y + b.h <= eta.y + eta.h));
+    assert.deepEqual(r.ui.state.buttons.filter((b) => b.id === 'settings').map((b) => [b.w, b.h]), [[50, 50]]);
     for (const label of ['1 h y 6 min', '92 km - ', '00:42', '0 %']) assert(labels.includes(label), label);
     delete r.nav.energy;
     labels.length = 0;
