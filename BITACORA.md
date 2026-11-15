@@ -1,5 +1,13 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Búsquedas BMW bloqueadas antes de consultar el navegador
+
+- **Síntoma y causa comprobada.** El usuario no obtenía cargadores ni direcciones. Nuestro helper pasaba `{}` incluso a métodos sin parámetros de entrada. El SDK interpreta el primer argumento de esos métodos como `timeoutMs`; el nativo lo rechaza con `Invalid timeout` antes de enviar la petición. Afectaba a `createSession`, `createPOISearchSession` y al comando explícito `stopGuidance`. Reproducido con el wrapper original aislado y confirmado por desensamblado de `someip.node`; no es una prueba de resultados en el coche. Evidencia, hashes y direcciones en [NAVEGACION-MGU21.md](NAVEGACION-MGU21.md).
+- **Corrección.** Los métodos sin entradas se invocan sin argumentos. La búsqueda escrita configura su sesión con `INPUTMETHOD=HAPTIC`, `FEATURE=FTS` y `USECASE=HMI-FTS` antes de buscar, siguiendo el flujo confirmado de Hmi8. Se declara el permiso `setConfiguration` y se valida su tipo contra el catálogo MGU21. Cargadores conserva las categorías anunciadas por el coche.
+- **Ciclo de vida.** Se usa `shutdown()` del SDK real, con compatibilidad con `dispose()` de adaptadores. Se esperan las bajas de eventos antes de cerrar el proxy y hay un solo propietario del cierre, también si la inicialización termina tarde. Se conserva el guiado iniciado; cerrar u ocultar búsquedas no lo detiene.
+- **Verificación.** Seis regresiones nuevas reprodujeron los fallos antes de corregirlos: firmas sin entradas, cierre real, inicialización tardía, bajas pendientes, configuración previa y configuración rechazada. `node --test --test-concurrency=4 emulator/split/*.test.js`: **439/439**. Sintaxis y carga del módulo con Node **8.16.2** correctas. `node tools/Verificar-Navegacion-MGU.js RUTA_PRIVADA_CATALOGO`: **10 interfaces** verificadas, incluidas firmas, permiso y unión `stringParam`.
+- **Estado y límites.** Corrección local, sin publicación, SSH ni cambios en la MGU/cockpit. Falta instalar una versión que la incluya y contrastar resultados de direcciones y cargadores. El dibujo del mapa BMW sigue pendiente de su ensayo independiente; esta corrección no demuestra cartografía visible. Reversión: revertir el commit de esta corrección, conservando los cambios anteriores de mapa y AA.
+
 ## 2026-11-15 · Mapa BMW: inicialización propia y confirmación del motor
 
 - **Síntoma de referencia.** La vista propia creaba superficie negra y seguía en DLS 1; no se ha repetido en el coche durante este trabajo. La omisión de objeto 15 ya estaba corregida en una sonda candidata, todavía sin validar por ENET. Se conserva la integración AA local.

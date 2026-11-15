@@ -263,6 +263,7 @@
         "createSession",
         "deleteSession",
         "setCCPLocation",
+        "setConfiguration",
         "startSearch",
         "cancelSearch",
         "getValidatedLocation",

@@ -47,6 +47,17 @@ assert(types[ns + 'RoutingTypes2.RouteTripDefinition'].members.some((m) => m.nam
 assert(types[ns + 'GuidingTypes.DestinationInfo'].members.some((m) => m.name === 'isChargingStation'));
 assert(types[ns + 'RoutingTypes.ERoutePreference'].members.some((m) => m.name === 'minSoCAtFinalDestination'));
 const poi = catalog.interfaces[contracts.poi.name], fts = catalog.interfaces[contracts.search.name];
+assert.strictEqual(fts.methods.setConfiguration.methodId, 56);
+assert.deepStrictEqual(fts.methods.setConfiguration.inputs.map((p) => p.name), ['sessionID', 'searchConfigurations']);
+const configuration = types[ns + 'FreeTextSearchTypes.SearchConfiguration'];
+assert.strictEqual(configuration.type, 'map');
+assert.strictEqual(configuration.keyDataRef, 'Utf8D');
+assert.strictEqual(configuration.valueDataRef, ns + 'FreeTextSearchTypes.SearchParameter');
+assert.strictEqual(types[configuration.valueDataRef].type, 'union');
+assert(types[configuration.valueDataRef].members.some((m) => m.name === 'stringParam' && m.dataRef === 'Utf8D'));
+for (const pair of [[fts, 'createSession'], [poi, 'createPOISearchSession'], [catalog.interfaces[contracts.guidance.name], 'stopGuidance']]) {
+    assert.deepStrictEqual(pair[0].methods[pair[1]].inputs, [], pair[1] + ' must use the no-input SDK signature');
+}
 function member(type, name) { return types[type].members.find((m) => m.name === name).dataRef; }
 assert.strictEqual(poi.events.searchStatus.outputs.find((m) => m.name === 'searchState').dataRef, ns + 'POISearchTypes.SearchState');
 assert.strictEqual(member(ns + 'POISearchTypes.SearchState', 'searchStatus'), ns + 'NaviCommonTypes.SearchStatus');
