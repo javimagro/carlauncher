@@ -1,5 +1,13 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Preparación 0.2.21 para probar AA instalado
+
+- El usuario solicita publicar la integración AA para probarla con ENET. App/motor0.2.21, filtro1.1.0 y formato1.0.0; se conserva la separación AA/BMW, barra de energía, formato por altura y retirada/restauración de MAIN. No se toca IC.
+- **Fallo de instalación comprobado por SSH.** `hmi.service` estaba inactivo; `hmi8.service` ejecutaba Hmi8 sin drop-ins y sin javi-ccu-gate mapeado. El paquete anterior instalaba el filtro en el servicio equivocado. Se cambia únicamente el destino del preload a `hmi8.service`, manteniendo ID, guard y vencimiento. Regresión del manifiesto y validación del paquete deben exigir el servicio real. No se ha aplicado ni reiniciado el coche.
+- `/tmp` comprobado root:root1777, aapd activo sin drop-ins experimentales y formato propio todavía no instalado. La instalación de los preloads difiere su carga al próximo arranque completo. No repetir el reinicio aislado de aapd que dejó los controles originales sin respuesta.
+- Se integra la PR11 de Radio, revisada sin hallazgos. La copia principal de trabajo conserva cambios locales de otras tareas sin integrar; no se mezclan automáticamente con esta versión. Se publica desde el commit integrado limpio, con paquetes y hash verificados. El estado definitivo de publicación se comunica con el enlace de release.
+- **Límite físico:** imagen/toque/rueda con formato ancho y tamaño adaptado se validaron en ensayos separados. Falta comprobarlos juntos en esta revisión instalada, restauración y alternancia repetida. Se distribuye expresamente como prueba, no como validación física completada. El micrófono sigue pendiente.
+
 ## 2026-11-15 · Asistente: micrófono aún sin integrar y foco de respuesta corregido
 
 - **Informe y causa.** El usuario recibe aviso de micrófono no implementado. La entrada física está pendiente: `assistantAudio.capture` permanece nulo sin una ruta explícita validada. No se atribuye a claves/proveedores ni se abre una sesión de pago sin micrófono. Se conserva «Escribir» y el aviso identifica BMWLauncher como origen de la limitación.

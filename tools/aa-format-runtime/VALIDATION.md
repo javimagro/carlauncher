@@ -17,4 +17,4 @@ Los controles fallaron tanto con formato nuevo como sin preload y en AA original
 
 La relación con InputRelay duplicado es hipótesis localizada: Hmi8 devuelve error3 por UUID existente; aapd acepta solo0 y necesita ambos proxies para construir el consumidor. No se capturó error3 en el proceso afectado. No se implementa una supuesta recuperación destruyendo servicios.
 
-Estos resultados no validan el candidato v3 ni su uso reiterado. El análisis y las pruebas de reentrada están en [REENTRY.md](REENTRY.md); la publicación sigue pendiente de la prueba conjunta en MGU.
+Estos resultados no validan el candidato v3 ni su uso reiterado. El análisis y las pruebas de reentrada están en [REENTRY.md](REENTRY.md). Posteriormente el usuario pidió distribuirlo como versión de prueba0.2.21 para comprobar la integración instalada. Esa autorización no convierte la validación física pendiente en un resultado positivo; se mantiene el ensayo conjunto descrito en TEST-PLAN.

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "javi_carlauncher",
   "title": "BMWLauncher",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "tree": "package",
   "internet": true,
   "mguHmi": [

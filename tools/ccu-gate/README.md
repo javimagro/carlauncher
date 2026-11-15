@@ -4,6 +4,11 @@ El filtro actúa únicamente sobre la copia que consume `Hmi8`, notificaciones
 `0xb508:1`, eventos `0x8001` (8 bytes) y `0x8002` (7 bytes). No interviene
 en el display IC ni en el mapa del cockpit.
 
+En este i4 el proceso pertenece a **hmi8.service**. La consulta SSH del
+15-11-2026 encontró el antiguo drop-in en hmi.service, inactivo, y el filtro
+ausente de Hmi8. El manifiesto1.1.0 corrige el destino a hmi8.service;
+Store lo carga en el siguiente arranque completo, sin reiniciar Hmi8 al instalar.
+
 `/run/javi-carlab/frontccu.lease` debe ser un archivo regular, de root,
 sin escritura para grupo u otros, con edad no negativa e inferior a 700 ms.
 Su tamaño selecciona la política sin añadir lecturas de contenido al evento:

@@ -10,7 +10,7 @@
         "ID8"
       ],
       "requires": {
-        "javi-carlab": "0.2.20",
+        "javi-carlab": "0.2.21",
         "javi-ccu-gate": "1.1.0",
         "javi-aa-format": "1.0.0"
       }
@@ -37,7 +37,7 @@
       },
       "preload": {
         "library": "javi-ccu-gate.so",
-        "unit": "hmi.service",
+        "unit": "hmi8.service",
         "process": "Hmi8",
         "strikes": 2,
         "checkAfterSeconds": 120,

@@ -2,6 +2,17 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { createGateProbe } = require('../../native/javi-carlab/controller-lease');
+
+test('ID8 package loads the AA controller gate in the service that owns Hmi8', () => {
+    const repo = require('../../mgu-repo.json');
+    const gate = repo.components.find(item => item.id === 'javi-ccu-gate');
+    const app = repo.components.find(item => item.id === 'javi_carlauncher');
+    assert.deepEqual(gate.mguHmi, ['ID8']);
+    assert.equal(gate.preload.unit, 'hmi8.service');
+    assert.equal(gate.preload.process, 'Hmi8');
+    assert.equal(app.requires[gate.id], gate.version);
+});
+
 function elf(marker) {
     const bytes = Buffer.alloc(128); bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
     bytes.writeUInt16LE(3, 16); bytes.writeUInt16LE(62, 18);

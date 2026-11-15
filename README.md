@@ -1,5 +1,19 @@
 # BMWLauncher para iDrive 8
 
+## 0.2.21 · Android Auto integrado, versión de prueba
+
+Incluye Android Auto en el panel izquierdo con barra de batería debajo, selección AA/BMW, ajuste al formato normal/alto, toque y foco de la rueda. El menú **Pantalla y controles**, desde el engranaje de la barra inferior, permite elegir el mapa y asignar el mando a AA o DriveHub; tocar AA también le da el foco. El modo BMW conserva sus controles de búsqueda y ETA. Su cartografía propia continúa pendiente.
+
+Esta entrega permite comprobar **la integración instalada**. Los ensayos anteriores validaron imagen, toque y rueda con formato ancho, y por separado el nuevo tamaño; falta validar conjuntamente el nuevo formato, los controles y varios cambios AA/BMW. No se reclama el display IC ni el mapa del cockpit. El cierre restaura los márgenes de AA MAIN y retira la captura propia; un fallo de restauración bloquea nuevas adquisiciones.
+
+En MGU Store → fuente `javimagro/carlauncher` → **Tags** → **Comprobar ahora**, actualiza **BMWLauncher 0.2.21**, **Motor gráfico 0.2.21** y **Captura del mando 1.1.0**, e instala **Formato de Android Auto 1.0.0**. Después, con el coche parado, haz un **reinicio completo de iDrive**: los dos componentes de entrada/formato se cargan al arrancar. No reinicies `aapd` por separado. Primero comprueba toque y rueda en AA original; después abre BMWLauncher con el teléfono conectado. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.21).
+
+La consulta SSH detectó que el filtro antiguo estaba dirigido a `hmi.service`, inactivo en este i4. Ahora el paquete lo carga en **`hmi8.service`**, que es el propietario real de Hmi8. Incluye las correcciones locales de búsqueda BMW, selección/logos de Radio y foco de salida del asistente. El micrófono del LLM sigue pendiente de integración; no se anuncia como funcional.
+
+Para volver a la anterior, selecciona BMW y cierra BMWLauncher, reinstala app/motor 0.2.20, desinstala **Formato de Android Auto** desde Store y haz otro arranque completo. No descargues bibliotecas del proceso vivo ni reinicies solo el servicio de AA. Las sondas de investigación del mapa y del micrófono no van en el ZIP.
+
+## Referencia 0.2.20
+
 La **0.2.20 de prueba** reúne el rótulo y los logos de TDTWorld, la nueva composición del cockpit y la corrección de audio de la 0.2.19. El rótulo muestra logo, reloj, título, horarios, progreso, minutos emitidos, descripción e imagen del programa; se oculta según la duración configurada y reaparece al tocar el vídeo o pulsar OK. Los 2.068 logos de Carlinkit se incluyen localmente para seis catálogos de país, sin descargarlos al cambiar de canal.
 
 El cockpit amplía y desplaza los indicadores a la derecha según las proporciones de Carlinkit. Define una composición de 1120 × 620 para el futuro mapa y los indicadores, y transmite solo la columna transparente de 400 × 510 a escala 1:1. Tiempo, batería HV, potencia y consumo ganan tamaño; el testigo de preacondicionamiento permanece a la izquierda y el conjunto se centra al aparecer. La posición física y los recortes reales siguen pendientes de contraste en el i4.
