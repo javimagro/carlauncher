@@ -10,7 +10,7 @@ const { PassThrough } = require('node:stream');
 const { setTimeout: delay } = require('node:timers/promises');
 const catalog = require('../../native/javi-carlab/tdt-catalog');
 const { createPlayer, createRing } = require('../../native/javi-carlab/tdt-player');
-const { createTdt } = require('../../native/javi-carlab/tdtworld');
+const { createTdt, layout } = require('../../native/javi-carlab/tdtworld');
 const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
 
 const first = { id: 'la1', epg: 'La1.TV', name: 'La 1', group: 'Generalistas', sources: ['https://example.com/uno.m3u8'] };
@@ -92,7 +92,8 @@ test('switching channel and programme discards fanart that arrives after the foc
     t.after(() => tdt.close());
     tdt.update(50, true);
     await eventually(() => completeFirst);
-    tdt.tilt(1);
+    const box = layout(904, 512);
+    tdt.touch(box.detailX + 10, 150, 904, 512, 1);
     tdt.update(50, true);
     await eventually(() => tdt.state.art);
     const expected = tdt.state.art;

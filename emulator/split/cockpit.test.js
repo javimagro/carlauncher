@@ -62,6 +62,8 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert.deepEqual(calls[0], { target: 'widget', klass: 'overlay', contend: false,
         x: 820, y: 185, w: 600, h: 500, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
     assert.deepEqual(calls[1], { rects: null, size: width * height * 4 });
+    assert.equal(frames[0][(215 * width + 200) * 4 + 3], 0, 'the left side remains transparent');
+    assert.equal(frames[0][(215 * width + 310) * 4 + 3], 255, 'the widget stays on the right');
     assert.equal(cockpit.status(2000), 'Widget en espera');
     client.emit('target', 'widget', 'parked');
     assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');

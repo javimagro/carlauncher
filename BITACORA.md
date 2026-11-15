@@ -2,6 +2,15 @@
 
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
+## 2026-11-15 · 0.2.18: franja de energía, destinos, mando y cuadro
+
+- La franja coloca en una línea los títulos de previsión y sus valores. El primer panel muestra únicamente batería y autonomía, incluido el porcentaje fraccionario completo. Los seis círculos del mapa pasan de 5 a 12 píxeles lógicos de separación visual, conservan una zona táctil de 50 × 50 y reducen un 14 % sus iconos.
+- Buscar destino o lugar abre hasta tres sugerencias con el algoritmo de CarLauncher Android (`427786f4`). Los usos seleccionados y confirmados para guiado se guardan en local con la posición de salida cuando está disponible. Se conserva el NaviContainer para calcular tras elegir una sugerencia. La respuesta tardía tras cerrar la lista no abre la ruta. **Iniciar** sigue siendo explícito.
+- En Radio, girar abría la lista y la inclinación podía llevar el foco a los filtros. El giro ahora sintoniza. Los filtros se pulsan y la inclinación vertical recorre las filas. TDT mueve su selección y sintoniza en el reproductor. DriveHub recibe el mando salvo con un panel de navegación abierto. Los flancos anterior/siguiente del volante tienen un mensaje separado comprobado contra el catálogo MGU21.
+- Cuadro: se trasladaron tiempo, batería HV y potencia/consumo a los ejes derechos de la composición de CarLauncher, manteniendo el rectángulo ID8 del widget. La mitad izquierda se compone con alpha cero.
+- Verificación local: 260 pruebas de `node --test emulator/split/*.test.js`, 60 del perfil alto, capturas de ambos perfiles y temas, captura del cuadro con y sin datos, sintaxis Node 8.16.2, permiso del volante contra el catálogo y empaquetado del motor con enlace OAP sintético. Queda contrastar el mando físico y la posición del widget en el i4.
+- La app y el motor pasan a 0.2.18 y el filtro de FrontCCU conserva la 1.0.0. La distribución se prepara desde el commit integrado con la app OAP fuente y los dos componentes nativos. La reversión consiste en reinstalar la app y el motor de la 0.2.17.
+
 ## 2026-11-15 · Integración de cambios entre worktrees
 
 - El checkout principal tenía cambios locales sobre la 0.2.11. El segundo worktree terminó su publicación en 0.2.17 y quedó limpio. La comparación a tres bandas con `origin/main` confirmó que los cambios funcionales del primer checkout ya estaban integrados o tenían una revisión posterior. Se preservó la implementación publicada, incluidas la vista alta, la prueba BMW de audio, las previsiones BMW y la corrección TASU.

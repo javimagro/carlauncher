@@ -10,7 +10,10 @@ function consume(receive) {
         const bytes = partial.length ? Buffer.concat([partial, chunk]) : chunk;
         let i = 0;
         for (; i + 4 <= bytes.length; i += 4) {
-            receive({ knob: bytes.readUInt16BE(i), press: bytes[i + 2], tilt: bytes[i + 3] });
+            const knob = bytes.readUInt16BE(i), press = bytes[i + 2], tilt = bytes[i + 3];
+            if (knob === 0xffff && press === 0xfe) {
+                if (tilt === 1 || tilt === 2) receive({ skip: tilt === 1 ? -1 : 1 });
+            } else receive({ knob, press, tilt });
         }
         partial = bytes.slice(i);
         return true;

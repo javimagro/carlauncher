@@ -52,10 +52,12 @@ function controls(cv, ui, nav, now = Date.now()) {
         opts = opts || {};
         s.buttons.push({ id, x: xx, y: yy, w: ww, h: hh, disabled: !!opts.disabled });
         const surface = opts.circle ? (p === palettes.day ? '#FFFFFF' : p.control) : opts.card ? p.card : opts.primary ? p.selected : opts.flat ? p.surface : p.control;
-        if (opts.circle) cv.circle(xx + ww / 2 + 1, yy + hh / 2 + 2, hh / 2, p.line);
-        cv.roundRect(xx, yy, ww, hh, opts.circle ? hh / 2 : 10, surface);
+        const inset = opts.circleInset || 0;
+        const radius = opts.circle ? hh / 2 - inset : 10;
+        if (opts.circle) cv.circle(xx + ww / 2 + 1, yy + hh / 2 + 2, radius, p.line);
+        cv.roundRect(xx + inset, yy + inset, ww - 2 * inset, hh - 2 * inset, radius, surface);
         if (opts.card) cv.strokeRoundRect(xx, yy, ww, hh, 10, 1, p.line);
-        if (s.focus === id) cv.strokeRoundRect(xx, yy, ww, hh, opts.circle ? hh / 2 : 10, 3, p.accent);
+        if (s.focus === id) cv.strokeRoundRect(xx + inset, yy + inset, ww - 2 * inset, hh - 2 * inset, radius, 3, p.accent);
         const ink = opts.disabled ? p.secondary : opts.primary ? p.primaryText : p.text;
         if (opts.icon) icon(cv, opts.icon, xx + ww / 2, yy + hh / 2, ink, surface, opts.scale || 1);
         else {
@@ -201,12 +203,16 @@ function controls(cv, ui, nav, now = Date.now()) {
     // Separate circles, in reference order; unavailable BMW features stay disabled.
     const ready = ui.tiles.status().ready;
     const voice = nav.presentation && nav.presentation.options.voiceGuidanceEnabled;
-    [['settings', 'settings'], ['audio', voice === false ? 'audio-muted' : 'audio'], ['chargers', 'chargers'], ['recent', 'recent'], ['center', 'center'], ['assistant', 'assistant']].forEach((a, i) =>
-        button(a[0], '', map.x + 12, map.y + 10 + i * 55, 50, 50, { circle: true, icon: a[1],
+    const toolbar = [['settings', 'settings'], ['audio', voice === false ? 'audio-muted' : 'audio'],
+        ['chargers', 'chargers'], ['recent', 'recent'], ['center', 'center'], ['assistant', 'assistant']];
+    const toolbarX = map.x + 12, toolbarY = map.y + 10, buttonSize = 50, step = 56;
+    toolbar.forEach((a, i) =>
+        button(a[0], '', toolbarX, toolbarY + i * step, buttonSize, buttonSize,
+            { circle: true, circleInset: 3, icon: a[1], scale: .86,
             disabled: a[0] === 'audio' && (typeof voice !== 'boolean' || busy) || a[0] === 'assistant' && !ui.assistant || a[0] === 'center' && !ready }));
-    const zoomY = Math.min(350, map.h - 98);
-    button('zoom-in', '', map.x + 12, map.y + zoomY, 50, 44, { icon: 'zoom-in', disabled: !ready });
-    button('zoom-out', '', map.x + 12, map.y + zoomY + 48, 50, 44, { icon: 'zoom-out', disabled: !ready });
+    const zoomY = toolbarY + (toolbar.length - 1) * step + buttonSize + 8;
+    button('zoom-in', '', toolbarX, zoomY, buttonSize, 40, { icon: 'zoom-in', scale: .86, disabled: !ready });
+    button('zoom-out', '', toolbarX, zoomY + 46, buttonSize, 40, { icon: 'zoom-out', scale: .86, disabled: !ready });
     if (s.panel === 'none') {
         if (ui.assistant) assistantPanel.drawIndicator(cv, ui.assistant.state, map.x + map.w - 116, map.y + map.h / 2 - 22, now, p);
         button('search', 'Buscar destino o lugar', x, y, 440, 52);
@@ -229,6 +235,17 @@ function controls(cv, ui, nav, now = Date.now()) {
             [['stop', 'stop'], ['route-panel', 'route-panel'], ['search', 'zoom-in'], ['fit', 'fit'], ['settings', 'settings']].forEach((a, i) =>
                 button(a[0], '', x + 12 + i * 84, yy + 68, 78, 40, { flat: true, icon: a[1], disabled: a[0] === 'fit' && !ready }));
         }
+    } else if (s.panel === 'suggestions') {
+        button('query', 'Buscar destino o lugar', x, y, w - 54, 52);
+        cv.roundRect(x, y + 58, w, s.suggestions.length * 57 + 10, 12, p.surface);
+        s.suggestions.forEach((suggestion, i) => {
+            const yy = y + 63 + i * 57, hasDistance = Number.isFinite(suggestion.metres);
+            button('suggestion:' + i, '', x + 5, yy, w - 10, 53, { card: true, disabled: busy });
+            icon(cv, 'destination', x + 30, yy + 26, p.secondary, p.card, .8);
+            text(suggestion.name, x + 54, yy + 33, 20, p.text, w - (hasDistance ? 163 : 71), true);
+            if (hasDistance) cv.text(distance(suggestion.metres), x + w - 17, yy + 33, 16, p.secondary, { align: 'right' });
+        });
+        button('close', '', x + w - 46, y, 46, 52, { icon: 'close', scale: .86 });
     } else {
         const titles = { search: s.keyboard ? 'Buscar' : s.searchKind === 'chargers' ? 'Estaciones de carga' : s.query || 'Resultados', detail: 'Información del lugar', route: s.routePage === 'stops' ? 'Detalles de la ruta' : s.routePage === 'battery' ? 'Batería al llegar' : 'Navegación', settings: 'Ajustes de navegación', recent: 'Destinos guardados', stop: 'Finalizar navegación' };
         Object.assign(titles, { settings: 'Ajustes', 'route-settings': 'Ajustes de navegación', assistant: 'Asistente', 'assistant-settings': 'Configurar asistente', 'assistant-edit': 'Asistente', 'assistant-voices': 'Voces del asistente' });

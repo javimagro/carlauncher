@@ -3,6 +3,7 @@
 const net = require('net');
 const endpoint = '/run/javi-carlab/controller.sock';
 const input = 'de.bmw.infotainment.controlelements.FrontCCU';
+const steering = 'de.bmw.infotainment.controlelements.SteeringWheelPushButton';
 const directions = {
     NORD_KURZ_GEDRUECKT: 1, NORD_LANG_GEDRUECKT: 2,
     OST_KURZ_GEDRUECKT: 4, OST_LANG_GEDRUECKT: 5,
@@ -25,12 +26,33 @@ function sample(value) {
     return frame;
 }
 
+function steeringInput(write) {
+    let previous;
+    return (value, initial) => {
+        const button = value && value.operationPushButtonAudioAutomaticTuningSteeringWheel;
+        let direction;
+        if ([1, 'SUCHLAUF_ABWAERTS_MENUE_SKIP_LINKS'].includes(button)) direction = -1;
+        else if ([2, 'SUCHLAUF_AUFWAERTS_MENUE_SKIP_RECHTS'].includes(button)) direction = 1;
+        else if ([0, 'KEINE_AKTION'].includes(button)) direction = 0;
+        else return;
+        if (!initial && previous !== undefined && direction && direction !== previous) {
+            write(Buffer.from([0xff, 0xff, 0xfe, direction < 0 ? 1 : 2]));
+        }
+        previous = direction;
+    };
+}
+
 function observe(builders) {
     let socket;
     let visible = false;
     let retry;
     let latest;
     let stopped = false;
+    let wheel, wheelClosing = Promise.resolve();
+
+    function send(frame) {
+        if (visible && socket && !socket.connecting && !socket.destroyed && !socket.bufferSize) socket.write(frame);
+    }
 
     function connect() {
         if (stopped || !visible || socket) return;
@@ -49,7 +71,7 @@ function observe(builders) {
         const frame = sample(value);
         if (!frame || stopped) return;
         latest = frame;
-        if (socket && !socket.connecting && !socket.destroyed && !socket.bufferSize) socket.write(frame);
+        send(frame);
     }
 
     let proxy;
@@ -61,18 +83,60 @@ function observe(builders) {
         .then(receive)
         .catch(() => console.warn('BMWLauncher: FrontCCU no disponible'));
 
+    async function connectWheel(job) {
+        if (job !== wheel) return;
+        job.proxy = await builders.buildAndInitTypedProxy(steering, '1', { timeoutMs: 8000 });
+        if (job !== wheel) return;
+        job.attribute = job.proxy.statusSearchSwitch1;
+        const readSkip = steeringInput(send);
+        let notified = false;
+        job.subscription = await job.attribute.subscribe((value) => {
+            notified = true;
+            if (job === wheel) readSkip(value);
+        });
+        if (job === wheel && !notified) {
+            Promise.resolve().then(() => job.attribute.getValue()).then((value) => {
+                if (job === wheel && !notified) readSkip(value, true);
+            }).catch(() => {});
+        }
+    }
+
+    function showWheel(on) {
+        if (on === Boolean(wheel)) return;
+        if (on) {
+            const job = {};
+            wheel = job;
+            job.done = wheelClosing.then(() => connectWheel(job)).catch(() => {
+                if (job === wheel) console.warn('BMWLauncher: anterior/siguiente del volante no disponible');
+            });
+            return;
+        }
+        const job = wheel;
+        wheel = undefined;
+        wheelClosing = job.done.then(async () => {
+            if (job.subscription !== undefined) {
+                await Promise.resolve().then(() => job.attribute.unsubscribe(job.subscription)).catch(() => {});
+            }
+            if (!job.proxy) return;
+            if (typeof job.proxy.shutdown === 'function') await job.proxy.shutdown();
+            else if (typeof job.proxy.dispose === 'function') await job.proxy.dispose();
+        }).catch(() => {});
+    }
+
     return {
         show(on) {
             visible = on;
+            showWheel(on && !stopped);
             clearTimeout(retry);
             if (on) connect();
             else if (socket) { socket.destroy(); socket = undefined; }
         },
         close() {
+            if (stopped) return;
             stopped = true;
             this.show(false);
         }
     };
 }
 
-module.exports = { observe, sample };
+module.exports = { observe, sample, steeringInput };

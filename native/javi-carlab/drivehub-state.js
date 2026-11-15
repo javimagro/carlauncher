@@ -156,6 +156,15 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
             tilt = 0;
             select(state.selected, targetPage);
         },
+        trackInput(event) {
+            if (event.knob === knobRange || event.press === 15 && event.tilt === 15) return;
+            knob = event.knob; pressed = false; tilt = directions[event.tilt];
+        },
+        skip(direction) {
+            if (tdt && cards[state.selected].id === 'tdtworld') tdt.skip(direction);
+            else if (radio && cards[state.selected].id === 'radio') radio.rotate(direction);
+            else moveCard(direction);
+        },
         controller(event) {
             if (event.knob === knobRange || (event.press === 15 && event.tilt === 15)) return;
             const down = event.press === 1 || event.press === 2;
@@ -175,7 +184,7 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
             knob = event.knob;
             const deflected = direction && direction !== tilt;
             if (deflected && (direction === 'left' || direction === 'right')) {
-                if (!(radio && cards[state.selected].id === 'radio' && radio.tilt(direction))) moveCard(direction === 'left' ? -1 : 1);
+                moveCard(direction === 'left' ? -1 : 1);
             } else if (radio && cards[state.selected].id === 'radio') {
                 if (event.press === 2 && pressed !== 2) radio.press(true);
                 if (!down && pressed === 1) radio.press(false);

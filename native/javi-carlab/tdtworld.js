@@ -452,13 +452,16 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             setChannel(before + delta);
             if (state.mode === 'player' && before !== state.channel) play();
         },
+        skip(delta) {
+            if (state.mode === 'settings') return;
+            const before = state.channel;
+            if (state.mode === 'player') playChannel(clamp(before + delta, 0, state.channels.length - 1));
+            else setChannel(before + delta);
+        },
         tilt(delta) {
-            if (state.mode === 'browse') moveProgram(delta, now());
-            if (state.mode === 'player') {
-                if (state.playerChoice !== undefined) movePlayerChoice(delta);
-                else this.rotate(-delta);
-            }
-            if (state.mode === 'settings') applySetting(state.option, delta);
+            if (state.mode === 'browse') setChannel(state.channel + delta);
+            else if (state.playerChoice !== undefined) movePlayerChoice(delta);
+            else if (state.mode === 'settings') this.rotate(delta);
         },
         press(long) {
             if (state.mode === 'player') {
@@ -474,7 +477,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         touch(x, y, w, h, scroll) {
             const l = layout(w, h);
             if (scroll) {
-                if (state.mode === 'browse' && x >= l.detailX || state.mode === 'player' && state.playerChoice === undefined && x >= l.detailX) this.tilt(scroll);
+                if (state.mode === 'browse' && x >= l.detailX) moveProgram(scroll, now());
                 else this.rotate(scroll);
                 return;
             }

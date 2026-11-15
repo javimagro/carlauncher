@@ -3,6 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createEnergy, chargingValue } = require('../../apps/javi_carlauncher/navegacion-energia');
 const { drawHome } = require('../../native/javi-carlab/drivehub-view');
+const { energyBar } = require('../../native/javi-carlab/drivehub-state');
+const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
 const { validate } = require('../../native/javi-carlab/navigation-model');
 const flush = () => new Promise((r) => setImmediate(r));
 const route = { sessionID: 3, routeHandle: 2 };
@@ -81,4 +83,23 @@ test('energy bar draws BMW arrival including zero, no demo forecast, and removes
     const frame = { version: 1, at: 1, state: 'active', theme: 'auto', route: null, destinations: [], destinationsKnown: true,
         segments: [], electricRouting: true, energy: { source: 'bmw', destinationSoc: 101, stopSoc: null, chargedSoc: null } };
     assert.equal(validate(frame), false); frame.energy.destinationSoc = 0; assert.equal(validate(frame), true);
+});
+
+test('energy titles and values share a single baseline and retain the full current readings', () => {
+    const labels = [];
+    const recorder = new Recorder(1960, 520);
+    const canvas = new Proxy({
+        text(value, x, y, size) { if (x < energyBar.x + energyBar.w && y >= energyBar.y) labels.push({ value, x, y, size }); },
+        textWidth: recorder.textWidth.bind(recorder)
+    }, { get: (obj, key) => obj[key] || (() => {}) });
+    const data = { energy: ['Ahora', 'En la parada', 'Tras recarga', 'En destino'].map((label) => ({ label, soc: 99.5, range: 4094 })),
+        navigation: { state: 'active', theme: 'day', points: [], segments: [], destinations: [{ charging: true }],
+            energy: { source: 'bmw', stopSoc: 18, chargedSoc: 100, destinationSoc: 42 } } };
+    drawHome(canvas, { selected: 0, article: 0 }, 0, data, () => 1, 1000);
+    for (const value of ['99,5%', '4094 km', 'En la parada', 'Tras recarga', 'En destino', '18%', '100%', '42%']) {
+        assert(labels.some((label) => label.value === value), value);
+    }
+    assert(!labels.some((label) => label.value === 'Ahora'));
+    assert.equal(new Set(labels.map((label) => label.y)).size, 1);
+    assert.equal(new Set(labels.map((label) => label.size)).size, 1);
 });

@@ -118,7 +118,7 @@ const session = createSession(gpu, {
     }
 });
 const input = listen('/run/javi-carlab/controller.sock', (event) => {
-    ccuReady = true;
+    if (!event.skip) ccuReady = true;
     session.controller(event);
 }, (err) => console.warn('BMWLauncher: entrada OAP: ' + err.code), undefined, () => {
     ccuReady = false;
