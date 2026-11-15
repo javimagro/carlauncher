@@ -72,22 +72,20 @@ test('audio restarts only its failed sink, drains PCM and stops bounded retries 
     assert.equal(peers.length, 2);
 });
 
-test('a cancelled channel logo is retried after returning to TDT', async (t) => {
-    let rejectPhoto, requests = 0;
-    const channel = { id: 'one', name: 'One', group: 'Generalistas', logo: 'https://example.org/one.png', sources: [] };
-    const tdt = createTdt({ fixture: { tdtChannels: [channel] }, photo() {
-        requests++;
-        return new Promise((resolve, reject) => { rejectPhoto = reject; });
-    } }, () => {});
+test('a local channel logo loads only while TDT is open and remains cached on return', async (t) => {
+    const channel = { id: 'la1', name: 'La 1', epg: 'La1.TV', sources: [] };
+    const tdt = createTdt({ fixture: { tdtChannels: [channel] }, get: () => assert.fail('offline channel logo') }, () => {});
     t.after(() => tdt.close());
     tdt.update(0, true);
     tdt.update(1, false);
-    rejectPhoto(Object.assign(new Error('cancelled'), { code: 'IMAGE_CANCELLED' }));
-    await delay(10);
-    tdt.update(2, true);
-    assert.equal(requests, 2);
-    rejectPhoto(Object.assign(new Error('cancelled'), { code: 'IMAGE_CANCELLED' }));
-    await delay(10);
+    await delay(20);
+    assert.equal(tdt.logo(channel), undefined);
+    for (let i = 0; i < 60 && !tdt.logo(channel); i++) { tdt.update(2, true); await delay(10); }
+    const logo = tdt.logo(channel);
+    assert(logo);
+    tdt.update(3, false);
+    tdt.update(4, true);
+    assert.equal(tdt.logo(channel), logo);
 });
 
 test('a terminal decoder failure closes the isolated worker and its proxy', async (t) => {

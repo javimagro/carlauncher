@@ -6,8 +6,10 @@ const download = require('./drivehub-network.js');
 const { loadPhoto } = require('./drivehub-data.js');
 const { dropImage } = require('./vendor/kit_record.js');
 const catalog = require('./tdt-catalog.js');
+const { createLogos } = require('./tdt-logos.js');
 const { previewChannels, visibleChannels } = require('./tdtworld-data.js');
 
+const playerOverlay = { height: 128, logoSize: 90, posterWidth: 96 };
 const settings = ['País', 'Duración de la información', 'Iniciar en el último canal', 'Audio'];
 const clocks = new Map();
 const seconds = [0, 3, 5, 8, 12];
@@ -76,8 +78,8 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     let artTimer;
     let tuning = 0;
     let startup = true;
-    let pendingLogo = false;
-    const logos = new Map();
+    let overlayWasVisible = false;
+    const logos = createLogos(change);
     const catalogWaiters = new Set();
 
     function savePrefs() { save(file('settings.json'), prefs); }
@@ -208,55 +210,51 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         state.art = undefined;
     }
 
-    function loadLogo() {
+    function clearArt() {
+        clearTimeout(artTimer);
+        pendingArt = undefined;
+        artUrl = undefined;
+        releaseArt();
+    }
+
+    function overlayVisible(time) {
+        return state.mode === 'player' && state.overlayUntil > time;
+    }
+
+    function logoRows(time) {
         const first = state.mode === 'browse' ? state.firstChannel : playerStart();
-        if (pendingLogo || first === undefined) return;
-        const channel = state.channels.slice(first, first + visibleChannels)
-            .find((item) => item.logo && item.logo.startsWith('https://') && !logos.has(item.logo));
-        if (!channel) return;
-        pendingLogo = true;
-        const current = () => !closed && active && (state.mode === 'browse' || state.playerChoice !== undefined);
-        photo(channel.logo, get, 31, 31, true, current).then((image) => {
-            if (!current()) { dropImage(image); return; }
-            logos.set(channel.logo, image);
-            change();
-        }, (error) => { if (!closed && error.code !== 'IMAGE_CANCELLED') logos.set(channel.logo, null); }).then(() => {
-            pendingLogo = false;
-            if (logos.size > 40) {
-                const first = logos.keys().next().value;
-                const image = logos.get(first);
-                if (image) dropImage(image);
-                logos.delete(first);
-            }
-        });
+        const rows = first === undefined ? [] : state.channels.slice(first, first + visibleChannels);
+        return overlayVisible(time) ? [selected()].concat(rows) : rows;
     }
 
     function showArt(time) {
         const item = selected();
-        const current = program(item, time, true);
+        const browsing = state.mode === 'browse';
+        const current = program(item, time, browsing);
         const images = current && [fanart && item && (fanart.get(item.id + ':' + current.start)
             || fanart.get(catalog.key(item.name) + ':' + current.start)), current.icon];
         const urls = (images || []).filter((value) => typeof value === 'string' && value.startsWith('https://'));
-        const next = urls.join('\n');
+        const next = (browsing ? 'browse:' : 'player:') + urls.join('\n');
         if (artUrl === next) return;
+        clearArt();
         artUrl = next;
-        releaseArt();
+        if (!urls.length) return;
         const job = {};
         pendingArt = job;
-        if (!urls.length) return;
+        const valid = () => !closed && active && job === pendingArt && (browsing ? state.mode === 'browse' : overlayVisible(now()));
+        const width = browsing ? 528 : playerOverlay.posterWidth, height = browsing ? 297 : playerOverlay.height;
         async function fetchArt() {
             for (const url of urls) {
-                if (job !== pendingArt) return;
+                if (!valid()) return;
                 try {
-                    const image = await photo(url, get, 528, 297, false, () => !closed && job === pendingArt && state.mode !== 'player');
-                    if (job !== pendingArt) { dropImage(image); return; }
+                    const image = await photo(url, get, width, height, false, valid);
+                    if (!valid()) { dropImage(image); return; }
                     state.art = image;
                     change();
                     return;
                 } catch (_) { /* The programme's EPG icon is the second source. */ }
             }
         }
-        clearTimeout(artTimer);
         artTimer = setTimeout(fetchArt, 130);
     }
 
@@ -278,18 +276,18 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         const request = tuning;
         state.mode = 'player';
         state.programOffset = null;
-        clearTimeout(artTimer);
-        pendingArt = undefined;
-        artUrl = undefined;
-        releaseArt();
+        clearArt();
         state.playback = 'loading';
         state.overlayUntil = Infinity;
+        function finishOverlay() {
+            if (state.overlayUntil === Infinity) state.overlayUntil = now() + prefs.seconds * 1000;
+        }
         change();
-        if (!tdtPlayer) { state.playback = 'unavailable'; change(); return; }
+        if (!tdtPlayer) { state.playback = 'unavailable'; finishOverlay(); change(); return; }
         try {
             const sources = await (fixture ? item.sources : catalog.resolveSources(item, get));
             if (request !== tuning) return;
-            if (!sources.length) state.playback = 'no-source';
+            if (!sources.length) { state.playback = 'no-source'; finishOverlay(); }
             else tdtPlayer.start(sources, (status, diagnostic) => {
                 if (request !== tuning) return;
                 if (status.startsWith('audio-')) {
@@ -303,17 +301,18 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                     state.playbackDiagnostic = diagnostic || '';
                 }
                 if (status === 'playing') {
-                    state.overlayUntil = now() + prefs.seconds * 1000;
+                    finishOverlay();
                     if (prefs.last[prefs.country] !== item.id) {
                         prefs.last[prefs.country] = item.id;
                         savePrefs();
                     }
-                }
+                } else if (['error', 'unavailable', 'native-ended'].includes(status)) finishOverlay();
                 change();
             }, prefs.audioMode);
         } catch (_) {
             if (request !== tuning) return;
             state.playback = 'error';
+            finishOverlay();
         }
         change();
     }
@@ -323,12 +322,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         state.mode = mode;
         state.option = 0;
         state.programOffset = null;
-        if (mode !== 'browse') {
-            clearTimeout(artTimer);
-            pendingArt = undefined;
-            artUrl = undefined;
-            releaseArt();
-        }
+        clearArt();
         change();
     }
 
@@ -359,7 +353,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     }
 
     function showOverlay() {
-        state.overlayUntil = now() + Math.max(prefs.seconds, 3) * 1000;
+        if (state.overlayUntil !== Infinity) state.overlayUntil = now() + Math.max(prefs.seconds, 3) * 1000;
         change();
     }
 
@@ -389,7 +383,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     let countryLoaded = false;
     if (fixture) { readCountry(); countryLoaded = true; }
     return {
-        state, selected, program, playerStart,
+        state, selected, program, playerStart, overlayVisible,
         prepareChannels(alive) {
             if (closed || !alive()) return Promise.resolve('cancelled');
             if (!countryLoaded) { readCountry(); countryLoaded = true; }
@@ -409,7 +403,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             });
         },
         playNamed(id) { if (!closed) playChannel(state.channels.findIndex((c) => c.id === id)); },
-        logo: (item) => logos.get(item.logo),
+        logo: (item) => logos.image(prefs.country, item),
         time(value) {
             const country = prefs.country;
             if (!clocks.has(country)) clocks.set(country, new Intl.DateTimeFormat('en-GB', {
@@ -423,14 +417,10 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         })),
         update(time, focused) {
             if (!focused && (active || state.mode !== 'browse')) {
-                clearTimeout(artTimer);
-                pendingArt = undefined;
-                artUrl = undefined;
-                releaseArt();
                 setMode('browse');
             }
             active = focused;
-            if (!active) return;
+            if (!active) { logos.load(prefs.country, []); return; }
             if (!countryLoaded) { readCountry(); countryLoaded = true; }
             refresh(time);
             if (startup && (state.channels.length || state.status === 'offline')) {
@@ -438,8 +428,11 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                 const last = prefs.last[prefs.country];
                 if (prefs.resume && prefs.audioMode !== 'bmw-sample' && last && selected() && last === selected().id && state.mode === 'browse') play();
             }
-            if (state.mode === 'browse') showArt(time);
-            loadLogo();
+            const visible = overlayVisible(time);
+            if (visible !== overlayWasVisible) { overlayWasVisible = visible; change(); }
+            if (state.mode === 'browse' || visible) showArt(time);
+            else if (artUrl !== undefined) clearArt();
+            logos.load(prefs.country, logoRows(time));
         },
         rotate(delta) {
             if (state.mode === 'settings') {
@@ -508,14 +501,11 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             closed = true;
             catalogWaiters.forEach((finish) => finish('cancelled'));
             generation++;
-            clearTimeout(artTimer);
-            pendingArt = undefined;
-            releaseArt();
-            logos.forEach((image) => { if (image) dropImage(image); });
-            logos.clear();
+            clearArt();
+            logos.close();
             stop();
         }
     };
 }
 
-module.exports = { createTdt, layout, visibleChannels };
+module.exports = { createTdt, layout, playerOverlay, visibleChannels };

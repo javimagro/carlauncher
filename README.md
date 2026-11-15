@@ -110,6 +110,8 @@ Pendiente de validar en el i4: cobertura real de la barra, toque en toda la supe
 
 Gira el mando para cambiar el foco e inclínalo arriba o abajo para recorrer la programación. La ficha y el fanart siguen al programa seleccionado. Toca una fila o pulsa el mando sobre el canal enfocado para reproducirlo. Durante el vídeo, **Canales** abre la parrilla con horarios, programa y progreso. **Configuración** permite cambiar el país, la duración de la información e iniciar en el último canal. La 0.2.17 añade la prueba de audio BMW a ese panel. Deslizar hacia Noticias cierra la emisión.
 
+El aviso de reproducción muestra el logo, el título, los horarios, el progreso y la descripción del programa. También muestra su imagen si la guía la proporciona. Se puede recuperar pulsando sobre el vídeo o el mando. Los logos de Carlinkit se incluyen para los seis países y se leen sin conexión. Se regeneran con `python tools/Preparar-LogosTDT.py RUTA_TDTWORLD_ANDROID --chrome RUTA_CHROME`.
+
 Para probar emisiones en Windows, instala FFmpeg o indica la ruta a su ejecutable con `JAVI_TDT_FFMPEG` y arranca el simulador con `--live`. El paquete de iDrive 8 lleva su propio FFmpeg para Linux x86-64 y un auxiliar PCM que intenta abrir la salida SmartX de la MGU. Se puede indicar otra salida con `JAVI_TDT_PCM` o usar `off` para silenciar la prueba. Las emisiones que requieren cuenta, DRM o reproductor web del proveedor dependen de una integración específica. [Código fuente y compilación de FFmpeg](native/javi-carlab/bin/SOURCES.txt)
 
 ## Versiones anteriores (0.1.x)
