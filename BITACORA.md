@@ -1,5 +1,13 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · 0.2.20: rótulo, logos TDT y cockpit integrados
+
+- Petición: esperar a terminar e integrar también los cambios del otro hilo. PR #7: rótulo completo con ocultación, recuperación por toque/OK y logos locales. PR #8: composición de cockpit ampliada, indicadores a la derecha a escala 1:1, transparencia y máscaras del arte. Se conserva el foco de audio de la 0.2.19 y el resto de mejoras ya integradas.
+- Los 2.068 archivos de logo originales se deduplican en 2.065 RGBA de 90 × 90. Verificados tamaño, descompresión y SHA del paquete; lectura asíncrona con un trabajo y caché acotada. El paquete y el índice se incluyen en el motor, con procedencia registrada. El límite por defecto de Store es 64 MiB para descarga y 200 MiB para construcción, superiores al tamaño de esta entrega.
+- Validación conjunta: `node --test --test-concurrency=4 emulator/split/*.test.js`, 272/272. Carga y sintaxis de cinco módulos modificados con Node 8.16.2. Capturas propias de TDT 520/572, visible/oculto/sin guía, y cockpit día/noche/sin datos. El cliente oficial de Cluster renderer 0.5.8 recibió 816.000 bytes iniciales y 243.200 al cambiar solo la potencia. Medición PC de esta composición: p50 10,10 ms y p95 15,73 ms, sin atribuirlos a la MGU ni afirmar una mejora de rendimiento.
+- App y motor 0.2.20, filtro del mando 1.0.0. Empaquetado desde el commit limpio de `main`, revisión de dependencias y módulos, enlace OAP sintético y lector Store. Se verifican etiqueta, ZIP descargado y SHA antes de anunciar la publicación. Sin instalación, reinicio ni acceso SSH durante esta entrega.
+- Pendiente físico: encuadre y recorte del cockpit, rótulo/logos durante una emisión real y audio prolongado al cambiar de canal. La cartografía BMW/AA y la muestra Cinemo no quedan resueltas por esta entrega. Reversión: reinstalar app y motor 0.2.19.
+
 ## 15-11-2026 · Panel ETA de CarLauncher
 
 - Con guiado activo, el panel 0.2.18 mostraba cinco iconos y el texto de llegada junto a la distancia. Se compararon las capturas Porcelain/Azure y `view_navigation_guidance_panel.xml` de CarLauncher Android (`427786f4`).
