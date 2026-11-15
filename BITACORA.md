@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 15-11-2026 · Iconos del mapa y ETA compacto
+
+- Los seis símbolos de la columna del mapa pasan del 86 % al 70 % de su escala base. Conservan círculos separados y áreas táctiles de 50 × 50. El ETA pasa de 388 × 184 a 334 × 150, con texto principal de 31 px, secundario de hasta 24 y botones de 46 px de alto.
+- Pasaron 272 pruebas y 24 de navegación y energía en el perfil alto. Se comprobaron los tres toques del ETA, el tamaño táctil de los círculos, Node 8.16.2 y las capturas de día y de noche en ambos perfiles.
+
 ## 15-11-2026 · Panel ETA de CarLauncher
 
 - Con guiado activo, el panel 0.2.18 mostraba cinco iconos y el texto de llegada junto a la distancia. Se compararon las capturas Porcelain/Azure y `view_navigation_guidance_panel.xml` de CarLauncher Android (`427786f4`).
