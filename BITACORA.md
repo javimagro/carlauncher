@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Recuperación AA sin borrar la última imagen
+
+- La revisión de PR13 detectó que `aa-integration.stopJob()` anulaba la superficie aunque el productor conservara el último cuadro. Tres regresiones con integración, proceso, worker, productor y anillo reales reproducen la pérdida en el commit previo; se simulan únicamente BMW IPC y los procesos nativos.
+- La recuperación desactiva entrada y cierra captura/decodificación, conservando un único anillo visible bajo responsabilidad del padre. El worker cierra su descriptor; el padre retira el archivo al recibir la imagen nueva, ocultar, cerrar o fallar. No se copian píxeles al hilo de interfaz ni se mantienen controles sobre una imagen detenida.
+- `node --test --test-concurrency=4 emulator/split/*.test.js`: **456/456**. Se comprueba reemplazo, cancelación y rechazo de formato, incluyendo archivos conservados tras el cierre del worker y eliminación final. El cambio no acredita todavía recuperación física en la MGU; se incluye en la candidata 0.2.21 antes de publicar.
+
 ## 2026-11-15 · Preparación 0.2.21 para probar AA instalado
 
 - El usuario solicita publicar la integración AA para probarla con ENET. App/motor0.2.21, filtro1.1.0 y formato1.0.0; se conserva la separación AA/BMW, barra de energía, formato por altura y retirada/restauración de MAIN. No se toca IC.

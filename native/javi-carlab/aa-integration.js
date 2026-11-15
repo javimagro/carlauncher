@@ -55,10 +55,12 @@ function createIntegration(gpu, options) {
     function active(job) { return !closed && shown && capable && current === job && !job.cancelled; }
     function releaseFailure(code) {
         blocked = code;
+        // Failed restoration ends recovery: do not retain an unusable surface.
+        safely(() => player.stop()).catch(() => {});
         update('error', { code });
     }
     function safely(work) { try { return Promise.resolve(work()); } catch (error) { return Promise.reject(error); } }
-    function stopJob() {
+    function stopJob(preserveFrame) {
         const old = current; current = undefined;
         if (old) {
             old.cancelled = true;
@@ -68,7 +70,8 @@ function createIntegration(gpu, options) {
         // Cancel the format owner now, even if capture is still withdrawing.
         // Otherwise a pending acquisition could SET while shutdown is waiting.
         // Keep MAIN underlay until both have finished, including restoration.
-        const video = safely(() => player.stop()).catch(() => releaseFailure('capture-stop-unconfirmed'));
+        const video = safely(() => player.stop({ preserveFrame: preserveFrame === true }))
+            .catch(() => releaseFailure('capture-stop-unconfirmed'));
         const format = old && old.format ? safely(() => old.format.close()).catch(() =>
             releaseFailure('format-restoration-unconfirmed')) : Promise.resolve();
         const finished = Promise.all([video, format]).then(() => old && old.focus ? old.focus.stop() : undefined)
@@ -191,7 +194,7 @@ function createIntegration(gpu, options) {
                     if (job.retries >= 2) return fail(job, 'recovery-exhausted');
                     const bytes = detail && detail.requiredBytes;
                     if (bytes !== undefined && (!Number.isInteger(bytes) || bytes < 1 || bytes > 262144)) return fail(job, 'capture-frame-limit');
-                    stopJob();
+                    stopJob(true);
                     // A newly requested keyframe can be larger than the one
                     // that triggered recovery. Grow with bounded headroom,
                     // rather than restarting once per slightly larger frame.
@@ -207,8 +210,9 @@ function createIntegration(gpu, options) {
                     if (active(job) && options.input) options.input.setVisible(true);
                 } else update(value, detail);
             };
-            if (createFormat) player.arm(job.identity, changed);
-            else player.start(job.identity, changed, profile);
+            const playback = { preserveFrame: job.retries > 0 };
+            if (createFormat) player.arm(job.identity, changed, playback);
+            else player.start(job.identity, changed, profile, playback);
         } catch (error) { fail(job, error.message || 'capture'); }
     }
     function start() {

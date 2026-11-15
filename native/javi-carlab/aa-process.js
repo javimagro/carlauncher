@@ -11,17 +11,18 @@ const monotonic = () => { const t = process.hrtime(); return t[0] * 1000 + t[1] 
 function createAAPlayer(gpu, options) {
     options = options || {};
     const now = options.now || monotonic;
-    let capable = false, job, surface, counters, closing = [], cleanupError;
+    let capable = false, job, surface, displayedRing, counters, closing = [], cleanupError;
     function validRing(file) {
         return typeof file === 'string' && path.dirname(path.resolve(file)) === path.resolve(options.directory || '/dev/shm') &&
             /^mgu-video-bmwlauncher-[a-f0-9]{16}$/.test(path.basename(file));
     }
-    function closeJob(current) {
+    function closeJob(current, preserveFrame) {
         if (!current) return Promise.resolve();
         if (current.closePromise) return current.closePromise;
         current.closed = true;
         clearInterval(current.lease);
-        if (current.ring) fs.unlink(current.ring, () => {});
+        const keepRing = preserveFrame && current.ring === displayedRing;
+        if (current.ring && !keepRing) fs.unlink(current.ring, () => {});
         if (!current.child) return (current.closePromise = Promise.resolve());
         current.closePromise = new Promise((resolve, reject) => {
             let finished = false, force, deadline;
@@ -37,7 +38,7 @@ function createAAPlayer(gpu, options) {
             deadline = setTimeout(() => complete(new Error('worker-close-timeout')), 4500);
             force.unref(); deadline.unref();
             if (current.child.connected) {
-                try { current.child.send({ type: 'stop' }, () => {}); } catch (_) {}
+                try { current.child.send({ type: 'stop', preserveFrame: !!keepRing }, () => {}); } catch (_) {}
             }
         });
         const waiting = current.closePromise;
@@ -46,19 +47,25 @@ function createAAPlayer(gpu, options) {
         waiting.then(remove, error => { cleanupError = error; remove(); });
         return waiting;
     }
-    function stop() {
-        const old = job, hadSurface = surface; job = undefined; surface = counters = undefined;
-        if (old || hadSurface) try { gpu.video(videoId, null); } catch (_) {}
-        closeJob(old);
+    function stop(settings) {
+        const preserveFrame = !!(settings && settings.preserveFrame === true);
+        const old = job, hadSurface = surface; job = undefined;
+        if (!preserveFrame) {
+            surface = counters = undefined;
+            if (old || hadSurface) try { gpu.video(videoId, null); } catch (_) {}
+            if (displayedRing) fs.unlink(displayedRing, () => {});
+            displayedRing = undefined;
+        }
+        closeJob(old, preserveFrame);
         const result = Promise.all(closing.slice()).then(() => { if (cleanupError) throw cleanupError; });
         result.catch(() => {}); // Compatibility callers may ignore stop's result.
         return result;
     }
-    function arm(session, changed) {
-        const previous = stop(), mustWait = closing.length > 0;
+    function arm(session, changed, settings) {
+        const previous = stop(settings), mustWait = closing.length > 0;
         changed = typeof changed === 'function' ? changed : () => {};
-        if (!capable) { changed('unavailable', { code: 'renderer-video' }); return false; }
-        if (cleanupError) { changed('error', { code: 'worker-close-unconfirmed' }); return false; }
+        if (!capable) { stop(); changed('unavailable', { code: 'renderer-video' }); return false; }
+        if (cleanupError) { stop(); changed('error', { code: 'worker-close-unconfirmed' }); return false; }
         const current = { changed, closed: false, playing: false, configured: false }; job = current;
         const alive = () => job === current && !current.closed;
         function fail(code) { if (alive()) { stop(); changed('error', { code }); } }
@@ -82,7 +89,8 @@ function createAAPlayer(gpu, options) {
                         // A start already queued over IPC can create its ring after stop().
                         if ((message.type === 'ring' || message.type === 'video') && validRing(message.file) &&
                             (!current.ring || current.ring === message.file) && (!job || job.ring !== message.file)) {
-                            current.ring = message.file; fs.unlink(message.file, () => {});
+                            current.ring = message.file;
+                            if (message.file !== displayedRing) fs.unlink(message.file, () => {});
                         }
                         return;
                     }
@@ -94,6 +102,8 @@ function createAAPlayer(gpu, options) {
                             if (!current.configured || !sameGeometry(message.geometry, current.geometry)) return fail('worker-geometry');
                             gpu.video(videoId, message.file);
                             surface = Object.freeze(Object.assign({ id: videoId, geometry: current.geometry }, current.geometry));
+                            const previousRing = displayedRing; displayedRing = message.file;
+                            if (previousRing && previousRing !== displayedRing) fs.unlink(previousRing, () => {});
                         }
                     } else if (message.type === 'status') {
                         if (message.status === 'error') { const detail = message.detail; stop(); changed('error', detail); }
@@ -141,10 +151,10 @@ function createAAPlayer(gpu, options) {
         if (current.send) current.send({ type: 'configure', profile: current.profile });
         return job === current && !current.closed;
     }
-    function start(session, changed, profile) {
+    function start(session, changed, profile, settings) {
         try { resolveGeometry(profile, options.nativeCrop); }
         catch (error) { if (changed) changed('error', { code: error.message }); return false; }
-        return arm(session, changed) && configure(profile);
+        return arm(session, changed, settings) && configure(profile);
     }
     return {
         ready(info) { capable = !!(info && info.video && gpu && typeof gpu.video === 'function'); if (!capable) stop(); },

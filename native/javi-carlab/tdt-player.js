@@ -60,8 +60,8 @@ function createRing(directory, w, h) {
     const cursor = Buffer.alloc(4);
     let seq = 0;
     let slot = 0;
-    function close() {
-        try { fs.closeSync(fd); } finally { fs.unlinkSync(file); }
+    function close(keepFile) {
+        try { fs.closeSync(fd); } finally { if (keepFile !== true) fs.unlinkSync(file); }
     }
     try {
         fs.ftruncateSync(fd, headerSize + slots * size);

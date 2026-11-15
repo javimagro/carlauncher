@@ -4,10 +4,10 @@ const { createPlayer } = require('./aa-player');
 const now = () => { const t = process.hrtime(); return t[0] * 1000 + t[1] / 1000000; };
 let player, parentLease = now(), closing = false;
 const send = message => { if (!closing && process.connected) process.send(message, () => {}); };
-function close() {
+function close(preserveFrame) {
     if (closing) return;
     closing = true; clearInterval(watch);
-    const closed = player ? player.stop() : Promise.resolve();
+    const closed = player ? player.stop(preserveFrame === true) : Promise.resolve();
     function finish(ok) {
         const exit = () => process.exit(ok ? 0 : 1);
         if (process.connected) process.send({ type: 'closed', ok }, exit);
@@ -19,7 +19,7 @@ const watch = setInterval(() => { if (now() - parentLease > 1500) close(); }, 25
 process.on('message', message => {
     if (closing || !message) return;
     if (message.type === 'lease') parentLease = now();
-    else if (message.type === 'stop') close();
+    else if (message.type === 'stop') close(message.preserveFrame === true);
     else if ((message.type === 'arm' || message.type === 'start') && !player) {
         parentLease = now(); player = createPlayer(message.options, send);
         if (message.type === 'start') player.start(message.session);

@@ -87,10 +87,12 @@ function createPlayer(options, send) {
         output = cropped = null;
         return closing;
     }
-    function stop() {
+    function stop(preserveFrame) {
         if (stopped) return closing;
         stopped = true; releaseProcesses();
-        if (ring) { try { ring.close(); } catch (_) {} ring = undefined; }
+        // Only the supervising UI may retain the file; it removes it when the
+        // replacement frame arrives or the view closes. Always close our fd.
+        if (ring) { try { ring.close(preserveFrame === true); } catch (_) {} ring = undefined; }
         return closing;
     }
     function fail(code) {
