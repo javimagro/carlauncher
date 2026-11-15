@@ -9,7 +9,6 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -61,10 +60,11 @@ static void str(Bytes &b, const char *p) {
 }
 int main(int argc, char **argv) {
   bool cleanup = argc == 2 && strcmp(argv[1], "--release") == 0;
-  bool playTrial = argc == 2 && strcmp(argv[1], "--play") == 0;
+  bool focusOnly = argc == 2 && strcmp(argv[1], "--focus-only") == 0;
+  bool playTrial = focusOnly || (argc == 2 && strcmp(argv[1], "--play") == 0);
   bool inspect = argc == 1 || (argc == 2 && strcmp(argv[1], "--inspect") == 0);
   if (!cleanup && !playTrial && !inspect) {
-    fputs("Usage: probe-dynamic-audio [--inspect|--play|--release]\n", stderr);
+    fputs("Usage: probe-dynamic-audio [--inspect|--play|--focus-only|--release]\n", stderr);
     return 1;
   }
   const char *tokenPath = "/tmp/bmwlauncher-audio-probe/own-focus-token";
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
     return 3;
   }
   struct stat fixture {};
-  if (playTrial &&
+  if (playTrial && !focusOnly &&
       (lstat("/tmp/bmwlauncher-audio-probe/audio-probe.wav", &fixture) != 0 ||
        !S_ISREG(fixture.st_mode) || fixture.st_size < 44 ||
        fixture.st_size > 2 * 1024 * 1024 || (fixture.st_mode & 0004) == 0)) {
@@ -115,8 +115,8 @@ int main(int argc, char **argv) {
   bool done = false;
   unsigned method = 0;
   vsomeip::session_t expectedSession = 0;
+  vsomeip::client_t expectedClient = 0;
   std::mutex responseMutex;
-  std::condition_variable responseReady;
   unsigned code = 255;
   Bytes result;
   a->register_availability_handler(
@@ -126,22 +126,27 @@ int main(int argc, char **argv) {
   a->register_message_handler(
       0xb0c0, 2, vsomeip::ANY_METHOD,
       [&](const std::shared_ptr<vsomeip::message> &m) {
-        if (m->get_method() == 0x8012) {
+        if (m->get_method() == 0x8012 &&
+            m->get_message_type() == vsomeip::message_type_e::MT_NOTIFICATION) {
           auto event = m->get_payload();
           if (event->get_length() > 0 && event->get_length() < 4096)
             printf("PLAYBACK_ERROR %u\n", unsigned(event->get_data()[0]));
           return;
         }
         std::lock_guard<std::mutex> lock(responseMutex);
-        if (done || m->get_method() != method ||
+        if (done || !method || m->get_method() != method ||
+            m->get_client() != expectedClient ||
+            (m->get_message_type() != vsomeip::message_type_e::MT_RESPONSE &&
+             m->get_message_type() != vsomeip::message_type_e::MT_ERROR) ||
             m->get_session() != expectedSession)
           return;
         auto p = m->get_payload();
         code = unsigned(m->get_return_code());
         if (p->get_length() < 4096)
           result.assign(p->get_data(), p->get_data() + p->get_length());
+        else
+          code = 254;
         done = true;
-        responseReady.notify_one();
       });
   if (!a->init())
     return 2;
@@ -165,14 +170,28 @@ int main(int argc, char **argv) {
     q->set_payload(p);
     a->send(q);
     expectedSession = q->get_session();
-    responseReady.wait_for(lock, std::chrono::seconds(2),
-                           [&]() { return done; });
+    expectedClient = q->get_client();
+    // The MGU timed condition wait failed to expire in the map probe.
+    // Keep this manual diagnostic bounded even when no reply arrives.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!done && std::chrono::steady_clock::now() < deadline) {
+      lock.unlock();
+      usleep(10000);
+      lock.lock();
+    }
     method = 0;
     printf("RPC %u received=%d code=%u bytes=%zu\n", m, int(done), code,
            result.size());
     if (done && result.size() == 1)
       printf("VALUE %u=%u\n", m, result[0]);
     return done && code == 0;
+  };
+  auto command = [&](unsigned m, const Bytes &data, const char *phase) {
+    const bool transport = rpc(m, data);
+    const bool accepted = transport && result.size() == 1 && result[0] == 0;
+    printf("PHASE %s accepted=%d result=%u\n", phase, int(accepted),
+           result.size() == 1 ? unsigned(result[0]) : 255u);
+    return accepted;
   };
 
   if (inspect) {
@@ -254,6 +273,8 @@ int main(int argc, char **argv) {
     empty = empty && pos + 1 == result.size();
   }
   Bytes token;
+  bool playbackAdvanced = false;
+  bool focusObserved = false;
   if (priorKnown && empty && rpc(4, {}) && result.size() == 1 &&
       result[0] == 0) {
     Bytes b;
@@ -299,73 +320,92 @@ int main(int argc, char **argv) {
     close(restore);
     a->request_event(0xb0c0, 2, 0x8012, {1}, false);
     a->subscribe(0xb0c0, 2, 1, 1);
-    Bytes settings = token;
-    settings.push_back(1);
-    rpc(51, settings);
-    Bytes metadata;
-    auto textValue = [&](unsigned key, const char *text) {
-      metadata.push_back(key);
-      Bytes v;
-      str(v, text);
-      u32(metadata, v.size());
-      u32(metadata, 2);
-      metadata.insert(metadata.end(), v.begin(), v.end());
-    };
-    textValue(16, "file:///tmp/bmwlauncher-audio-probe/audio-probe.wav");
-    textValue(3, "BMWLauncher audio trial");
-    metadata.push_back(1);
-    u32(metadata, 4);
-    u32(metadata, 1);
-    u32(metadata, 1);
-    Bytes item;
-    u32(item, 1);
-    const char *id = "00000001";
-    u32(item, 8);
-    item.insert(item.end(), id, id + 8);
-    u32(item, metadata.size());
-    item.insert(item.end(), metadata.begin(), metadata.end());
-    Bytes playlist = token;
-    u32(playlist, item.size());
-    playlist.insert(playlist.end(), item.begin(), item.end());
-    if (rpc(32, playlist) && result.size() == 1)
-      printf("PLAYLIST_RESULT %u\n", result[0]);
+    // Establish the source before submitting its list: connection setup may
+    // reset media state. This ordering is a diagnostic hypothesis, not a fix
+    // proven to produce audible sound.
+    bool connected = false;
     for (unsigned w = 0; w < 12; w++) {
-      if (rpc(4, {}) && result.size() == 1 && result[0] == 3)
+      if (rpc(4, {}) && result.size() == 1 && result[0] == 3) {
+        connected = true;
         break;
+      }
       usleep(250000);
     }
-    // Position zero is the native sentinel for "no selected track".
-    // CDeviceOAPDynamic indexes its media array with position - 1.
-    Bytes select = token;
-    u32(select, 1);
-    u32(select, 0);
-    rpc(37, select);
-    Bytes play = token;
-    play.push_back(0);
-    play.push_back(0);
-    rpc(54, play);
-    play.back() = 1;
-    rpc(54, play);
-    for (unsigned tick = 0; tick < 16; tick++) {
-      if (tick % 3 == 0) {
-        if (tick == 3) {
-          Bytes again = token;
-          again.push_back(0);
-          again.push_back(0);
-          rpc(54, again);
-          again.back() = 1;
-          rpc(54, again);
-        }
-        if (rpc(4, {}) && result.size() == 1)
-          printf("CONNECTION_STATE %u\n", result[0]);
-        if (rpc(9, {}) && result.size() == 1)
-          printf("PLAYER_STATE %u\n", result[0]);
-        if (rpc(7, {}) && result.size() == 8)
-          printf("POSITION %u/%u\n", r32(result, 0), r32(result, 4));
-        if (rpc(18, {}) && result.size() == 8)
-          printf("TIME_MS %u/%u\n", r32(result, 0), r32(result, 4));
+    printf("CONNECTED_BEFORE_PLAYLIST %d\n", int(connected));
+    focusObserved = connected;
+    if (connected && focusOnly) {
+      puts("FOCUS_ONLY_NO_TRACK_OR_PLAY_REQUESTED");
+      for (unsigned tick = 0; tick < 16; tick++) {
+        if (tick % 4 == 0 && rpc(4, {}) && result.size() == 1)
+          printf("FOCUS_ONLY_CONNECTION %u\n", result[0]);
+        usleep(1000000);
       }
-      usleep(1000000);
+    }
+    if (connected && !focusOnly) {
+      Bytes settings = token;
+      settings.push_back(1);
+      const bool autoplayAccepted = command(51, settings, "autoplay");
+      Bytes metadata;
+      auto textValue = [&](unsigned key, const char *text) {
+        metadata.push_back(key);
+        Bytes v;
+        str(v, text);
+        u32(metadata, v.size());
+        u32(metadata, 2);
+        metadata.insert(metadata.end(), v.begin(), v.end());
+      };
+      textValue(16, "file:///tmp/bmwlauncher-audio-probe/audio-probe.wav");
+      textValue(3, "BMWLauncher audio trial");
+      metadata.push_back(1);
+      u32(metadata, 4);
+      u32(metadata, 1);
+      u32(metadata, 1);
+      Bytes item;
+      u32(item, 1);
+      const char *id = "00000001";
+      u32(item, 8);
+      item.insert(item.end(), id, id + 8);
+      u32(item, metadata.size());
+      item.insert(item.end(), metadata.begin(), metadata.end());
+      Bytes playlist = token;
+      u32(playlist, item.size());
+      playlist.insert(playlist.end(), item.begin(), item.end());
+      const bool playlistAccepted = autoplayAccepted && command(32, playlist, "playlist");
+      if (rpc(7, {}) && result.size() == 8)
+        printf("POSITION_AFTER_PLAYLIST %u/%u\n", r32(result, 0), r32(result, 4));
+      // Position zero is the native sentinel for "no selected track".
+      // CDeviceOAPDynamic indexes its media array with position - 1.
+      Bytes select = token;
+      u32(select, 1);
+      u32(select, 0);
+      const bool selected = playlistAccepted && command(37, select, "select");
+      Bytes play = token;
+      play.push_back(0);
+      play.push_back(0);
+      const bool pressed = selected && command(54, play, "play_press");
+      play.back() = 1;
+      if (pressed)
+        command(54, play, "play_release");
+      unsigned previousTime = 0;
+      bool haveTime = false;
+      for (unsigned tick = 0; tick < 16; tick++) {
+        if (tick % 3 == 0) {
+          if (rpc(4, {}) && result.size() == 1)
+            printf("CONNECTION_STATE %u\n", result[0]);
+          if (rpc(9, {}) && result.size() == 1)
+            printf("PLAYER_STATE %u\n", result[0]);
+          if (rpc(7, {}) && result.size() == 8)
+            printf("POSITION %u/%u\n", r32(result, 0), r32(result, 4));
+          if (rpc(18, {}) && result.size() == 8) {
+            printf("TIME_MS %u/%u\n", r32(result, 0), r32(result, 4));
+            const unsigned elapsed = r32(result, 0);
+            playbackAdvanced = playbackAdvanced || (pressed && haveTime && elapsed > previousTime);
+            previousTime = elapsed;
+            haveTime = true;
+          }
+        }
+        usleep(1000000);
+      }
     }
     a->unsubscribe(0xb0c0, 2, 1);
     a->release_event(0xb0c0, 2, 0x8012);
@@ -390,5 +430,11 @@ int main(int argc, char **argv) {
   a->stop();
   t.join();
   alarm(0);
-  return 0;
+  if (focusOnly)
+    printf("FOCUS_OBSERVED %d PLAYBACK_NOT_REQUESTED\n", int(focusObserved));
+  else
+    printf("PLAYBACK_ADVANCED %d AUDIBLE_NOT_MEASURED\n", int(playbackAdvanced));
+  if (access(tokenPath, F_OK) == 0)
+    return 5;
+  return (focusOnly ? focusObserved : playbackAdvanced) ? 0 : 7;
 }

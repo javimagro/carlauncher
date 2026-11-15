@@ -2,6 +2,12 @@
 
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
+## 2026-11-15 · Integración de cambios entre worktrees
+
+- El checkout principal tenía cambios locales sobre la 0.2.11. El segundo worktree terminó su publicación en 0.2.17 y quedó limpio. La comparación a tres bandas con `origin/main` confirmó que los cambios funcionales del primer checkout ya estaban integrados o tenían una revisión posterior. Se preservó la implementación publicada, incluidas la vista alta, la prueba BMW de audio, las previsiones BMW y la corrección TASU.
+- Se incorporaron la documentación pendiente y las sondas manuales de mapa y audio, junto con sus regresiones. El mapa de ensayo mantiene la opacidad a cero en todos los modos. Las herramientas siguen siendo externas al paquete de Store. El flujo de trabajo en paralelo y publicación quedó en [AGENTS.md](AGENTS.md#trabajo-en-paralelo-y-publicación-desde-cualquier-hilo).
+- Antes: 246 pruebas en la 0.2.17. Después: 252 con `node --test emulator/split/*.test.js`. Node 8.16.2 cargó los tres scripts manuales y pasaron los verificadores del catálogo MGU21 de navegación y telemetría. Las dos sondas compilaron con Clang 19.0.1 y avisos como errores. ELF64 x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, dependencias vSomeIP, libstdc++, libgcc, libc y pthread, GLIBC 2.14 y GLIBCXX 3.4.22 máximas. El ELF de mapa conservó el hash `62ef402db58c5a68b41165c6a835f4e5e452c602e2ca836fb9c767e20e0c8437` y el de audio `bd8fd4d33b51407b9031f701572b114e7be66a13732b3677aa7fd4550fe820fb`. Compilación cruzada, sin ejecutar las sondas en el i4.
+
 ## 2026-11-15 · 0.2.17: previsión BMW, barra de energía y prueba nativa de audio
 
 - **Petición:** probar la ruta MediaPlayer de RideTube y publicar; aumentar la franja de energía 30 px, subir toast 50 px, quitar el pie de indisponibilidad y compactar/ocultar paneles sin guiado/paradas. El usuario pidió usar la previsión energética BMW y habilitar la planificación eléctrica del coche.

@@ -42,7 +42,8 @@ Se conserva el reparto del proyecto: izquierda de 1038 × 468 píxeles lógicos,
 - Inclinar a la izquierda retrocede en los paneles. Inclinar a la derecha con el mapa sin panel devuelve el foco a DriveHub. Tocar una tarjeta también devuelve el foco.
 - Las inclinaciones verticales cambian la página de resultados. No se ejecuta una pulsación que empezó antes de que otra capa cubriera la app.
 - **Calcular ruta** no inicia el guiado. **Iniciar** lo solicita explícitamente. **Finalizar** pide confirmación en la propia interfaz porque detiene el guiado BMW vigente.
-- Las previsiones de batería de parada/destino quedan en guiones. No se conservan números de demostración junto a una ruta real, ni se convierte un objetivo de llegada en una predicción.
+- El altavoz alterna `Guidance.voiceGuidanceEnabled` para las maniobras habladas de BMW. El icono y el toast se actualizan con la lectura confirmada. Está inactivo mientras falta una lectura vigente o hay una orden pendiente. El catálogo de la MGU declara un booleano con getter 18, setter 19 y notificador `0x8010`, grupo 16, en `Main_Instance`. El emulador simula este ajuste. Queda confirmar el efecto audible con una ruta en el i4.
+- Las previsiones de batería de parada y destino muestran el porcentaje comunicado por BMW cuando está disponible y un guion en su ausencia. El mínimo de llegada es un objetivo de la ruta.
 
 ## Fronteras de implementación
 

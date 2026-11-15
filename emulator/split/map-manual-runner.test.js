@@ -26,17 +26,13 @@ test('el ensayo compone únicamente la capa nativa propia y añade solo esa capa
   assert.throws(function () { runner.rectangle('2100,0,1038,468'); }, /fuera/);
 });
 
-test('el mapa empieza transparente y solo se revela tras avanzar sus cuadros propios', () => {
+test('el ensayo conserva la propiedad de la capa aunque se observen cuadros propios', () => {
   const visible = created('/usr/bin/NavigationBasic').replace('layers: 100', 'layers: 100 ' + id);
-  const reveal = (text, previous) => runner.revealCommands(baseline, diagnostic.parseScene(text), id, text, previous);
-  assert.deepEqual(reveal(visible, 0), []);
+  const validate = (text) => runner.validateNewObjects(baseline, diagnostic.parseScene(text), id, text);
   const withFrames = visible.replace('frames: 0', 'frames: 2');
-  assert.deepEqual(reveal(withFrames, null), []);
-  assert.deepEqual(reveal(withFrames, 2), []);
-  assert.deepEqual(reveal(withFrames, 1), [['layer', String(id), 'opacity', '1']]);
-  assert.deepEqual(reveal(withFrames.replace('1038x468', '0x0'), 1), []);
-  assert.throws(() => reveal(withFrames.replace('layers: 200', 'layers: 200 ' + id), 1), /fuera/);
-  assert.throws(() => reveal(withFrames.replace('/usr/bin/NavigationBasic', '/usr/bin/Hmi8'), 1), /productor/);
+  assert.equal(validate(withFrames).surface.frames, 2);
+  assert.throws(() => validate(withFrames.replace('layers: 200', 'layers: 200 ' + id)), /fuera/);
+  assert.throws(() => validate(withFrames.replace('/usr/bin/NavigationBasic', '/usr/bin/Hmi8')), /productor/);
 });
 
 test('la creación exige IDs libres, productor NavigationBasic y pertenencia exclusiva', function () {

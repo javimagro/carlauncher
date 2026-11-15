@@ -4,7 +4,6 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -18,10 +17,14 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include "map-base-content.h"
 
 namespace {
 using Bytes = std::vector<vsomeip::byte_t>;
-constexpr uint32_t Owner = 0x424d5701;
+// Local record revision, not a GENIVI session. Revision 2 cannot consume an old
+// record whose wire session was the previous local ownership marker.
+constexpr uint32_t Owner = 0x424d5702;
+constexpr uint32_t MapSession = 0; // NavController 21.47, constant at 0x34869e4.
 volatile sig_atomic_t interrupted = 0;
 void signalStop(int) { interrupted = 1; }
 void u16(Bytes& b, uint16_t v) { b.push_back(v >> 8); b.push_back(v); }
@@ -74,21 +77,32 @@ class Connection {
     std::shared_ptr<vsomeip::application> app_;
     std::thread loop_;
     std::mutex mutex_;
-    std::condition_variable condition_;
     bool base_ = false, ext_ = false, waiting_ = false;
     vsomeip::service_t service_ = 0;
     vsomeip::method_t method_ = 0;
     vsomeip::client_t client_ = 0;
     vsomeip::session_t session_ = 0;
     Reply reply_;
+    // Manual probe only: bound waits with CLOCK_MONOTONIC. The target's
+    // condition-variable timed wait did not expire during the read-only trial.
+    template <typename Predicate>
+    bool waitUntil(std::unique_lock<std::mutex>& lock, unsigned milliseconds, Predicate ready) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds);
+        while (!ready() && std::chrono::steady_clock::now() < end) {
+            lock.unlock();
+            usleep(10000);
+            lock.lock();
+        }
+        return ready();
+    }
 public:
     explicit Connection(const char* name) : app_(runtime_->create_application(name)) {}
     bool start(bool requireExt = true) {
         app_->register_availability_handler(0xfa95, 1, [this](vsomeip::service_t, vsomeip::instance_t, bool available) {
-            std::lock_guard<std::mutex> lock(mutex_); base_ = available; condition_.notify_all();
+            std::lock_guard<std::mutex> lock(mutex_); base_ = available;
         }, 5, 2);
         app_->register_availability_handler(0xfa94, 1, [this](vsomeip::service_t, vsomeip::instance_t, bool available) {
-            std::lock_guard<std::mutex> lock(mutex_); ext_ = available; condition_.notify_all();
+            std::lock_guard<std::mutex> lock(mutex_); ext_ = available;
         }, 30, 11);
         app_->register_message_handler(vsomeip::ANY_SERVICE, 1, vsomeip::ANY_METHOD,
             [this](const std::shared_ptr<vsomeip::message>& message) {
@@ -102,14 +116,19 @@ public:
                 reply_.code = unsigned(message->get_return_code());
                 if (payload->get_length())
                     reply_.bytes.assign(payload->get_data(), payload->get_data() + payload->get_length());
-                reply_.received = true; waiting_ = false; condition_.notify_all();
+                reply_.received = true; waiting_ = false;
             });
+        fputs("map-probe: init\n", stderr);
         if (!app_->init()) return false;
+        fputs("map-probe: start loop\n", stderr);
         loop_ = std::thread([this]() { app_->start(); });
+        fputs("map-probe: request base\n", stderr);
         app_->request_service(0xfa95, 1, 5, 2);
+        fputs("map-probe: request extended\n", stderr);
         app_->request_service(0xfa94, 1, 30, 11);
+        fputs("map-probe: wait availability\n", stderr);
         std::unique_lock<std::mutex> lock(mutex_);
-        return condition_.wait_for(lock, std::chrono::seconds(8), [this, requireExt]() { return base_ && (!requireExt || ext_); });
+        return waitUntil(lock, 8000, [this, requireExt]() { return base_ && (!requireExt || ext_); });
     }
     Reply call(uint16_t service, uint16_t method, const Bytes& data, unsigned timeoutMs = 4000) {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -119,8 +138,10 @@ public:
         request->set_interface_version(service == 0xfa94 ? 30 : 5);
         auto payload = runtime_->create_payload(); payload->set_data(data); request->set_payload(payload);
         // send assigns the client/session IDs. The handler waits on this mutex until both are recorded.
+        fputs("map-probe: send\n", stderr);
         app_->send(request); client_ = request->get_client(); session_ = request->get_session();
-        condition_.wait_for(lock, std::chrono::milliseconds(timeoutMs), [this]() { return reply_.received; });
+        fputs("map-probe: sent, wait reply\n", stderr);
+        waitUntil(lock, timeoutMs, [this]() { return reply_.received; });
         waiting_ = false;
         printf("{\"event\":\"rpc\",\"service\":%u,\"method\":%u,\"received\":%s,\"code\":%u,\"bytes\":%zu}\n",
             service, method, reply_.received ? "true" : "false", reply_.code, reply_.bytes.size());
@@ -128,17 +149,19 @@ public:
     }
     ~Connection() {
         if (!loop_.joinable()) return;
+        fputs("map-probe: stop loop\n", stderr);
         app_->release_service(0xfa94, 1); app_->release_service(0xfa95, 1);
         app_->clear_all_handler(); app_->stop(); loop_.join();
     }
 };
 bool ok(const Reply& reply, size_t length) { return reply.received && reply.code == 0 && reply.bytes.size() == length; }
-Bytes own(uint32_t handle) { Bytes b; u32(b, Owner); u32(b, handle); return b; }
+Bytes own(uint32_t handle) { Bytes b; u32(b, MapSession); u32(b, handle); return b; }
 }
 
 int main(int argc, char** argv) {
     setbuf(stdout, nullptr);
     const bool inspect = argc == 2 && !strcmp(argv[1], "--inspect");
+    if (inspect) alarm(25);
     const bool trial = argc == 5 && !strcmp(argv[1], "--trial");
     const bool cleanup = argc == 3 && !strcmp(argv[1], "--cleanup");
     const char* permit = getenv("BMWLAUNCHER_MAP_TRIAL");
@@ -169,8 +192,9 @@ int main(int argc, char** argv) {
         return visibility.received && themes.received ? 0 : 3;
     }
     uint32_t handle = 0;
+    int trialFailure = 0;
     if (trial) {
-        Bytes data; u32(data, Owner); u16(data, 1038); u16(data, 468); u16(data, 204); u16(data, 204);
+        Bytes data; u32(data, MapSession); u16(data, 1038); u16(data, 468); u16(data, 204); u16(data, 204);
         u32(data, 28); u32(data, 3); // CommonAPI union length/type, not the in-memory Variant ordinal.
         u64(data, 1); u64(data, scene); // RAMSES connection 1; a new, separately reserved scene ID.
         u32(data, 0); u32(data, surface); u32(data, surface); // display 0, surface, matching native IVI layer.
@@ -196,16 +220,32 @@ int main(int argc, char** argv) {
             size_t newline;
             while ((newline = input.find('\n')) != std::string::npos) {
                 const std::string command = input.substr(0, newline); input.erase(0, newline + 1);
-                if (command == "SHOW" && !shown) {
+                if ((command == "SHOW" || command == "SHOW_BASELINE") && !shown) {
                     shown = true;
+                    // MapInstance initializes per-view performance after creation.
+                    // NavController level 4 -> GENIVI Level 0x53; own handle only.
+                    Bytes performance = own(handle); u32(performance, 0x53);
+                    if (!ok(connection.call(0xfa95, 0x33, performance), 0)) { trialFailure = 7; interrupted = 1; break; }
                     Bytes theme = own(handle); u32(theme, 1000);
                     Bytes follow = own(handle); follow.push_back(1);
-                    if (!ok(connection.call(0xfa95, 0x3e, theme), 0) ||
-                        !ok(connection.call(0xfa95, 8, follow), 0)) { interrupted = 1; break; }
-                    Bytes visible = own(handle); u32(visible, 0x43);
-                    const auto reply = connection.call(0xfa95, 0x30, visible, 5000);
-                    printf("{\"event\":\"visibility\",\"acknowledged\":%s}\n", ok(reply, 0) ? "true" : "false");
-                    // No retry or additional setter if visibility stays pending. Observe, then release.
+                    if (!ok(connection.call(0xfa95, 0x3e, theme), 0)) { trialFailure = 7; interrupted = 1; break; }
+                    // Creating a canvas only enables engine objects 20000/2010.
+                    // Enable the base cartography explicitly, on our NEW handle.
+                    // SHOW_BASELINE retains the previous sequence for a controlled comparison.
+                    if (command == "SHOW") {
+                        const auto request = map_probe::baseContentRequest(handle);
+                        const Bytes content(request.bytes, request.bytes + sizeof(request.bytes));
+                        const bool accepted = ok(connection.call(0xfa95, 0x20, content), 0);
+                        printf("{\"event\":\"base_content\",\"requested\":true,\"acknowledged\":%s}\n", accepted ? "true" : "false");
+                        if (!accepted) { trialFailure = 7; interrupted = 1; break; }
+                    } else puts("{\"event\":\"base_content\",\"requested\":false}");
+                    if (!ok(connection.call(0xfa95, 8, follow), 0)) { trialFailure = 7; interrupted = 1; break; }
+                    // MapViewerControlExt.setMapViewRenderingSettings, as used by
+                    // NavController. Empty UInt64 list: no foreign scene IDs.
+                    Bytes rendering = own(handle); u32(rendering, 0x43); u32(rendering, 0);
+                    const auto reply = connection.call(0xfa94, 0x3b, rendering, 5000);
+                    printf("{\"event\":\"rendering\",\"acknowledged\":%s}\n", ok(reply, 0) ? "true" : "false");
+                    // No retry or additional setter if rendering stays pending. Observe, then release.
                 } else if (command == "STOP") interrupted = 1;
                 else { interrupted = 1; break; }
             }
@@ -215,5 +255,5 @@ int main(int argc, char** argv) {
     const bool released = ok(connection.call(0xfa95, 3, own(handle)), 0);
     if (released) unlink(record.c_str());
     printf("{\"event\":\"released\",\"acknowledged\":%s}\n", released ? "true" : "false");
-    return released ? 0 : 6;
+    return released ? trialFailure : 6;
 }

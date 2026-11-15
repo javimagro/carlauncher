@@ -97,9 +97,16 @@ Investigación del 13-11-2026. Herramienta manual: `tools/tdt-runtime/probe-dyna
 
 ## Resultado y límite
 
-Se ha encontrado y corregido **un fallo en la sonda de reproducción nativa**, no se ha demostrado todavía audio por los altavoces: seleccionaba la posición **0**, que este consumidor usa como «ninguna pista seleccionada». La primera pista es **1**. La lista y el foco se aceptaban, pero eso no acreditaba que hubiera comenzado la reproducción.
+**Con vídeo corregido:** ensayo HLS + SmartX + la misma sonda de foco. El usuario oyó unos 10–15 s con microcortes. A los diez segundos ya había contrapresión y 307.200 bytes descartados; el foco todavía no se había liberado. Después apareció `state=3`, `stall=-11` y se agotaron los reintentos. El vídeo permaneció estable (cero vaciados/reconexiones, hueco máximo 66 ms). Hay un problema de entrega PCM anterior a la liberación de foco, por lo que prolongar la sonda no basta como corrección. La versión publicada 0.2.12 no incluye las sondas ni una supuesta solución de audio.
 
-El camino de producción, FFmpeg → PCM → SmartX, sigue sin validación audible. Abrir el PCM frontal dejó ALSA en RUNNING y terminó con EAGAIN/salida bloqueada; adquirir foco con DynamicTempMedia no hizo avanzar por sí solo ese PCM. La sonda corregida permitirá probar el reproductor original completo antes de decidir un cambio de transporte. No se han apropiado fuentes de llamadas, avisos o seguridad.
+
+**Ensayo ENET del 14-11, tarde:** el usuario oyó dos ráfagas del canal durante la prueba completa de DynamicTempMedia. La variante de solo foco no produjo sonido. Repetir la prueba completa con el aviso ALSA ya fijo tampoco; volver a abrir el canal y repetirla sí produjo ráfagas. El usuario confirmó que el sonido se interrumpía al congelarse el vídeo y no regresaba después de quedar fijo «ALSA sin avance (3)», aunque avanzase la imagen. Se comprobó por `/proc` que, en ese estado final, seguían el worker y FFmpeg, pero no el auxiliar `tdt-pcm`: sus reintentos son limitados. Esto acredita sonido intermitente oído, no reproducción continua ni una ruta de audio corregida.
+
+La sonda mantuvo CONNECTED, STOP y tiempo cero; liberó su token y la consulta posterior confirmó desconexión. El inspector de la fuente propia fue inconcluyente al alcanzar su límite de 64 MiB. No se atribuyen las ráfagas a la reproducción de la pista WAV ni se amplía ese límite sin una búsqueda más precisa. La observación independiente del anillo de vídeo registró pausas de hasta 6766 ms. Sigue pendiente distinguir el agotamiento de la cola de vídeo de la pérdida de avance del PCM.
+
+El audio **sigue sin validación continua por los altavoces**. La sonda seleccionaba posición **0**, que este consumidor usa como «ninguna pista seleccionada»; se corrigió a **1**, pero los ensayos posteriores del 14-11 mantuvieron STOP y tiempo cero. El cambio de índice no era suficiente. La decompilación local posterior confirma que el servicio responde OK a `createPlaylist` **antes de terminar de construir la lista**: ese OK no acredita una pista cargada ni reproduciéndose.
+
+El camino de producción, FFmpeg → PCM → SmartX, sigue sin validación audible. Abrir el PCM frontal dejó ALSA en RUNNING y terminó con EAGAIN/salida bloqueada; adquirir foco con DynamicTempMedia no hizo avanzar por sí solo ese PCM. Se prepara un inspector de la fuente propia para separar recepción de lista, selección y actividad nativa antes de decidir un cambio de transporte. No se han apropiado fuentes de llamadas, avisos o seguridad.
 
 ## Evidencia de la prueba en el coche
 
@@ -152,3 +159,65 @@ ELF comprobado: x86-64, intérprete `/lib/ld-linux-x86-64.so.2`; dependencias `l
 Cuando vuelva a estar autorizada y disponible la conexión: copiar únicamente sonda propia y WAV suave a la carpeta temporal, ejecutar primero inspección y después la reproducción. Exigir posición **1/1**, tiempo creciente y PLAY, registrar cualquier error de reproducción y pedir confirmación de sonido. Si sigue STOP, revisar primero error de contenido/URI; si avanza y no se oye, investigar ruta/mute mediante lecturas. No elevar volumen global ni cambiar rutas de seguridad para forzar el resultado.
 
 Reversión: la sonda no se instala. Liberar su token, esperar o cancelar su vigilante propio, confirmar estado desconectado y retirar solo su carpeta temporal. No cerrar SSH si el usuario ha pedido mantenerlo abierto.
+
+## Ensayos del 14-11-2026
+
+La corrección de posición **1** se ejecutó en el i4. El foco y las órdenes devolvieron OK, pero durante dieciséis segundos se mantuvieron conexión CONNECTED, playerState STOP, posición **0/0** y tiempo **0/0**. No se recibió `playbackErrorEvent`. La aceptación de la lista no demuestra que el motor haya empezado a reproducirla; queda descartado presentar la corrección del índice como solución suficiente.
+
+Se contrastó una segunda hipótesis: la conexión podría reiniciar la lista enviada antes de CONNECTED. La sonda se modificó para esperar esa confirmación **antes** de autoplay/createPlaylist, registrar la posición inmediatamente después y omitir la reproducción si no conecta. Resultado: `CONNECTED_BEFORE_PLAYLIST=1`, `PLAYLIST_RESULT=0`, `POSITION_AFTER_PLAYLIST=0/0`; STOP y tiempo cero durante toda la observación. Ese cambio de orden tampoco resuelve el fallo.
+
+Comprobaciones adicionales:
+
+- mediaapp y mediaengine usan el mismo espacio de montaje y `PrivateTmp=no`; ambos ven la muestra WAV de lectura pública en la carpeta propia 0755. No se cambiaron sus permisos de servicio ni dispositivos de audio.
+- El journal recogió actividad del motor, pero ninguna causa explícita de rechazo de la pista. REA abrió mediaapp (mismo hash documentado), pero `analyze_function` devolvió `provider_unavailable`; el contraste adicional usa catálogo y desensamblado LLVM, sin pseudocódigo recuperado. No se atribuye un fallo de URI, códec o arbitraje sin más evidencia.
+- En cada ensayo se restauró autoplay y se confirmó `releaseAudioFocus`. Inspección final: desconectado, STOP y sin token propio. Ningún proceso de prueba activo y temporales eliminados. No se utilizaron fuentes de avisos/llamadas ni se alteró el volumen.
+- La captura de TDT de producción sigue indicando **«Audio · ALSA sin avance (3)»**. La prueba del reproductor nativo es independiente y todavía no sustituye ese transporte.
+
+Como en la sonda del mapa, el plazo RPC manual se acota con reloj monotónico y pausas de 10 ms para no depender de la espera temporizada que no expiró en la MGU. Compilación final con avisos como errores y ELF verificado: x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, GLIBC máximo 2.14 / GLIBCXX 3.4.22. SHA-256 del ELF ejecutado **`7723eafc06d445feddb9a50b33193c66a3c17842ad4056ba6ae0cc677236a83b`**. Pasan las 192 pruebas locales; no prueban sonido por altavoces.
+
+Evidencias privadas: `play-audio-after-reboot.txt`, `audio-connected.txt`, `audio-path.txt`, journal y comprobación final de la sesión `MGU21-20261114-audio-mapa`. Próximo paso: observar la recepción efectiva de metadata/selección y la apertura del contenido en mediaengine, separándolas del foco. No repetir PLAY ni aumentar búferes como supuesto arreglo de este resultado.
+
+## Preparación sin ENET: lista aceptada frente a fuente activa
+
+Continuación del 14-11-2026, sin acceso al coche. REA no tenía proveedor disponible para analizar la función; se utilizó **Ghidra 12.1.4 local** con las copias privadas, contrastando direcciones y bytes con LLVM. La imagen PIE de mediaapp se analiza con base ELF cero; no reutilizar el primer análisis que Ghidra importó con base 0x100000.
+
+Evidencia del mismo mediaapp cuyo hash figura arriba:
+
+- `0xf83780` recibe la lista y la transforma mediante `0xb32560`/`0xb30f50`. La vtable de `CDeviceOAPDynamic`, `0x187c0b8`, ranura `0x5b0`, lleva a `0x8d7190`.
+- `0x8d7190` verifica el token propio y responde OK **antes** de vaciar la lista anterior y construir las nuevas URI/metadatos. El vector de streams comienza en `+0x110`, termina en `+0x118` y tiene capacidad en `+0x120`, con elementos de 0x48 bytes. La lista de URI en `+0xb0` tiene contador en su cabecera `+4`; `SourceActivityOn:0x8d8a20` lo imprime junto a la posición.
+- El transformador `0xb25ea0` y la tabla de `0xb1edf0` llevan FILE_NAME 16 a clave interna 0x20 de texto. `parseDataFromStream:0x8d2d50` consume esa clave. El catálogo y las implementaciones de deployment del proxy confirman longitud de arrays de cuatro bytes, struct sin prefijo y union con longitud/discriminante UInt32. **No se ha encontrado un error de tamaño ni de clave FILE_NAME en el payload actual.** Esto no demuestra que mediaengine acepte su URI.
+- `setTrackAndTimeByPos:0x8cd600` puede dejar una selección pendiente según la actividad de la fuente. El objeto en `+0x18` tiene el indicador de actividad en `+0x110`; `0x8d8a20` lo pone a uno cuando llega SourceActivityOn. CONNECTED no sustituye esa comprobación.
+
+### Herramientas preparadas
+
+`Inspeccionar-Audio-Propio.js` es exclusivamente manual, Node 8, no se incorpora a `component.json`. Verifica SHA-256 de mediaapp, identidad del proceso y token privado de **nuestra** prueba antes de interpretar offsets. Abre `/proc/<pid>/mem` con `r`, sin ptrace, señales, pausas, inyección ni escritura. Busca como máximo 64 MiB/3 s en memoria privada de heap; no guarda un volcado. Solo devuelve contadores y flags del objeto cuyo token coincide, nunca token, direcciones, URI ni metadatos. Rechaza resultados ambiguos, parciales o cambiantes; una instantánea sigue sin ser atómica ni demostrar sonido.
+
+La sonda nativa correlaciona también cliente y tipo de respuesta SOME/IP. Separa resultados de autoplay/lista/selección/PLAY, no continúa enviando órdenes dependientes si se rechaza una etapa y elimina la segunda pulsación PLAY. El resultado final indica `PLAYBACK_ADVANCED` y siempre `AUDIBLE_NOT_MEASURED`. Código **7**: no se observó avance; **5**: queda pendiente liberar el token propio. Código 0 no significa «sonido oído». Mantiene el vigilante de liberación y restaura autoplay.
+
+Preparación ejecutada:
+
+```powershell
+& tools/tdt-runtime/Compilar-Sonda-Audio.ps1 -PrivateRoot 'RUTA_PRIVADA_MGU' -OutputDirectory 'dist/audio-probe-offline' -AudioFixture 'RUTA_PRIVADA_MGU/audio-probe.wav'
+node --test emulator/split/audio-own-inspector.test.js
+```
+
+El directorio contiene únicamente la sonda propia, inspector, muestra suave y metadatos de compilación. La muestra original se comprobó como WAV PCM estéreo 48 kHz/16 bits, cinco segundos, pico 0,0366 FS; no se cambia el volumen del vehículo. SHA del ELF nuevo: **`986d3c1187d09ff96c9b39c4d591498af356c4478ff75e922f2176907e442988`**. Compilación C++14/Werror; ELF x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, GLIBC máximo 2.14 y GLIBCXX 3.4.22. No ejecutado en Linux/MGU; sin WSL en este PC. Cinco pruebas de comportamiento del inspector y carga con Node 8.16.2 verificadas.
+
+### Próxima comprobación, antes del mapa
+
+Con ENET y permiso vigente, reutilizar la configuración SOME/IP privada ya contrastada. Inspeccionar primero la fuente libre. Ejecutar una sola prueba de tono (`--play`) y, mientras conserva su token, leer su estado con:
+
+```sh
+BMWLAUNCHER_AUDIO_TRIAL=1 node /tmp/bmwlauncher-audio-probe/Inspeccionar-Audio-Propio.js --inspect-own "$(pidof mediaapp)"
+```
+
+No lanzar el inspector fuera del intervalo de la sonda. Si hay más de un PID, firmware diferente, datos parciales o token ausente, la salida es inconcluyente y no se relajan sus controles. Capturar una muestra después de `PHASE playlist` y otra durante la observación, sin repetir PLAY.
+
+| Observación | Siguiente comprobación |
+| --- | --- |
+| Lista interna vacía pese a OK | Conversión/recepción de metadata y finalización del callback; no culpar al altavoz. |
+| Lista de una pista, selección 1, actividad falsa | Inicio de fuente/arbitraje de TempMedia. No forzar flags en memoria. |
+| Lista y actividad presentes, tiempo detenido | Apertura de URI y respuesta de mediaengine. El inspector no observa por sí mismo la apertura del archivo. |
+| Tiempo crece pero no se oye | Ruta multimedia/mute y salida frontal. Confirmación auditiva independiente. |
+
+Tras el ensayo, comprobar la liberación del token y fuente, retirar solo los archivos temporales propios. La reversión no requiere instalar nada ni reiniciar. No se ha alterado FFmpeg, el vídeo validado por el usuario ni ningún canal de avisos.

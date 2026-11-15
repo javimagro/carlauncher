@@ -23,7 +23,7 @@ La **0.2.11 de prueba** reúne las mejoras de navegación, Radio FM/DAB, tiempo 
 
 **Ajustes → HUD y cuadro** permite consultar contenido de guiado anunciado por BMW y cambiar sus preferencias de cruces 3D, maniobras y carteles. Conserva el guiado y los dibujos originales. Falta confirmar en el coche que rutas iniciadas desde BMWLauncher muestran las mismas vistas y animaciones; el destino HUD de todos los carteles no está garantizado. [Integración y límites](HUD-NAVEGACION-MGU21.md).
 
-El engranaje incorpora **Ajustes → Asistente**: OpenAI/Gemini, voces y API key privada. El asistente controla las emisoras FM/DAB y tarjetas de DriveHub, TDT y las consultas disponibles del coche/navegación. La conversación escrita y los contratos se han probado en local; faltan las claves reales y la validación del micrófono y los altavoces. Las claves cifradas de Carlinkit todavía no se han recuperado. [Capacidades, configuración y pruebas](ASISTENTE-MGU21.md).
+El engranaje incorpora **Ajustes → Asistente** con OpenAI/Gemini, voces y API key privada. El asistente controla las emisoras FM/DAB y tarjetas de DriveHub, TDT y las consultas disponibles del coche. El simulador conserva las credenciales en el perfil de Windows. Sigue pendiente validar el micrófono y los altavoces en el coche. [Capacidades, configuración y pruebas](ASISTENTE-MGU21.md).
 
 Navegación BMW conserva búsqueda, destinos, cálculo y guiado mediante OAP/SOME/IP, pero retira las teselas externas. **La cartografía original todavía no está integrada:** el panel lo indica y no usa cachés de OSM como sustituto. Consulta [evidencia de ambas pantallas y componentes que faltan](NAVEGACION-MGU21.md).
 
@@ -80,7 +80,7 @@ Abre BMWLauncher desde la pantalla de iDrive a la que quieras volver. Gira la ru
 
 En la 0.2.11, Tiempo usa la posición GPS válida del coche. Sin ella muestra falta de ubicación; no recurre a Madrid ni al antiguo ajuste fijo de `drivehub.json`. La franja Ahora consume las lecturas verificadas y el asistente puede buscar entre las noticias descargadas.
 
-Los fondos e iconos del tiempo, la imagen de reserva de Noticias y el ejemplo de Radio proceden de los recursos locales de DriveHub. Los iconos de energía proceden de los recursos locales de BMWLauncher para Carlinkit. `drivehub-art.rgba.gz` contiene versiones redimensionadas para el renderizador. Se regenera con `python tools/Preparar-ArteDriveHub.py <DriveHub> <BMWLauncher-Android>` y Pillow. Las licencias de Inter, jpeg-js y SAX se incluyen en `native/javi-carlab/vendor`.
+Los fondos e iconos del tiempo y el ejemplo de Radio proceden de los recursos locales de DriveHub. Los iconos de energía proceden de los recursos locales de BMWLauncher para Carlinkit. `drivehub-art.rgba.gz` contiene versiones redimensionadas para el renderizador. Se regenera con `python tools/Preparar-ArteDriveHub.py <DriveHub> <BMWLauncher-Android>` y Pillow. Las licencias de Inter, jpeg-js y SAX se incluyen en `native/javi-carlab/vendor`.
 
 ### Vista local
 
@@ -90,7 +90,7 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--tall` para probar la vista de 1960 × 572, `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Toca la casita para cerrar la vista.
+El simulador arranca con contenido reproducible. Añade `--tall` para probar la vista de 1960 × 572, `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Si pulsas la casita, vuelve con **Abrir BMWLauncher** o recarga la página.
 
 ### Vista alta de prueba en iDrive 8
 
@@ -106,7 +106,7 @@ Pendiente de validar en el i4: cobertura real de la barra, toque en toda la supe
 
 ### TDTWorld en DriveHub
 
-Gira el mando para elegir un canal e inclínalo arriba o abajo para recorrer su programación. La ficha y el fanart siguen al programa seleccionado. Pulsa el mando o toca **Ver en directo** para abrir la emisión dentro de la tarjeta. Toca **Menú** para abrir la guía, gestionar favoritos y configurar país, categorías, orden, último canal y duración de la información. El deslizamiento horizontal vuelve a Noticias y cierra la emisión.
+Gira el mando para cambiar el foco e inclínalo arriba o abajo para recorrer la programación. La ficha y el fanart siguen al programa seleccionado. Toca una fila o pulsa el mando sobre el canal enfocado para reproducirlo. Durante el vídeo, **Canales** abre la parrilla con horarios, programa y progreso. **Configuración** permite cambiar el país, la duración de la información e iniciar en el último canal. La 0.2.17 añade la prueba de audio BMW a ese panel. Deslizar hacia Noticias cierra la emisión.
 
 Para probar emisiones en Windows, instala FFmpeg o indica la ruta a su ejecutable con `JAVI_TDT_FFMPEG` y arranca el simulador con `--live`. El paquete de iDrive 8 lleva su propio FFmpeg para Linux x86-64 y un auxiliar PCM que intenta abrir la salida SmartX de la MGU. Se puede indicar otra salida con `JAVI_TDT_PCM` o usar `off` para silenciar la prueba. Las emisiones que requieren cuenta, DRM o reproductor web del proveedor dependen de una integración específica. [Código fuente y compilación de FFmpeg](native/javi-carlab/bin/SOURCES.txt)
 
