@@ -1,12 +1,14 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.18 de prueba** coloca los títulos de previsión junto a sus valores y muestra batería y autonomía actuales sin rótulo. La columna del mapa separa más los círculos y reduce el tamaño de sus iconos. En el cuadro, el tiempo, la temperatura de batería, la potencia y el consumo pasan a la derecha según la referencia CarLauncher.
+La **0.2.19 de prueba** integra la corrección de audio de TDTWorld y las mejoras visuales y de navegación de los distintos hilos. El directo solicita y mantiene el foco multimedia de BMW antes de abrir la salida PCM. El usuario confirmó sonido continuo y limpio en dos ensayos temporales en el i4; quedan la sesión prolongada y los cambios de canal con esta versión instalada. El foco se libera al cerrar o fallar el auxiliar, sin modificar volumen ni rutas globales. [Evidencia y límites](TDT-AUDIO-MGU21.md).
+
+La barra de batería y autonomía baja de 70 a 44 píxeles lógicos conservando el tamaño de valores e iconos. El panel de llegada adopta el diseño de CarLauncher, con duración, distancia, hora, batería prevista y botones de finalizar, añadir parada y detalles. Añadir una parada conserva el destino final del itinerario activo y requiere confirmar el nuevo guiado. Se mantienen la franja en una línea, los círculos del mapa y el widget del cuadro a la derecha de la 0.2.18.
 
 **Buscar destino o lugar** despliega hasta tres sugerencias del historial y favoritos. La clasificación usa cercanía, frecuencia, hora y punto de salida. El mando actúa en DriveHub y pasa a navegación mientras hay un panel abierto. Girar en Radio sintoniza y los botones anterior y siguiente del volante se encaminan a Radio y TDTWorld. [Destinos y navegación](NAVEGACION-MGU21.md) · [Mando](MANDO-MGU21.md).
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.18**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.18).
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.19**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.19). Cierra y vuelve a abrir BMWLauncher tras actualizar para cargar los nuevos módulos.
 
-Verificación local con 260 pruebas, Node 8.16.2 y capturas de los dos perfiles. Queda contrastar los botones físicos del volante y la posición del widget en el i4. Para revertir, reinstala la app y el motor de la [0.2.17](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17).
+Verificación local con 270 pruebas y capturas de los dos perfiles y temas; comprobación Node 8.16.2, enlace OAP y lector de paquetes Store antes de publicar. Las pruebas físicas de cierre normal y terminación de los auxiliares devolvieron el foco. Queda contrastar la integración instalada, los botones físicos del volante y la posición del widget en el i4. La cartografía BMW/AA sigue pendiente y no se modifica el mapa del cockpit. Para revertir, reinstala la app y el motor de la [0.2.18](https://github.com/javimagro/carlauncher/releases/tag/v0.2.18).
 
 La 0.2.17 introdujo las previsiones de energía de BMW y la muestra de audio nativa de TDT. La lectura de llegada a destino se contrastó en el i4 con un valor de 0 %. La muestra completó la preparación y la conexión de fuente, pero el servicio del reproductor nativo siguió sin anunciarse. [Previsión de energía](NAVEGACION-MGU21.md#previsión-de-batería-bmw--15-11-2026) · [Prueba de audio](TDT-AUDIO-MGU21.md).
 

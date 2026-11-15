@@ -8,6 +8,13 @@
 
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
+## 2026-11-15 · 0.2.19: integración de audio y presentación
+
+- Petición: publicar con todos los cambios terminados. Se parte de `main`, incorporando el foco TDT validado en el coche y las PR #4 (panel ETA y parada en itinerario activo) y #5 (barra de energía de 44 px). Se conservan destinos contextuales, mando, widget derecho, guardado atómico y todas las correcciones anteriores. El checkout antiguo sobre 0.2.11 conserva sus cambios locales; no se copia sobre la integración vigente.
+- App y motor pasan a 0.2.19; Captura del mando conserva 1.0.0. Los tres módulos de foco se incluyen en el motor. Se empaqueta el commit limpio integrado en `main`, sin SDK, donantes sintéticos, firmware ni trazas privadas. La etiqueta, el contenido del ZIP, su suma y los tres componentes Store se contrastan antes de anunciar la actualización.
+- Validación de la combinación: 270 pruebas completas con concurrencia cuatro, 50 pruebas de navegación en perfil alto y 52 capturas a 1960×520/572. Node 8 comprueba sintaxis y carga de los módulos afectados. Al incluir inicialmente `drivehub.test.js` en el perfil alto falló su aserción específica del área predeterminada de 520 px; esa prueba pasa en la suite normal y no se ha modificado para ocultarlo.
+- El audio limpio se confirmó en ensayos temporales. Pendientes: integración instalada durante una sesión larga, cambios de canal, convivencia con otras fuentes y navegación física con los nuevos controles. La muestra finita Cinemo y la cartografía BMW/AA siguen sin resolver. Para volver atrás, reinstalar app y motor 0.2.18.
+
 ## 2026-11-15 · Audio TDT limpio con foco BMW y supervisor independiente
 
 - **Síntoma y reproducción:** el reproductor de la muestra BMW no estaba disponible y TDT solo sonaba al volver a abrir el canal durante algunas pruebas. Con ENET/SSH autorizados y coche parado se compararon servicio, foco, recepción de la lista, apertura del archivo y errores reales del motor. No se instaló ni reinició desde las herramientas; el usuario reinició iDrive durante un ensayo.

@@ -25,7 +25,7 @@ Tras reiniciar, esta MGU puede anunciar CONNECTED/HAS_FOCUS con los tres campos 
 - Verificación final: `node --test --test-concurrency=4 emulator/split/*.test.js`, **260/260**; las ocho regresiones de foco también pasaron aisladas. Carga de los módulos modificados y sintaxis del servicio comprobadas con Node 8.16.2; los tres auxiliares figuran en el componente. La primera ejecución simultánea tuvo un fallo temporal en la espera de escritura de preferencias de navegación; ese archivo pasó aislado y no se modifica navegación para ocultar el resultado.
 - El ELF manual se compiló con C++14, `-Wall -Wextra -Werror`; x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, versiones requeridas hasta GLIBC 2.14 y GLIBCXX 3.4.22; SHA-256 `0c5db9476fa609ce32ff004845f3f6b539a2a549df1f81bcd232667f7dd0e911`. El cambio de payload se probó físicamente con la sonda JS equivalente; ese ELF concreto no se ejecutó en la MGU.
 - Cierre de la sesión física: cero procesos temporales propios, foco libre y conexión cerrada. Retirados únicamente los tres módulos del directorio temporal de validación. SSH permanece abierto.
-- Falta instalar una versión con esta integración y repetir cambios de canal, visibilidad y convivencia con otras fuentes durante una sesión larga. No hay todavía una nueva release por este cambio. Los contratos completos, bibliotecas y trazas de la unidad permanecen fuera del repositorio.
+- La integración se incluye en la 0.2.19. Falta instalarla y repetir cambios de canal, visibilidad y convivencia con otras fuentes durante una sesión larga. Los contratos completos, bibliotecas y trazas de la unidad permanecen fuera del repositorio.
 
 ## Muestra BMW de 30 segundos · 0.2.17
 
