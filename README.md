@@ -1,14 +1,14 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.17 de prueba** amplía 30 píxeles la barra de energía, aumenta letras e iconos, eleva 50 píxeles los avisos y retira el pie «Navegación BMW · mapa local no disponible». Conserva la vista alta introducida en 0.2.16.
+La **0.2.18 de prueba** coloca los títulos de previsión junto a sus valores y muestra batería y autonomía actuales sin rótulo. La columna del mapa separa más los círculos y reduce el tamaño de sus iconos. En el cuadro, el tiempo, la temperatura de batería, la potencia y el consumo pasan a la derecha según la referencia CarLauncher.
 
-Sin navegación solo aparece **Ahora**. Con ruta, **En destino** queda inmediatamente después; los paneles **En la parada** y **Tras recarga** aparecen solo cuando hay una parada de carga. Los porcentajes previstos proceden de BMW mediante `Routing2/CHARGING_INFO`; los kilómetros previstos siguen en guiones hasta disponer de una fuente validada. No usa consumos medios para sustituir el cálculo BMW ni muestra previsiones de demostración. [Lectura y prueba real](NAVEGACION-MGU21.md#previsión-de-batería-bmw--15-11-2026).
+**Buscar destino o lugar** despliega hasta tres sugerencias del historial y favoritos. La clasificación usa cercanía, frecuencia, hora y punto de salida. El mando actúa en DriveHub y pasa a navegación mientras hay un panel abierto. Girar en Radio sintoniza y los botones anterior y siguiente del volante se encaminan a Radio y TDTWorld. [Destinos y navegación](NAVEGACION-MGU21.md) · [Mando](MANDO-MGU21.md).
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.17**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17). Si todavía no reiniciaste tras activar la vista alta de 0.2.16, reinicia iDrive con el coche parado para aplicar el área táctil ampliada.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.18**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.18).
 
-TDTWorld añade **Ajustes → Audio → Prueba BMW · 30 s**, una muestra finita y explícita con vídeo siguiendo el reloj del reproductor BMW. **No es audio nativo en directo resuelto.** En el ensayo SSH del i4 se preparó la muestra y BMW aceptó conectar la fuente, pero `MediaPlayer/OapGenericMedia` siguió no disponible; la prueba liberó su conexión sin reproducir. El directo actual permanece como opción predeterminada. [Evidencia y límites](TDT-AUDIO-MGU21.md).
+Verificación local con 260 pruebas, Node 8.16.2 y capturas de los dos perfiles. Queda contrastar los botones físicos del volante y la posición del widget en el i4. Para revertir, reinstala la app y el motor de la [0.2.17](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17).
 
-Verificación: 246 pruebas locales, Node 8.16.2, capturas día/noche y lector de paquetes Store. Se contrastó la escala de energía con Hmi8 y se recibió en el coche `estimatedStateOfEnergy: 0` para la ruta activa. Llegada positiva y paradas tras recarga requieren contraste físico. El audio continuo, sincronía y cartografía BMW/AA siguen pendientes. No se altera el mapa del cockpit. Para revertir esta entrega, reinstala app y motor **0.2.16**.
+La 0.2.17 introdujo las previsiones de energía de BMW y la muestra de audio nativa de TDT. La lectura de llegada a destino se contrastó en el i4 con un valor de 0 %. La muestra completó la preparación y la conexión de fuente, pero el servicio del reproductor nativo siguió sin anunciarse. [Previsión de energía](NAVEGACION-MGU21.md#previsión-de-batería-bmw--15-11-2026) · [Prueba de audio](TDT-AUDIO-MGU21.md).
 
 ## Referencia de la versión anterior
 
@@ -43,11 +43,11 @@ La interfaz reserva el lado izquierdo para la cartografía BMW, todavía pendien
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.17**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. El motor requiere mgu-deploy 0.7.0 o superior para sus hooks. Reinicia iDrive con el coche parado para aplicar el nuevo toque. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17).
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.18**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0. El motor requiere mgu-deploy 0.7.0 o superior para sus hooks. Si todavía debes aplicar el área táctil de la vista alta, reinicia iDrive con el coche parado. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.18).
 
-La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
+La radio y las llamadas de navegación requieren validación en el i4. El sonido continuo de TDT y la exclusividad física del mando siguen pendientes.
 
-Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
+Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y selecciona **La 2** o **24h** con un toque u OK. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
 
 En **Lecturas del coche**, comprueba la fila **Batería HV**, que muestra kW, voltios y amperios. Compara también la distancia y el consumo medio de **Inicio de viaje**, **Última carga**, **Individual** y **Desde fábrica** con Datos de viaje de iDrive. [Prueba de telemetría](TELEMETRIA-MGU21.md#potencia-de-la-batería-hv)
 
