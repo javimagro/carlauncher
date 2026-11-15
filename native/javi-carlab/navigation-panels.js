@@ -15,7 +15,7 @@ const distance = (v) => Number.isFinite(v) ? (v / 1000).toFixed(1).replace('.', 
 function duration(seconds) {
     if (!Number.isFinite(seconds)) return '— min';
     const n = Math.ceil(seconds / 60);
-    return n >= 60 ? Math.floor(n / 60) + ' h ' + n % 60 + ' min' : n + ' min';
+    return n >= 60 ? Math.floor(n / 60) + ' h y ' + n % 60 + ' min' : n + ' min';
 }
 function searchMessage(data, busy, chargers) {
     if (data.status === 'error') {
@@ -200,6 +200,45 @@ function controls(cv, ui, nav, now = Date.now()) {
         button('arrival-down', '−', x + 242, y + 250, 46, 44); text(s.preferences.arrival + '%', x + 302, y + 280, 20); button('arrival-up', '+', x + w - 66, y + 250, 46, 44);
         button('theme', 'Tema: ' + ({ auto: 'Automático', day: 'Día', night: 'Noche' })[s.theme], x + 20, y + 306, w - 40, 46);
     }
+    function etaPanel() {
+        // CarLauncher guidance card, inset to leave the MGU map toolbar accessible.
+        const day = p === palettes.day, { x: start, y: top, w: width, h: height } = layout.eta();
+        const radius = 18, left = start + 24, right = start + width - 12;
+        cv.roundRect(start + 6, top + 4, width, height, radius, [91, 100, 112, 51]);
+        if (day) cv.card(start, top, width, height, radius, [[0, p.card], [1, p.ground]]);
+        else cv.roundRect(start, top, width, height, radius, p.ground);
+        const final = (nav.destinations || []).find((d) => d.final);
+        const seconds = final && final.seconds, metres = final && final.metres;
+        const soc = nav.energy && nav.energy.source === 'bmw' ? nav.energy.destinationSoc : null;
+        const size = 29;
+        text(duration(seconds), left, top + 46, 38, p.eta, right - left);
+        const arrival = Number.isFinite(seconds) ? new Date((nav.at || now) + seconds * 1000) : null;
+        const clock = arrival ? ('0' + arrival.getHours()).slice(-2) + ':' + ('0' + arrival.getMinutes()).slice(-2) : '—:—';
+        const fields = [[(Number.isFinite(metres) ? Math.round(metres / 1000) : '—') + ' km - ', p.secondary], [clock, p.eta]];
+        if (Number.isFinite(soc)) fields.push([' - ', p.secondary], [soc + ' %', p.text]);
+        let tx = left;
+        const fontSize = Math.min(size, size * (right - left - 24) / fields.reduce((sum, part) => sum + cv.textWidth(part[0], size), 0));
+        fields.forEach(([label, color]) => { text(label, tx, top + 88, fontSize, color); tx += cv.textWidth(label, fontSize); });
+        if (Number.isFinite(soc)) {
+            const bx = tx + 8, by = top + 70;
+            cv.fillRect(bx + 5, by + 1, 4, 3, p.text);
+            cv.strokeRoundRect(bx + 1, by + 4, 12, 15, 2, 1.2, p.text);
+            const fill = soc * .11;
+            if (fill > 0) cv.fillRect(bx + 3, by + 17 - fill, 8, fill, p.text);
+        }
+        cv.fillRect(left, top + 106, right - left, 2, [63, 83, 103, 46]);
+        const gap = 12, ww = (right - left - 2 * gap) / 3, yy = top + 120, hh = 56;
+        [['stop', 'close'], ['add-stop-search', 'circle-plus'], ['route-panel', 'info']].forEach(([id, glyph], i) => {
+            const xx = left + i * (ww + gap), disabled = id !== 'stop' && !!busy;
+            s.buttons.push({ id, x: xx, y: yy, w: ww, h: hh, disabled });
+            if (!day) cv.roundRect(xx, yy, ww, hh, 12, p.control);
+            else if (i) {
+                cv.card(xx, yy, ww, hh, 12, [[0, p.control], [1, '#DCE6F1']]);
+                cv.strokeRoundRect(xx, yy, ww, hh, 12, 1, p.line);
+            }
+            icon(cv, glyph, xx + ww / 2, yy + hh / 2, disabled ? p.secondary : i ? p.text : p.danger, p.control, 40 / 36);
+        });
+    }
     // Separate circles, in reference order; unavailable BMW features stay disabled.
     const ready = ui.tiles.status().ready;
     const voice = nav.presentation && nav.presentation.options.voiceGuidanceEnabled;
@@ -226,14 +265,7 @@ function controls(cv, ui, nav, now = Date.now()) {
                 text(turn.metres == null ? '' : turn.metres < 1000 ? turn.metres + ' m' : distance(turn.metres), x + 438, y + 34, 22, '#FFFFFF', 110);
                 s.buttons = s.buttons.filter((a) => a.id !== 'search');
             }
-            const final = (nav.destinations || []).find((d) => d.final), yy = map.y + map.h - 140;
-            cv.roundRect(x, yy, 440, 112, 12, p.surface);
-            text(duration(final && final.seconds), x + 18, yy + 34, 29, p.eta, 400, true);
-            const arrival = nav.energy && nav.energy.source === 'bmw' && Number.isFinite(nav.energy.destinationSoc)
-                ? nav.energy.destinationSoc + ' %' : '— %';
-            text(distance(final && final.metres) + ' · llegada ' + arrival, x + 18, yy + 61, 18, p.secondary);
-            [['stop', 'stop'], ['route-panel', 'route-panel'], ['search', 'zoom-in'], ['fit', 'fit'], ['settings', 'settings']].forEach((a, i) =>
-                button(a[0], '', x + 12 + i * 84, yy + 68, 78, 40, { flat: true, icon: a[1], disabled: a[0] === 'fit' && !ready }));
+            etaPanel();
         }
     } else if (s.panel === 'suggestions') {
         button('query', 'Buscar destino o lugar', x, y, w - 54, 52);

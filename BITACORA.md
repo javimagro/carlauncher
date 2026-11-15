@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 15-11-2026 · Panel ETA de CarLauncher
+
+- Con guiado activo, el panel 0.2.18 mostraba cinco iconos y el texto de llegada junto a la distancia. Se compararon las capturas Porcelain/Azure y `view_navigation_guidance_panel.xml` de CarLauncher Android (`427786f4`).
+- El ETA reproduce la duración dominante, la distancia, la hora estimada y la batería de llegada BMW cuando está disponible. La fila usa las acciones finalizar, añadir parada y abrir detalles. Se retiran el engranaje y el encuadre del ETA. El panel queda a la derecha de la columna del mapa y el aviso de cartografía queda en el espacio libre. Añadir una parada desde el ETA lee el itinerario BMW activo para conservar el destino final y sus paradas manuales pendientes. El nuevo cálculo exige Iniciar para activar el guiado.
+- La regresión comprueba los tres toques, el cambio de día en el reloj, batería del 0 % frente a sin dato y conservación del destino al añadir parada. Pasaron 262 pruebas con `node --test emulator/split/*.test.js` y 45 pruebas de navegación en el perfil alto. `node tools/Previsualizar-Navegacion.js` generó 26 capturas en cada perfil. Se revisaron los temas de día y noche y se comprobó la carga de los módulos con Node 8.16.2. Queda probar en el i4.
+
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
 ## 2026-11-15 · Audio TDT limpio con foco BMW y supervisor independiente

@@ -72,6 +72,7 @@ function icon(cv, name, x, y, ink, surface, scale) {
     } else if (name === 'search') { cv.arc(x - 3 * scale, y - 3 * scale, 7 * scale, 9 * scale, 0, 360, ink); path([[4, 4], [12, 12]]); }
     else if (name === 'page-up' || name === 'page-down') { const d = name === 'page-up' ? -1 : 1; path([[-9, -4 * d], [0, 5 * d], [9, -4 * d]]); }
     else if (name === 'zoom-in' || name === 'zoom-out') { path([[-9, 0], [9, 0]]); if (name === 'zoom-in') path([[0, -9], [0, 9]]); }
+    else if (name === 'circle-plus') { ring(11); path([[-6, 0], [6, 0]]); path([[0, -6], [0, 6]]); }
     else if (name === 'info') { ring(12); path([[0, -1], [0, 8]]); cv.circle(x, y - 6 * scale, 1.5 * scale, ink); }
     else if (name === 'check') path([[-7, 0], [-2, 5], [8, -6]]);
     else if (name === 'clock') { ring(10); path([[0, -6], [0, 0], [5, 3]]); }
