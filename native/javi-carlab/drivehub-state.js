@@ -57,6 +57,7 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
 
     function select(index, page = cardPages[index]) {
         const from = position();
+        if (radio && index !== state.selected && cards[state.selected].id === 'radio') radio.back();
         state.selected = index;
         targetPage = page;
         transition = from === anchors[page] ? undefined : { from, start: now() };
@@ -155,6 +156,7 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
             knob = undefined;
             pressed = false;
             tilt = 0;
+            if (radio) radio.back();
             select(state.selected, targetPage);
         },
         trackInput(event) {
@@ -163,7 +165,7 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
         },
         skip(direction) {
             if (tdt && cards[state.selected].id === 'tdtworld') tdt.skip(direction);
-            else if (radio && cards[state.selected].id === 'radio') radio.rotate(direction);
+            else if (radio && cards[state.selected].id === 'radio') radio.skip(direction);
             else moveCard(direction);
         },
         controller(event) {
@@ -179,17 +181,18 @@ function createDriveHub(invalidate, now = Date.now, tdt, radio) {
             const delta = (event.knob - knob + knobRange + halfKnobRange) % knobRange - halfKnobRange;
             if (delta && Math.abs(delta) <= 64) {
                 if (tdt && cards[state.selected].id === 'tdtworld') tdt.rotate(delta);
-                else if (radio && cards[state.selected].id === 'radio') radio.rotate(delta);
-                else moveCard(delta);
+                else if (!(radio && cards[state.selected].id === 'radio' && radio.rotate(delta))) moveCard(delta);
             }
             knob = event.knob;
             const deflected = direction && direction !== tilt;
             if (deflected && (direction === 'left' || direction === 'right')) {
-                moveCard(direction === 'left' ? -1 : 1);
+                if (!(direction === 'left' && radio && cards[state.selected].id === 'radio' && radio.back())) {
+                    moveCard(direction === 'left' ? -1 : 1);
+                }
             } else if (radio && cards[state.selected].id === 'radio') {
                 if (event.press === 2 && pressed !== 2) radio.press(true);
                 if (!down && pressed === 1) radio.press(false);
-                if (deflected) radio.tilt(direction);
+                if (deflected) radio.rotate(direction === 'up' ? -1 : 1);
             } else if (tdt && cards[state.selected].id === 'tdtworld') {
                 if (event.press === 2 && pressed !== 2) tdt.press(true);
                 if (!down && pressed === 1) tdt.press(false);
