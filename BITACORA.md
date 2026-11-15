@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Icono de BMWLauncher en iDrive
+
+- La entrada de BMWLauncher en el menú de aplicaciones de iDrive 8 usaba un cuadrado azul. `carlab.png` pasa a mostrar una flecha blanca de navegación inclinada hacia la derecha, con relieve gris y fondo transparente. El recurso conserva sus 140 × 140 px y la referencia del manifiesto.
+- Revisadas las vistas a 40, 64 y 140 px. `node --test --test-concurrency=4 emulator/split/*.test.js` pasó 272 pruebas. Se comprobó que el paquete fuente y el OAP enlazado con donante sintético contienen el mismo PNG que referencia el manifiesto. Queda verlo en el menú del i4.
+
 ## 2026-11-15 · Recuperación AA sin borrar la última imagen
 
 - La revisión de PR13 detectó que `aa-integration.stopJob()` anulaba la superficie aunque el productor conservara el último cuadro. Tres regresiones con integración, proceso, worker, productor y anillo reales reproducen la pérdida en el commit previo; se simulan únicamente BMW IPC y los procesos nativos.
