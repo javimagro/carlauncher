@@ -324,6 +324,12 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - **Cockpit.** Con BMWLauncher abierto, el usuario no encontró «Cluster renderer» en Contenido del cuadro. El motivo concreto sigue pendiente. Se añadió una fila de diagnóstico para distinguir una herramienta ausente, falta de respuesta, destino incompatible, capa rechazada o widget visible. Se documentó la selección desde el mando del volante.
 - **Verificación.** Pasaron 37 pruebas locales. Se revisó la captura de Trayecto, se comprobaron los mensajes de selección y visibilidad y se volvió a probar el protocolo con el cliente 0.5.8. Falta verificar el widget en el cuadro del i4. [BMWLauncher 0.2.9](https://github.com/javimagro/carlauncher/releases/tag/v0.2.9)
 
+## 2026-11-15 · Escala y posición del cockpit
+
+- En el i4 el usuario veía indicadores pequeños y centrados. Se reprodujo el encuadre anterior en el cliente simulado: los ejes de Carlinkit se calculaban sobre un rectángulo centrado de 600 × 500 en un destino 2240 × 896. Además, la capa pintaba un fondo rectangular propio y el arte del sol y la tormenta conservaba parte del recorte opaco.
+- Comparadas las capturas de Carlinkit y las proporciones de `view_cockpit_composition.xml`, `fractions_cockpit.xml` y `fractions_cockpit_battery.xml` de BMWLauncher Android (`427786f4`). Su transporte CarPlay usa otro lienzo y calibración. El encuadre ID8 ahora mide 1120 × 620 y envía en 1:1 únicamente la columna derecha transparente de 400 × 510. Se reproporcionaron texto, arte, curva HV y regla de consumo. Se portó la máscara de integración para el sol y la tormenta. El área izquierda está definida para una futura capa de mapa dentro del mismo widget.
+- Pasaron 272 pruebas sobre el `main` que ya incluye el aviso de TDTWorld. Con el cliente oficial de Cluster renderer 0.5.8 y Node 8.16.2, el receptor local recibió 816.000 bytes de imagen inicial y 243.200 bytes al cambiar solo la potencia, frente a 768.000 y 234.240 bytes antes. Se revisaron capturas con el recorte documentado normal y M, incluidas lluvia máxima, potencia negativa y ausencia de datos. Pendiente comprobar el encuadre físico y las máscaras del i4.
+
 ## 2026-11-12 · 0.2.8 · Trayecto en directo y widget del cuadro
 
 - **Estado térmico.** El usuario observó 33 °C junto a «Limitación por frío». En 0.2.7 ese texto correspondía al estado condicional del catálogo MGU21. Se corrigieron las etiquetas, se añadió la suscripción y se acortó la caducidad. La prueba presenta 33 °C a la vez que el estado 2 y retira la etiqueta cuando la muestra caduca.

@@ -4,7 +4,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createCockpit } = require('../../native/javi-carlab/cockpit.js');
-const { width, height } = require('../../native/javi-carlab/cockpit-view.js');
+const { composition, mapArea, telemetry, bands } = require('../../native/javi-carlab/cockpit-view.js');
+const { w: width, h: height } = telemetry;
 test('the cockpit consumes the shared forecast without a second network request', () => {
     const { EventEmitter } = require('node:events');
     let requests = 0, frames = 0;
@@ -60,10 +61,14 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     cockpit.update(readings, 2000);
     assert.equal(calls.length, 2);
     assert.deepEqual(calls[0], { target: 'widget', klass: 'overlay', contend: false,
-        x: 820, y: 185, w: 600, h: 500, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
+        ...telemetry, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
     assert.deepEqual(calls[1], { rects: null, size: width * height * 4 });
-    assert.equal(frames[0][(215 * width + 200) * 4 + 3], 0, 'the left side remains transparent');
-    assert.equal(frames[0][(215 * width + 310) * 4 + 3], 255, 'the widget stays on the right');
+    assert(telemetry.x >= 1120 && telemetry.x + width <= 1530, 'telemetry fits the right half of the shared visible area');
+    assert(telemetry.y >= 185 && telemetry.y + height <= 700);
+    assert(mapArea.x === composition.x && mapArea.x < telemetry.x && mapArea.x + mapArea.w > telemetry.x,
+        'the future map overlaps the start of the telemetry only behind its transparent layer');
+    for (let y = 0; y < height; y++) assert.equal(frames[0][y * width * 4 + 3], 0, 'there is no solid card over the map');
+    assert(frames[0].some((value, i) => i % 4 === 3 && value > 0), 'the widget draws telemetry');
     assert.equal(cockpit.status(2000), 'Widget en espera');
     client.emit('target', 'widget', 'parked');
     assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');
@@ -72,7 +77,11 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     client.emit('layer', 1, 'shown');
     assert.equal(cockpit.status(2000), 'Widget visible');
     cockpit.update({ ...readings, power: -5 }, 3000);
-    assert.deepEqual(calls[2], { rects: [{ x: 0, y: 278, w: width, h: 122 }], size: width * 122 * 4 });
+    function band(index) {
+        const [y, h] = bands[index];
+        return { rects: [{ x: 0, y, w: width, h }], size: width * h * 4 };
+    }
+    assert.deepEqual(calls[2], band(2));
     assert.equal(requests.length, 0);
     const moving = { ...readings, power: -5, location: { latitude: 40.4168, longitude: -3.7038 } };
     cockpit.update(moving, 4000);
@@ -81,7 +90,7 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert.equal(requests[0].get('latitude'), '40.417');
     assert.equal(requests[0].get('longitude'), '-3.704');
     cockpit.update(moving, 5000);
-    const weatherBand = { rects: [{ x: 0, y: 0, w: width, h: 192 }], size: width * 192 * 4 };
+    const weatherBand = band(0);
     assert.deepEqual(calls[3], weatherBand);
     cockpit.update({ ...moving, location: undefined }, 6000);
     assert.deepEqual(calls[4], weatherBand);
@@ -90,8 +99,9 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     const preconditioning = new Map([['statusPredictiveThermalManagement', {
         status: 'sample', fields: { preconditioningActive: true }, sampledAt: 7000, freshForMs: 30000
     }]]);
-    const batteryBand = { rects: [{ x: 0, y: 192, w: width, h: 86 }], size: width * 86 * 4 };
-    const batteryWithoutIcon = frames[0].subarray(192 * width * 4, 278 * width * 4);
+    const batteryBand = band(1);
+    const [batteryY, batteryHeight] = bands[1];
+    const batteryWithoutIcon = frames[0].subarray(batteryY * width * 4, (batteryY + batteryHeight) * width * 4);
     cockpit.update({ ...moving, location: undefined, preconditioning: vehicleReadings(preconditioning, 7000).preconditioning }, 7000);
     assert.deepEqual(calls[5], batteryBand);
     assert(!frames[4].equals(batteryWithoutIcon), 'a fresh active sample draws the icon');
