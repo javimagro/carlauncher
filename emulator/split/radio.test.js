@@ -177,30 +177,49 @@ test('native favorites, popular and PTY filters use BMW metadata and local overr
         restored.filter(0); restored.filter(1); assert.deepEqual(restored.rows().map((s) => s.key), ['13']); restored.close();
     } finally { fs.rmSync(dir, { recursive: true }); }
 });
-test('radio rotation and steering skip tune directly, while list filters require touch', () => {
+test('rotation crosses Radio in the carousel and selects stations only while their list is open', () => {
     const commands = [], ui = createRadioUI({ radioCommand: (c) => { commands.push(c); return true; } });
-    ui.receive(frame({ stations: [sample(), sample(13)] }), Date.now()); ui.update(Date.now(), true);
+    const stations = [sample(), sample(13), sample(14)];
+    ui.receive(frame({ stations }), Date.now()); ui.update(Date.now(), true);
     let clock = 0; const panel = createDriveHub(() => {}, () => clock, null, ui);
-    panel.controller({ knob: 10, press: 0, tilt: 0 }); panel.controller({ knob: 11, press: 0, tilt: 0 });
-    assert.equal(panel.state.selected, 1);
-    panel.controller({ knob: 12, press: 0, tilt: 0 });
-    assert.equal(ui.state.mode, 'playing');
-    assert.equal(commands.at(-1).op, 'tune'); assert.equal(commands.at(-1).key, '13');
-    ui.receive(frame({ stations: [sample(), sample(13)], current: sample(13),
-        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), Date.now());
-    panel.skip(-1);
-    assert.equal(commands.at(-1).key, '12');
-    ui.receive(frame({ stations: [sample(), sample(13)],
-        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), Date.now());
-    panel.controller({ knob: 12, press: 0, tilt: 7 });
+    const input = (knob, press = 0, tilt = 0) => panel.controller({ knob, press, tilt });
+    const press = (knob) => { input(knob, 1); input(knob); };
+    const tuned = () => commands.filter((c) => c.op === 'tune').map((c) => c.key);
+    input(10);
+    for (let i = 1; i < cards.length; i++) { input(10 + i); assert.equal(panel.state.selected, i); }
+    assert.deepEqual(tuned(), []);
+
+    input(11); assert.equal(panel.state.selected, 1);
+    input(11, 0, 7); assert.equal(ui.state.mode, 'playing');
+    input(11);
+    press(11);
     assert.equal(ui.state.mode, 'list');
-    panel.controller({ knob: 12, press: 0, tilt: 0 }); panel.controller({ knob: 12, press: 0, tilt: 1 });
-    assert.equal(ui.state.index, 0); assert.deepEqual(ui.state.filters, []);
+    input(12);
+    assert.equal(panel.state.selected, 1); assert.equal(ui.state.index, 1); assert.deepEqual(tuned(), []);
+    input(12, 0, 7); assert.equal(ui.state.index, 2); assert.deepEqual(ui.state.filters, []);
+    ui.touch(22, 65, cards[1].w, viewport.h); assert.deepEqual(ui.state.filters, ['favorites']);
     ui.touch(22, 65, cards[1].w, viewport.h);
-    assert.deepEqual(ui.state.filters, ['favorites']);
-    panel.controller({ knob: 12, press: 0, tilt: 10 }); assert.equal(panel.state.selected, 0);
-    clock = 300; const x = viewport.x + cards[1].x + 80;
-    panel.touch('down', x, 90); panel.touch('up', x, 90); assert.equal(ui.state.mode, 'list'); ui.close();
+    input(12, 0, 10);
+    assert.equal(ui.state.mode, 'playing'); assert.equal(panel.state.selected, 1);
+    input(13); assert.equal(panel.state.selected, 2);
+
+    input(12); clock = 300;
+    const x = viewport.x + cards[1].x - panel.position() + 80;
+    function tap(y) { panel.touch('down', x, viewport.y + y); panel.touch('up', x, viewport.y + y); }
+    tap(260); assert.equal(ui.state.mode, 'list');
+    tap(viewport.h - 30); assert.equal(ui.state.mode, 'playing');
+    input(13); assert.equal(panel.state.selected, 2);
+    input(12); press(12); input(13); press(13);
+    assert.deepEqual(tuned(), ['13']); assert.equal(panel.state.selected, 1);
+    ui.receive(frame({ stations, current: sample(13),
+        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), Date.now());
+    assert.equal(ui.state.mode, 'playing');
+    panel.skip(-1);
+    assert.deepEqual(tuned(), ['13', '12']);
+    press(13); input(13, 0, 4);
+    assert.equal(panel.state.selected, 2); assert.equal(ui.state.mode, 'playing');
+    input(12); press(12); panel.resetInput();
+    assert.equal(ui.state.mode, 'playing'); ui.close();
 });
 test('decorative spectrum only animates when the visible card has the original radio source active', () => {
     const ui = createRadioUI(); ui.receive(frame(), 1000); ui.update(1100, true); ui.update(1200, true); assert(ui.levels.some((n) => n > .025));
@@ -208,7 +227,7 @@ test('decorative spectrum only animates when the visible card has the original r
     ui.receive(frame(), 1400); ui.update(1500, false); assert(ui.levels.every((n) => n === .025));
     ui.update(7000, true); assert.equal(ui.state.frame.current, null); ui.close();
 });
-test('navigation borrows the knob while open and the first turn after closing tunes the focused radio', (t) => {
+test('navigation borrows the knob and the first turn after closing leaves the radio summary', (t) => {
     t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
     const gpu = new EventEmitter(), commands = [];
     Object.assign(gpu, { place() {}, claim() {}, show() {}, frame() {}, close() {} });
@@ -217,7 +236,7 @@ test('navigation borrows the knob while open and the first turn after closing tu
     t.after(() => session.close());
     gpu.emit('ready', {}, { touch: true }); session.show(true);
     session.radio(frame({ stations: [sample(), sample(13)] })); t.mock.timers.tick(33);
-    const input = (knob, tilt = 0) => session.controller({ knob, press: 0, tilt });
+    const input = (knob, tilt = 0, press = 0) => session.controller({ knob, press, tilt });
     input(10); input(11);
     gpu.emit('touch', 'down', 38, 39); gpu.emit('touch', 'up', 38, 39); t.mock.timers.tick(33);
     input(12);
@@ -225,6 +244,8 @@ test('navigation borrows the knob while open and the first turn after closing tu
     assert.equal(commands.length, 0);
     input(12, 10); t.mock.timers.tick(33);
     input(13);
+    assert.equal(commands.length, 0);
+    input(12); input(12, 0, 1); input(12); input(13); input(13, 0, 1); input(13);
     assert.equal(commands.length, 1); assert.equal(commands[0].key, '13');
 });
 test('radio modules are shipped with explicit OAP extensions and narrow permissions', () => {

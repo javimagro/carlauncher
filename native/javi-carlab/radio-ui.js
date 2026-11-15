@@ -172,8 +172,22 @@ function createRadioUI(options, invalidate) {
         });
         levels.forEach((value, i) => { levels[i] = value + (targets[i] - value) * .46; }); invalidate();
     }
-    function open() { state.mode = 'list'; clamp(); invalidate(); }
-    return { state, rows, favorite, levels, images, receive, update, open, filter, toggleFavorite, allStations,
+    function open() {
+        if (state.mode === 'list') return;
+        const current = state.frame.current;
+        const index = current ? rows().findIndex((s) => s.memoryKey === current.memoryKey) : -1;
+        state.index = index < 0 ? 0 : index;
+        state.mode = 'list'; clamp(); invalidate();
+    }
+    function back() {
+        if (state.mode !== 'list') return false;
+        state.mode = 'playing'; invalidate(); return true;
+    }
+    function rotate(delta) {
+        if (state.mode !== 'list') return false;
+        state.index += delta; clamp(); invalidate(); return true;
+    }
+    return { state, rows, favorite, levels, images, receive, update, open, back, rotate, filter, toggleFavorite, allStations,
         playNamed(name, alive) {
             if (closed || !alive() || !received || Date.now() - received >= 5000) return Promise.resolve({ status: 'unavailable', message: 'No hay una lista vigente de BMW' });
             if (pending || assistantRequest) return Promise.resolve({ status: 'busy' });
@@ -185,7 +199,7 @@ function createRadioUI(options, invalidate) {
             return new Promise((resolve) => { assistantRequest = { resolve, memoryKey: candidates[0].memoryKey, accepted: false,
                 timer: setTimeout(() => { endAssistant({ status: 'timeout', message: 'BMW no ha confirmado la emisora activa' }); }, 18000) }; });
         },
-        rotate(delta) {
+        skip(delta) {
             if (pending) return;
             const stations = rows(), current = state.frame.current;
             const tuned = current ? stations.findIndex((s) => s.memoryKey === current.memoryKey) : -1;
@@ -197,20 +211,15 @@ function createRadioUI(options, invalidate) {
             if (state.mode !== 'list') { if (long) toggleFavorite(state.frame.current); else open(); }
             else if (long) toggleFavorite(rows()[state.index]); else tune(rows()[state.index]);
         },
-        tilt(direction) {
-            if (state.mode !== 'list') open();
-            else { state.index += direction === 'up' ? -1 : 1; clamp(); invalidate(); }
-        },
         touch(x, y, w, h, swipe) {
-            if (swipe) { open(); state.index += swipe; clamp(); invalidate(); return; }
+            if (swipe) { rotate(swipe); return; }
             if (state.mode === 'list') {
                 if (y >= 48 && y < 104) { filter(Math.max(0, Math.min(3, Math.floor((x - 16) * 4 / (w - 32))))); return; }
                 if (y >= 112 && y < 448) {
                     state.index = state.top + Math.floor((y - 112) / 84); clamp();
                     if (x > w - 60) toggleFavorite(rows()[state.index]); else tune(rows()[state.index]);
-                } else if (x >= 16 && x < w - 16 && y >= h - 47 && y < h - 13) state.mode = 'playing';
-            } else if (y >= 175 && y < 350) tune(state.frame.current);
-            else if (y >= h - 54 && x > w - 65) toggleFavorite(state.frame.current);
+                } else if (x >= 16 && x < w - 16 && y >= h - 47 && y < h - 13) back();
+            } else if (y >= h - 54 && x > w - 65) toggleFavorite(state.frame.current);
             else open();
             invalidate();
         },

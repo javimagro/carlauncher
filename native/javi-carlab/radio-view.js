@@ -83,7 +83,7 @@ function drawRadio(cv, x, y, w, h, ui, now) {
     cv.line(x + 26, y + 142, x + w - 26, y + 142, 1, '#364957');
     logo(cv, ui, current, x + (w - 144) / 2, y + 193, 144);
     const status = data.busy ? 'Sintonizando…' : current && current.receptionLost ? 'Sin recepción' :
-        !data.sourceKnown ? 'Esperando a BMW' : data.active ? 'Fuente de radio activa' : 'Toca el logo para escuchar';
+        !data.sourceKnown ? 'Esperando a BMW' : data.active ? 'Fuente de radio activa' : 'Pulsa para ver las emisoras';
     fit(cv, status, x + w / 2, y + 369, 14, w - 40, muted, center);
     const barWidth = (w - 64) / (64 * 3), gap = barWidth * 1.4, total = 64 * barWidth + 63 * gap;
     ui.levels.forEach((level, i) => {
