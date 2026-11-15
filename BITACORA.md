@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-15 · Icono de BMWLauncher en iDrive
+
+- La entrada de BMWLauncher en el menú de aplicaciones de iDrive 8 usaba un cuadrado azul. `carlab.png` pasa a mostrar una flecha blanca de navegación inclinada hacia la derecha, con relieve gris y fondo transparente. El recurso conserva sus 140 × 140 px y la referencia del manifiesto.
+- Revisadas las vistas a 40, 64 y 140 px. `node --test --test-concurrency=4 emulator/split/*.test.js` pasó 272 pruebas. Se comprobó que el paquete fuente y el OAP enlazado con donante sintético contienen el mismo PNG que referencia el manifiesto. Queda verlo en el menú del i4.
+
 ## 2026-11-15 · Foco del mando al pasar por Radio
 
 - Al girar desde Trayecto, el segundo paso quedaba en Radio y enviaba una sintonización. Las regresiones reprodujeron ese giro y el que se recibía al cerrar un panel de navegación. El carrusel delegaba el giro a Radio aunque estuviese en el resumen de la emisora.
