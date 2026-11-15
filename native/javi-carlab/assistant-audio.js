@@ -37,7 +37,8 @@ function createAudio(options, emit, dependencies) {
             chunks.push(buffer); bytes += buffer.length;
         } };
         sink = playAudio(process.stdout, (status) => {
-            if (status !== 'audio-ready' && status !== 'audio-connecting') outputError();
+            if (status === 'audio-focus-wait') emit({ type: 'audio-status', message: 'Esperando la salida multimedia de BMW' });
+            else if (status !== 'audio-ready' && status !== 'audio-connecting') outputError();
             else if (status === 'audio-ready') emit({ type: 'audio-status', message: 'Voz enviada a la salida multimedia; sonido pendiente de confirmar' });
         }, queue, Object.assign({}, options.playback, { maxRetries: 0 }), launch, { warn() {} });
         if (failed || stopped) { sink.close(); sink = null; return; }

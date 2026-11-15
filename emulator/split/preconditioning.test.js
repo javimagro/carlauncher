@@ -206,7 +206,7 @@ test('assistant and HV share a bottom toast that expires and is cleared when hid
     await flush();
     const tap = (x, y) => { gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y); t.mock.timers.tick(33); };
     const hv = 'Esperando el estado de preacondicionamiento de BMW';
-    const assistant = 'OpenAI · Micrófono sin configurar en este entorno.';
+    const assistant = 'Micrófono pendiente de integrar en BMWLauncher. Usa «Escribir».';
     tap(box.x + 20, box.y + 20);
     assert.equal(labels.filter((text) => text === hv).length, 1);
     tap(map.x + 37, map.y + 310);

@@ -13,7 +13,7 @@ const errors = { AUTH: 'API key rechazada o sin permiso para el modelo. Revísal
     UPLINK: 'La conexión de la MGU a internet no está disponible. Revisa mgu-uplink.',
     WORKER: 'No se ha podido iniciar el proceso de conexión del asistente.',
     PROTOCOL: 'El proveedor ha devuelto una respuesta incompatible.',
-    NO_CAPTURE: 'Micrófono sin configurar en este entorno.', NO_SPEECH: 'No se ha detectado voz.',
+    NO_CAPTURE: 'Micrófono pendiente de integrar en BMWLauncher. Usa «Escribir».', NO_SPEECH: 'No se ha detectado voz.',
     AUDIO_OUTPUT: 'Salida de voz no disponible en este entorno.',
     SETUP_TIMEOUT: 'El asistente no ha respondido. Comprueba la conexión.', NETWORK: 'Sin conexión para el asistente.',
     NETWORK_OR_AUTH: 'No se pudo conectar. Revisa internet y la API key.', CONFIG: 'Configura primero la API key.',
@@ -43,9 +43,10 @@ function createAssistant(options, execute, invalidate) {
     }
     function fail(code) {
         const provider = state.config.provider === 'gemini' ? 'Gemini' : 'OpenAI';
+        const localAudio = ['NO_CAPTURE', 'NO_SPEECH', 'AUDIO_OUTPUT', 'MICROPHONE'].includes(code);
         const http = /^HTTP_(\d{3})$/.exec(code || '');
         state.status = 'error';
-        inform(provider + ' · ' + (errors[code] || (http ? 'El servidor devolvió HTTP ' + http[1] + '.' : 'La sesión no se ha podido completar.')));
+        inform((localAudio ? '' : provider + ' · ') + (errors[code] || (http ? 'El servidor devolvió HTTP ' + http[1] + '.' : 'La sesión no se ha podido completar.')));
         stop();
     }
     function sendText(text) {

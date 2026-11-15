@@ -128,7 +128,7 @@ const session = createSession(gpu, {
     assistantNetwork: async () => ({ uid: await onlineApp(), uplink: true }),
     assistantAudio: {
         ffmpeg: path.join(__dirname, 'bin/ffmpeg'),
-        playback: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true },
+        playback: tdtAudio !== 'off' && { command: path.join(__dirname, 'bin/tdt-pcm'), args: [tdtAudio], handshake: true, bmwFocus: true },
         // Never select a telephone/emergency capture channel by guesswork. Set only after an ENET validation.
         capture: process.env.JAVI_ASSISTANT_CAPTURE_DEVICE && fs.existsSync('/usr/bin/arecord') ? {
             command: '/usr/bin/arecord', args: ['-q', '-D', process.env.JAVI_ASSISTANT_CAPTURE_DEVICE, '-t', 'raw', '-f', 'S16_LE', '-r', '24000', '-c', '1']
