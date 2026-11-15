@@ -1,6 +1,7 @@
 'use strict';
 
 const { createPlayer } = require('./tdt-player.js');
+const { createSamplePlayer } = require('./tdt-bmw-sample');
 let player, requestId = 0;
 const requests = new Map();
 const send = (message) => { if (process.connected) process.send(message, () => {}); };
@@ -19,9 +20,13 @@ process.on('message', (message) => {
         requests.delete(message.id);
         if (message.data) pending.resolve(Buffer.from(message.data, 'base64'));
         else pending.reject(new Error('MANIFEST_UNAVAILABLE'));
+    } else if (message.type === 'native-status' && player && player.nativeStatus) {
+        player.nativeStatus(message.value);
     } else if (message.type === 'start' && !player) {
         const network = message.network && Object.assign({}, message.network, { close() {} });
-        player = createPlayer({ video(id, file) { send({ type: 'video', file }); } }, Object.assign({}, message.options, {
+        const create = message.mode === 'bmw-sample' ? createSamplePlayer : createPlayer;
+        player = create({ video(id, file) { send({ type: 'video', file }); } }, Object.assign({}, message.options, {
+            nativeSend: send,
             proxy: () => network, get,
             onStats: (value) => send({ type: 'stats', value }),
             log: { warn() {} }

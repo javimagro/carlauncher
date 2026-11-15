@@ -82,6 +82,9 @@ function validate(frame) {
         !Array.isArray(frame.segments) || frame.segments.length > 24 ||
         ![true, false, null].includes(frame.electricRouting) || typeof frame.destinationsKnown !== 'boolean') return false;
     if (frame.currentRoad !== undefined && (typeof frame.currentRoad !== 'string' || frame.currentRoad.length > 140)) return false;
+    if (frame.energy != null && (frame.energy.source !== 'bmw' ||
+        ['destinationSoc', 'stopSoc', 'chargedSoc'].some((k) => frame.energy[k] !== null &&
+            (!Number.isInteger(frame.energy[k]) || frame.energy[k] < 0 || frame.energy[k] > 100)))) return false;
     const turn = frame.instruction;
     if (turn != null && (!['intersection', 'roundabout', 'branch', 'destinationManeuver'].includes(turn.kind) ||
         typeof turn.direction !== 'string' || turn.direction.length > 20 || typeof turn.road !== 'string' || turn.road.length > 140 ||

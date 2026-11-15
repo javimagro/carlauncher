@@ -489,7 +489,9 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         } else if (surface) cv.video(surface.id, left, top, w - 18, l.body);
         const message = {
             loading: 'Abriendo la emisión…', error: 'No se ha podido reproducir la emisión',
-            unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible'
+            unavailable: 'Reproductor no disponible en este equipo', 'no-source': 'Canal sin emisión directa compatible',
+            'native-recording': 'Preparando prueba BMW de 30 s…', 'native-waiting': 'Esperando al reproductor BMW…',
+            'native-ended': 'Prueba BMW terminada · pulsa para repetir'
         }[state.playback];
         if (message) {
             const detail = state.playback === 'error' && state.playbackDiagnostic;
@@ -508,7 +510,8 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             'audio-open': 'Audio · no se abre la salida', 'audio-format': 'Audio · formato no admitido',
             'audio-timeout': 'Audio · la salida no arranca', 'audio-stall': 'Audio · ALSA sin avance',
             'audio-pipe': 'Audio · el auxiliar no responde',
-            'audio-write': 'Audio · error de escritura'
+            'audio-write': 'Audio · error de escritura',
+            'audio-native-sample': 'Prueba BMW · muestra de 30 s'
         }[state.audioStatus];
         if (surface && audioError) {
             const code = /^\w+=(-?\d{1,4})$/.exec(state.audioDiagnostic || '');
@@ -605,26 +608,34 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     cv.noclip();
 }
 
+function energyPanels(readings, navigation) {
+    const active = navigation && navigation.state === 'active';
+    const stop = active && Array.isArray(navigation.destinations) && navigation.destinations.some((d) => d.charging && !d.final);
+    return readings.filter((_, index) => index === 0 || (active && (index === 3 || stop)));
+}
+
 function energy(cv, readings, art, vehicle, navigation) {
     const { x, y, w, h } = energyBar;
     cv.roundRect(x, y, w, h, 8, '#05080b');
-    const column = (w - 100) / readings.length;
-    readings.forEach(({ label, soc, range }, index) => {
+    const column = w / 4;
+    const prediction = navigation && navigation.state === 'active' && navigation.energy;
+    const values = readings.map((r, i) => i === 0 ? r : Object.assign({}, r, {
+        soc: prediction && prediction.source === 'bmw' ? prediction[['', 'stopSoc', 'chargedSoc', 'destinationSoc'][i]] : undefined,
+        range: undefined
+    }));
+    energyPanels(values, navigation).forEach(({ label, soc, range }, index) => {
         const left = x + index * column + 9;
-        if (navigation && index) { soc = undefined; range = undefined; }
         if (!index && vehicle) ({ soc, range } = vehicle);
         if (index) cv.line(left - 9, y + 5, left - 9, y + h - 5, 1, '#33434e');
-        cv.text(label, left, y + 12, 10, secondary);
+        cv.text(label, left, y + 19, 14, secondary);
         if (Number.isFinite(soc)) {
             const band = soc < 20 ? 'low' : soc < 70 ? 'mid' : 'high';
-            cv.image(art('battery-' + band), left - 3, y + 17, 35, 19);
+            cv.image(art('battery-' + band), left - 3, y + 32, 44, 24);
         }
-        cv.text(Number.isFinite(soc) ? number(soc, 1) + '%' : '–', left + 34, y + 34,
-            Number.isInteger(soc) ? 19 : 16, primary, bold);
-        if (Number.isFinite(range)) cv.image(art('range'), left + 81, y + 17, 18, 18);
-        cv.text(Number.isFinite(range) ? range + ' km' : '–', left + 102, y + 34, 18, primary, bold);
+        fit(cv, Number.isFinite(soc) ? number(soc, 1) + '%' : '–', left + 44, y + 54, 23, 64, primary, bold);
+        if (Number.isFinite(range)) cv.image(art('range'), left + 112, y + 32, 24, 24);
+        fit(cv, Number.isFinite(range) ? range + ' km' : '–', left + 140, y + 54, 22, column - 150, primary, bold);
     });
-    cv.text(navigation ? 'Sin previsión' : vehicle ? 'Ruta de ejemplo' : 'Demostración', x + w - 13, y + 24, 10, secondary, right);
 }
 
 function drawToast(cv, message, night) {
@@ -633,7 +644,8 @@ function drawToast(cv, message, night) {
     const boxWidth = Math.min(maxWidth, Math.max(240, Math.ceil(Math.max(...lines.map((line) => cv.textWidth(line, 17))) + 48)));
     const boxHeight = 38 + (lines.length - 1) * 22;
     const x = Math.round(map.x + (map.w - boxWidth) / 2);
-    const y = energyBar.y - 4 - boxHeight;
+    // The bar itself moves up 30 px; another 20 raises toasts 50 px in total.
+    const y = energyBar.y - 24 - boxHeight;
     cv.roundRect(x, y + 3, boxWidth, boxHeight, 7, [0, 0, 0, 56]);
     cv.roundRect(x, y, boxWidth, boxHeight, 7, night ? '#293747' : '#ffffff');
     cv.strokeRoundRect(x, y, boxWidth, boxHeight, 7, 1, night ? '#466079' : '#c8d5e1');
@@ -663,9 +675,9 @@ function drawHome(cv, state, scroll, data, art, now) {
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, vehicle));
-    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, !!data.navigationUi);
+    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, data.navigation);
     if (data.toast && now < data.toast.until) drawToast(cv, data.toast.message, night);
     return vehicle;
 }
 
-module.exports = { drawHome };
+module.exports = { drawHome, energyPanels };

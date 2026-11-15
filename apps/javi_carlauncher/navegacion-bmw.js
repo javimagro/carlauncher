@@ -6,11 +6,13 @@ const { StringDecoder } = require('string_decoder');
 const { createActions } = require('./navegacion-acciones.js');
 const { instruction, description } = require('./navegacion-indicaciones.js');
 const { createDisplays } = require('./navegacion-pantallas.js');
+const { createEnergy } = require('./navegacion-energia.js');
 const prefix = 'de.bmw.infotainment.navigation.';
 const services = {
     guidance: { name: prefix + 'guiding.Guidance', attributes: ['guidanceState', 'currentRoute', 'allDestinationsInfo', 'conclusiveDart', 'currentRoad'] },
     routing: { name: prefix + 'routing.Routing', methods: ['exportActiveRoute'], broadcasts: ['routeExported'] },
-    trips: { name: prefix + 'routing2.Routing2', attributes: ['currentTrips', 'eRoutesOn'] },
+    trips: { name: prefix + 'routing2.Routing2', attributes: ['currentTrips', 'eRoutesOn'],
+        methods: ['requestRouteInfoUpdate', 'stopRouteInfoUpdate'], broadcasts: ['routeInfoUpdate'] },
     theme: { name: prefix + 'mapsettings.MapSettings', attributes: ['dayNightMode'] },
     light: { name: 'de.bmw.infotainment.vehicle.Vehicle', instance: '1', attributes: ['statusDayNightChangeOver'] }
 };
@@ -63,6 +65,7 @@ function polyline(bytes) {
 function createProbe(builders, options) {
     options = options || {};
     const now = options.now || Date.now;
+    const energy = createEnergy({ now });
     const every = options.every || setInterval;
     const cancel = options.cancel || clearInterval;
     const records = {};
@@ -72,7 +75,10 @@ function createProbe(builders, options) {
     const connections = {};
     let stopped = false, route, request, exported, routing, exporting = false, lastAttempt = -Infinity, routeStatus = 'waiting', automaticTheme;
     const safe = (fn) => Promise.resolve().then(fn).catch(() => undefined);
-    const dispose = (p) => p && typeof p.dispose === 'function' ? safe(() => p.dispose()) : Promise.resolve();
+    const dispose = (p) => {
+        const close = p && (p.shutdown || p.dispose);
+        return typeof close === 'function' ? safe(() => close.call(p)) : Promise.resolve();
+    };
     function changed(name, value) {
         if (stopped) return;
         records[name] = { value, at: now() };
@@ -161,7 +167,11 @@ function createProbe(builders, options) {
                 if (stopped) { safe(() => proxy.routeExported.unsubscribe(id)); return dispose(proxy); }
                 subscriptions.push([proxy.routeExported, id]);
                 routing = proxy; exportRoute();
-            } else descriptor.attributes.forEach((name) => watch(proxy, name));
+            } else {
+                if (key === 'trips') await energy.attach(proxy);
+                if (stopped) return dispose(proxy);
+                descriptor.attributes.forEach((name) => watch(proxy, name));
+            }
             proxies.push(proxy); connection.ready = true;
         } catch (_) {
             dispose(proxy);
@@ -184,6 +194,7 @@ function createProbe(builders, options) {
                 route: line ? { encoded: line.encoded, key: line.key, at: line.at } : null,
                 destinations: Array.isArray(destinations) ? destinations.slice(0, 24).map(destination) : [],
                 destinationsKnown: Array.isArray(destinations),
+                energy: energy.snapshot(fresh('currentRoute'), fresh('currentTrips'), !!live),
                 instruction: live ? instruction(fresh('conclusiveDart')) : null,
                 currentRoad: live ? description(fresh('currentRoad')) : '',
                 segments: live ? tripSummary(fresh('currentTrips'), route) : [],
@@ -196,7 +207,7 @@ function createProbe(builders, options) {
             stopped = true; timers.forEach(cancel); request = null; exported = null;
             // Dispose independently: an unresponsive unsubscribe must not keep other proxies alive.
             subscriptions.forEach(([attr, id]) => safe(() => attr.unsubscribe(id)));
-            proxies.forEach(dispose);
+            energy.close().then(() => proxies.forEach(dispose));
         }
     };
 }

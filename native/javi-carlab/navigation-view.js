@@ -85,7 +85,7 @@ function drawNavigation(cv, nav, vehicle, zoom, now, ui) {
         if ((!s.camera || !status.ready) && !s.keyboard && s.panel !== 'detail') {
             const v = layout.viewport(s), cx = v.x + v.w / 2;
             // Wide settings panels leave too little map space for a readable notice.
-            // The footer already carries availability; never spill text into DriveHub.
+            // Keep the central availability message inside the map viewport.
             if (v.w >= 360) {
                 cv.clip(v.x, v.y, v.w, v.h);
                 cv.text(status.issue || 'Esperando posición GPS del coche', cx, map.y + 214, 23, p.text, center);

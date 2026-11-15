@@ -1,8 +1,20 @@
 # Navegación de BMWLauncher · MGU21
 
+## Previsión de batería BMW · 15-11-2026
+
+La 0.2.17 incorpora la lectura del cálculo BMW. `Routing2.requestRouteInfoUpdate` solicita `ALL_SEGMENTS`, `CHARGING_INFO`, sin puntos de interpolación. El evento selectivo `routeInfoUpdate` identifica ruta y segmentos. `ChargeStatus.estimatedStateOfEnergy` da la llegada al destino ordinario; `ChargingStationInfo.arrivalStateOfEnergy` y `targetStateOfEnergy`, llegada/salida de carga. Se asocian por `tripSegmentID` a `currentTrips`, descartando segmentos pasados/desactivados, rutas ajenas y datos vencidos. No se modifica el guiado ni se recalcula al observar.
+
+**Escala comprobada:** desensamblado LLVM de Hmi8 SHA-256 `7aa4f8d007ce505fada5572a9643f542e8f8056e7d0ac3d25acc524607d30e20`: `CNaviRouteInfo::getStateOfCharge` 0x9fb8160 lee UInt16 y acepta <=100 en 0x9fb8223; `getTargetStateOfEnergy` 0x9fb8330 y `getArrivalStateOfEnergy` 0x9fb8500 validan igual, sin dividir ni aplicar offset. REA abrió NavController, pero su proveedor Windows no admite este ELF; no se atribuye pseudocódigo a REA. Firmware/catálogos/trazas permanecen fuera de Git.
+
+**Prueba real:** la consulta Routing2 devolvió `NO_ERROR` y un evento de la ruta activa con `CHARGING_INFO.chargeStatus.estimatedStateOfEnergy = 0`, `EROUTE_STATUS = NO_EROUTE`. Se retiró únicamente nuestra consulta. La versión antigua Routing aceptaba la solicitud pero no entregó evento durante el ensayo; la integración usa Routing2.
+
+**Planificación sin paradas:** inicialmente `eRoutesOn=false`, aunque `userCommonOptions` guardaba eRoutesOn=true y mínimos 10/10. Por petición explícita del usuario se hizo una única escritura del ajuste Routing2 a true. BMW respondió true y mantuvo el ajuste después; tras recalcular manualmente, la ruta seguía teniendo eRoutesOn=false y mínimos 0/0 propios de ese cálculo. No se ha demostrado que la caducidad del contrato sea la causa ni restaurado el cálculo de paradas. No se alteraron licencias ni servicios contratados.
+
+BMW documenta relieve, tráfico y estilo de conducción en su [guía de autonomía](https://www.bmw.com/content/dam/bmw/common/topics/offers-and-services/bmw-connecteddrive-forusers/user-instructions/BMW_ConDrive_HowTo_Guide_iCDNavigation_EN.pdf.asset.1431512883928.pdf); no publica la fórmula exacta de este firmware. Usamos su previsión antes que consumo medio × distancia. No presentamos esa multiplicación como equivalente al cálculo por tramos. Falta contrastar una llegada positiva y una ruta con carga para comprobar el porcentaje final tras la recarga. La lectura admite ambos; no afirma que el backend los entregue siempre.
+
 ## Estado de la implementación
 
-El árbol local prepara **0.2.11**, todavía sin publicar. El modo usa exclusivamente BMW: se han retirado teselas, lector/escritor de caché y `BMWLAUNCHER_MAP_TILES`. No hay sustitución por un proveedor externo ni descarga de mapas BMW.
+La **0.2.17** conserva la base de navegación introducida en 0.2.11 y añade la previsión energética descrita arriba. El modo usa exclusivamente BMW: se han retirado teselas, lector/escritor de caché y `BMWLAUNCHER_MAP_TILES`. No hay sustitución por un proveedor externo ni descarga de mapas BMW.
 
 **La vista cartográfica original aún no está integrada.** El panel indica «Mapa BMW no disponible», conserva búsqueda, destinos y ruta BMW y deshabilita zoom/centrado sin un mapa. No muestra una polilínea sobre un fondo vacío como si fuese cartografía. Las cachés externas antiguas permanecen sin abrir; no se necesitan para este modo.
 
@@ -63,7 +75,7 @@ Se han utilizado los binarios obtenidos previamente del i4 y el catálogo local 
 - `createViewByIndex` y `destroyView` son métodos heredados de `ListViewBase` dentro del proxy de búsqueda; no hay que crear una instancia independiente del interfaz base.
 - `currentTrips` usa el campo real **`routeIdentifer`**, con esa errata. Se compara con la ruta activa antes de usar sus segmentos.
 - `NaviCommonTypes.Distance` es `{unit, displayLength, rawLengthMeter}`. `NavigationDataTypes.Duration` es `{timebase, duration}`, con milisegundos/segundos/minutos/horas. No se tratan como números sin unidad.
-- El mínimo de llegada de `ERoutePreference` es una preferencia UInt8. Los campos `arrivalStateOfEnergy`/`targetStateOfEnergy` de carga son UInt16 y su escala sigue sin validar: no se muestran como porcentajes.
+- El mínimo de llegada de `ERoutePreference` es una preferencia UInt8. Los campos `arrivalStateOfEnergy`/`targetStateOfEnergy` son UInt16; la revisión del 15-11 confirma su escala 0..100, descrita arriba.
 - El tema automático observa `Vehicle.statusDayNightChangeOver`: TAG=1, NACHT=2, KEINE_AENDERUNG=0; un valor inválido elimina la suposición anterior. La elección explícita de MapSettings tiene prioridad.
 
 `tools/Verificar-Navegacion-MGU.js` valida interfaces, instancias, métodos heredados, campos y permisos contra el catálogo privado. El manifiesto concede operaciones concretas; no se permite un proxy genérico de escritura para todo el navegador.

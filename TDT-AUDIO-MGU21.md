@@ -1,5 +1,13 @@
 # Audio nativo de TDT · MGU21
 
+## Muestra BMW de 30 segundos · 0.2.17
+
+Añadido modo explícito de prueba en TDTWorld, separado del directo. Captura acotada del mismo canal, WAV completo y vídeo I420, presentación por reloj BMW, limpieza y rechazo de fuente ocupada. No reclama que HLS continuo funcione con el reproductor nativo.
+
+Ensayo real autorizado por SSH el 15-11: preparación del archivo en ~23–24 segundos; CommandControl disponible y connect devuelve E_OK, pero MediaPlayer/OapGenericMedia no se anuncia antes ni después. La lectura directa de playerState devuelve Service unavailable. No se llegó a playFile ni a sonido audible. Se liberó la conexión temporal; la consulta final conserva solo la conexión original. No se instalaron paquetes, no se reinició la MGU y no se modificaron capas del cockpit. El orden connect → esperar MediaPlayer y su retirada ante fallo quedan cubiertos por regresión.
+
+Regresión del directo en PC con FFmpeg 9.0.2: 250 cuadros, cero vaciados/reconexiones, hueco máximo del presentador 58 ms y 12 avances durante el bloqueo sintético de UI de 650 ms. El receptor PCM recibió 2.380.800 bytes. No son cifras de altavoces/MGU. La captura sintética valida formato WAV, límites, cancelación y seguimiento de reloj; la disponibilidad del reproductor de este i4 sigue bloqueando la prueba audible.
+
 ## Ruta de RideTube contrastada con el i4 · 15-11-2026
 
 Investigación pública posterior a publicar 0.2.15, sin ENET. Referencia: `JustAnotherPU/ridetube`, revisión **63364945d85344071dda0821464c4822372001e7**. Su [README](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/README.md) declara prueba en un X5 G05 iDrive 7; no valida automáticamente MGU21/ID8. Las capturas de interfaz del README son renders de PC, no fotos del coche.

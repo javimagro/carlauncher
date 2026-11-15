@@ -1,16 +1,14 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.16 de prueba** activa la vista alta de BMWLauncher después de instalar y reiniciar iDrive: aprovecha los 76 píxeles de la barra superior sin ocupar la climatización. Ajusta también el toque de esa franja. Conserva los cambios de vídeo, audio, tensión/corriente HV e interfaz de las versiones anteriores; no añade una solución nueva al sonido ni a los mapas.
+La **0.2.17 de prueba** amplía 30 píxeles la barra de energía, aumenta letras e iconos, eleva 50 píxeles los avisos y retira el pie «Navegación BMW · mapa local no disponible». Conserva la vista alta introducida en 0.2.16.
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.16**. **Reinicia iDrive con el coche parado** para activar el área táctil ampliada. Hasta entonces la app conserva el tamaño normal. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.16).
+Sin navegación solo aparece **Ahora**. Con ruta, **En destino** queda inmediatamente después; los paneles **En la parada** y **Tras recarga** aparecen solo cuando hay una parada de carga. Los porcentajes previstos proceden de BMW mediante `Routing2/CHARGING_INFO`; los kilómetros previstos siguen en guiones hasta disponer de una fuente validada. No usa consumos medios para sustituir el cálculo BMW ni muestra previsiones de demostración. [Lectura y prueba real](NAVEGACION-MGU21.md#previsión-de-batería-bmw--15-11-2026).
 
-Verificación local: 232 pruebas, capturas de ambos tamaños, activación/retirada en Node 8.16.2 y empaquetado de los tres componentes mediante el lector de Store.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.17**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17). Si todavía no reiniciaste tras activar la vista alta de 0.2.16, reinicia iDrive con el coche parado para aplicar el área táctil ampliada.
 
-El ensayo local de TDT pasa de descartar 169.088 bytes de audio (0,88 s) a cero por desbordamiento, sin aumentar el búfer. Entrega 250 cuadros sin vaciados ni reconexiones, también con la salida PCM bloqueada y con Node 8.16.2. Es una prueba con receptor de audio en el PC; no demuestra sonido limpio ni sincronía en los altavoces del i4. [Medidas y límites](TDT-AUDIO-MGU21.md).
+TDTWorld añade **Ajustes → Audio → Prueba BMW · 30 s**, una muestra finita y explícita con vídeo siguiendo el reloj del reproductor BMW. **No es audio nativo en directo resuelto.** En el ensayo SSH del i4 se preparó la muestra y BMW aceptó conectar la fuente, pero `MediaPlayer/OapGenericMedia` siguió no disponible; la prueba liberó su conexión sin reproducir. El directo actual permanece como opción predeterminada. [Evidencia y límites](TDT-AUDIO-MGU21.md).
 
-La investigación de BMW/AA añade protecciones para rechazar superficies del cockpit, Hmi8 y capas compartidas. La herramienta manual de mapa empieza transparente y exige cuadros propios antes de mostrar la capa. Estas herramientas no activan automáticamente un mapa en la app.
-
-**El audio TDT continuo y sincronizado y los mapas BMW/AA a la izquierda siguen pendientes.** La cobertura física de la barra y el toque de la vista alta requieren prueba en el i4. No se modifica el mapa del cockpit. Para volver atrás, reinstala BMWLauncher y Motor gráfico de la [0.2.15](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15) mediante la Store y reinicia iDrive; el hook de retirada elimina únicamente nuestro ajuste táctil.
+Verificación: 246 pruebas locales, Node 8.16.2, capturas día/noche y lector de paquetes Store. Se contrastó la escala de energía con Hmi8 y se recibió en el coche `estimatedStateOfEnergy: 0` para la ruta activa. Llegada positiva y paradas tras recarga requieren contraste físico. El audio continuo, sincronía y cartografía BMW/AA siguen pendientes. No se altera el mapa del cockpit. Para revertir esta entrega, reinstala app y motor **0.2.16**.
 
 ## Referencia de la versión anterior
 
@@ -45,7 +43,7 @@ La interfaz reserva el lado izquierdo para la cartografía BMW, todavía pendien
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.16**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. El motor requiere mgu-deploy 0.7.0 o superior para sus hooks. Reinicia iDrive con el coche parado para aplicar el nuevo toque. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.16).
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.17**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. El motor requiere mgu-deploy 0.7.0 o superior para sus hooks. Reinicia iDrive con el coche parado para aplicar el nuevo toque. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.17).
 
 La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
 

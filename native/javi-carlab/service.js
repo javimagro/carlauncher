@@ -20,6 +20,8 @@ const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
 const { createCockpit } = require('./cockpit.js');
 const { RenderClient } = require('/var/opt/mgu-render/current/mgu_render_client.js');
+const nativeAudio = require('./tdt-bmw-bridge');
+const bmwAudio = nativeAudio.createBridge((message) => audio.send(message));
 
 const launcherId = 'javi_carlauncher';
 const directory = '/var/opt/public/oap';
@@ -101,6 +103,7 @@ const session = createSession(gpu, {
     },
     tdtDirectory: dataDirectory,
     tdtPlayback: {
+        nativeAudio: bmwAudio,
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
         caFile: path.join(__dirname, 'bin/ca-certificates.crt'),
         proxy: startTdtProxy,
@@ -130,6 +133,8 @@ const navigation = listen('/run/javi-carlab/navigation.sock', session.navigation
 
 const radio = listen('/run/javi-carlab/radio.sock', session.radio,
     (err) => console.warn('BMWLauncher: radio OAP: ' + err.code), consumeRadio, () => session.radio(null));
+const audio = listen('/run/javi-carlab/audio.sock', bmwAudio.receive,
+    (err) => console.warn('BMWLauncher: audio BMW: ' + err.code), nativeAudio.consume, bmwAudio.disconnected);
 
 function networkError(code) {
     return Object.assign(new Error(code), { code });
@@ -184,6 +189,8 @@ const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl'
     telemetry.close();
     navigation.close();
     radio.close();
+    bmwAudio.stop();
+    audio.close();
     session.close();
     process.exit(1);
 });
@@ -205,6 +212,7 @@ async function poll() {
                     telemetry.setOwner(uid);
                     navigation.setOwner(uid);
                     radio.setOwner(uid);
+                    audio.setOwner(uid);
                 }
             }
             catch (_) { /* The touch renderer remains available during OAP registration. */ }
@@ -256,6 +264,8 @@ process.once('SIGTERM', () => {
     telemetry.close();
     navigation.close();
     radio.close();
+    bmwAudio.stop();
+    audio.close();
     session.close();
     process.exit(0);
 });

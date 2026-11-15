@@ -7,6 +7,7 @@ const { report } = require('./telemetria-mgu.js');
 const { report: reportNavigation } = require('./navegacion-bmw.js');
 
 const { report: reportRadio } = require('./radio-bmw.js');
+const { report: reportAudio } = require('./audio-bmw-transport.js');
 
 function truth(value) { return value === true || value === 1 || value === '1'; }
 
@@ -15,6 +16,7 @@ module.exports = function run() {
     const telemetry = report(someipBuilders);
     const navigation = reportNavigation(someipBuilders);
     const radio = reportRadio(someipBuilders);
+    const audio = reportAudio(someipBuilders);
     let controller;
     let entry;
     let ready = false;
@@ -29,6 +31,7 @@ module.exports = function run() {
         telemetry.show(visible);
         navigation.show(visible);
         radio.show(visible);
+        audio.show(visible);
         const reports = visible ? [app.registerActive(), app.registerHmiVisible()] : [app.unregisterHmiVisible(), app.registerInactive()];
         Promise.all(reports).catch((err) => console.warn(err.message));
     }
@@ -66,6 +69,7 @@ module.exports = function run() {
             telemetry.show(visible);
             navigation.show(visible);
             radio.show(visible);
+            audio.show(visible);
             if (visible) await app.registerHmiVisible();
             await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
@@ -75,7 +79,7 @@ module.exports = function run() {
         telemetry.show(false);
         navigation.show(false);
         radio.show(false);
-        Promise.resolve(app.destroyBundles()).then(() => process.exit(0), () => process.exit(0));
+        audio.close().then(() => app.destroyBundles()).then(() => process.exit(0), () => process.exit(0));
     });
     app.start().catch((err) => console.error('CarLab: ' + err.message));
 };

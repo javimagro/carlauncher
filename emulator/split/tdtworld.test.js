@@ -141,7 +141,7 @@ test('changing channel retunes and hiding TDT releases playback; settings and la
     tdt.update(Date.now(), true);
     tdt.press(true);
     assert.equal(tdt.state.mode, 'settings');
-    assert.deepEqual(tdt.settings().map((item) => item.label), ['País', 'Duración de la información', 'Iniciar en el último canal']);
+    assert.deepEqual(tdt.settings().map((item) => item.label), ['País', 'Duración de la información', 'Iniciar en el último canal', 'Audio']);
     tdt.rotate(1);
     tdt.press(false);
     assert.equal(tdt.state.prefs.seconds, 8);

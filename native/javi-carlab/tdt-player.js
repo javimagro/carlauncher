@@ -372,8 +372,9 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         ready(info) { capable = preview || !!(info && info.video && gpu.video); },
         frame: () => surface,
         stop,
-        start(sources, changed) {
+        start(sources, changed, mode) {
             stop();
+            if (mode === 'bmw-sample') { changed('error', 'Prueba BMW disponible solo en la MGU'); return; }
             if (!capable) { changed('unavailable'); return; }
             const current = { stats: { decoded: 0, presented: 0, underruns: 0, dropped: 0, maxGapMs: 0,
                 maxDecodeGapMs: 0, attempts: 0, reconnects: 0, audioEnabled: false, dashAdapted: false } };

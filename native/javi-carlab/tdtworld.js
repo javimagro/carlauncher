@@ -8,7 +8,7 @@ const { dropImage } = require('./vendor/kit_record.js');
 const catalog = require('./tdt-catalog.js');
 const { previewChannels, visibleChannels } = require('./tdtworld-data.js');
 
-const settings = ['País', 'Duración de la información', 'Iniciar en el último canal'];
+const settings = ['País', 'Duración de la información', 'Iniciar en el último canal', 'Audio'];
 const clocks = new Map();
 const seconds = [0, 3, 5, 8, 12];
 const interval = 30 * 60000;
@@ -53,6 +53,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     const prefs = {
         country: catalog.countries[store.country] ? store.country : 'es',
         resume: store.resume === true,
+        audioMode: store.audioMode === 'bmw-sample' ? 'bmw-sample' : 'live',
         seconds: seconds.includes(store.seconds) ? store.seconds : 5,
         last: store.last && typeof store.last === 'object' ? store.last : {}
     };
@@ -309,7 +310,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
                     }
                 }
                 change();
-            });
+            }, prefs.audioMode);
         } catch (_) {
             if (request !== tuning) return;
             state.playback = 'error';
@@ -380,6 +381,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         }
         if (index === 1) prefs.seconds = cycle(seconds, prefs.seconds);
         if (index === 2) prefs.resume = !prefs.resume;
+        if (index === 3) prefs.audioMode = prefs.audioMode === 'live' ? 'bmw-sample' : 'live';
         savePrefs();
         change();
     }
@@ -416,7 +418,8 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             return clocks.get(country).format(value);
         },
         settings: () => settings.map((label, i) => ({
-            label, value: [catalog.countries[prefs.country], prefs.seconds ? prefs.seconds + ' s' : 'Oculta', prefs.resume ? 'Sí' : 'No'][i]
+            label, value: [catalog.countries[prefs.country], prefs.seconds ? prefs.seconds + ' s' : 'Oculta', prefs.resume ? 'Sí' : 'No',
+                prefs.audioMode === 'bmw-sample' ? 'Prueba BMW · 30 s' : 'Directo (actual)'][i]
         })),
         update(time, focused) {
             if (!focused && (active || state.mode !== 'browse')) {
@@ -433,7 +436,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             if (startup && (state.channels.length || state.status === 'offline')) {
                 startup = false;
                 const last = prefs.last[prefs.country];
-                if (prefs.resume && last && selected() && last === selected().id && state.mode === 'browse') play();
+                if (prefs.resume && prefs.audioMode !== 'bmw-sample' && last && selected() && last === selected().id && state.mode === 'browse') play();
             }
             if (state.mode === 'browse') showArt(time);
             loadLogo();

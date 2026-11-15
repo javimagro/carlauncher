@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "javi_carlauncher",
   "title": "BMWLauncher",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "tree": "package",
   "internet": true,
   "mguHmi": [
@@ -21,7 +21,10 @@
     "navegacion-pantallas.js",
     "radio-bmw.js",
     "radio-datos.js",
-    "radio-listas.js"
+    "radio-listas.js",
+    "audio-bmw.js",
+    "audio-bmw-transport.js",
+    "navegacion-energia.js"
   ],
   "sdk": [
     "oap-sdk/src/core/OnlineApp.js",

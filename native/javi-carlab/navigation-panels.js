@@ -204,8 +204,9 @@ function controls(cv, ui, nav, now = Date.now()) {
     [['settings', 'settings'], ['audio', voice === false ? 'audio-muted' : 'audio'], ['chargers', 'chargers'], ['recent', 'recent'], ['center', 'center'], ['assistant', 'assistant']].forEach((a, i) =>
         button(a[0], '', map.x + 12, map.y + 10 + i * 55, 50, 50, { circle: true, icon: a[1],
             disabled: a[0] === 'audio' && (typeof voice !== 'boolean' || busy) || a[0] === 'assistant' && !ui.assistant || a[0] === 'center' && !ready }));
-    button('zoom-in', '', map.x + 12, map.y + 350, 50, 44, { icon: 'zoom-in', disabled: !ready });
-    button('zoom-out', '', map.x + 12, map.y + 398, 50, 44, { icon: 'zoom-out', disabled: !ready });
+    const zoomY = Math.min(350, map.h - 98);
+    button('zoom-in', '', map.x + 12, map.y + zoomY, 50, 44, { icon: 'zoom-in', disabled: !ready });
+    button('zoom-out', '', map.x + 12, map.y + zoomY + 48, 50, 44, { icon: 'zoom-out', disabled: !ready });
     if (s.panel === 'none') {
         if (ui.assistant) assistantPanel.drawIndicator(cv, ui.assistant.state, map.x + map.w - 116, map.y + map.h / 2 - 22, now, p);
         button('search', 'Buscar destino o lugar', x, y, 440, 52);
@@ -222,7 +223,9 @@ function controls(cv, ui, nav, now = Date.now()) {
             const final = (nav.destinations || []).find((d) => d.final), yy = map.y + map.h - 140;
             cv.roundRect(x, yy, 440, 112, 12, p.surface);
             text(duration(final && final.seconds), x + 18, yy + 34, 29, p.eta, 400, true);
-            text(distance(final && final.metres) + ' · llegada — %', x + 18, yy + 61, 18, p.secondary);
+            const arrival = nav.energy && nav.energy.source === 'bmw' && Number.isFinite(nav.energy.destinationSoc)
+                ? nav.energy.destinationSoc + ' %' : '— %';
+            text(distance(final && final.metres) + ' · llegada ' + arrival, x + 18, yy + 61, 18, p.secondary);
             [['stop', 'stop'], ['route-panel', 'route-panel'], ['search', 'zoom-in'], ['fit', 'fit'], ['settings', 'settings']].forEach((a, i) =>
                 button(a[0], '', x + 12 + i * 84, yy + 68, 78, 40, { flat: true, icon: a[1], disabled: a[0] === 'fit' && !ready }));
         }
@@ -255,8 +258,6 @@ function controls(cv, ui, nav, now = Date.now()) {
             button('back', 'Continuar', x + 24, y + 298, w - 48, 54);
         }
     }
-    cv.fillRect(map.x + 74, map.y + map.h - 24, map.w - 148, 24, p.surface);
-    text(ready ? 'Navegación BMW' : 'Navegación BMW · mapa local no disponible', map.x + 86, map.y + map.h - 7, 14, p.secondary, map.w - 170);
     return p;
 }
 module.exports = { controls, palettes, shorten, searchMessage, distance, duration };

@@ -230,7 +230,14 @@
       "attributes": {
         "currentTrips": "rs",
         "eRoutesOn": "rs"
-      }
+      },
+      "methods": [
+        "requestRouteInfoUpdate",
+        "stopRouteInfoUpdate"
+      ],
+      "broadcasts": [
+        "routeInfoUpdate"
+      ]
     },
     "de.bmw.infotainment.navigation.mapsettings.MapSettings": {
       "instances": [
@@ -349,6 +356,32 @@
       ],
       "broadcasts": [
         "viewContentChanged"
+      ]
+    },
+    "de.bmw.infotainment.entertainment.mediaplayer.MediaPlayer": {
+      "instances": [
+        "OapGenericMedia"
+      ],
+      "attributes": {
+        "playerState": "r",
+        "currentItemTime": "r",
+        "currentItemPath": "r"
+      },
+      "methods": [
+        "playFile",
+        "sendButtonEvent"
+      ]
+    },
+    "org.genivi.am.commandinterface.CommandControl": {
+      "instances": [
+        "1"
+      ],
+      "methods": [
+        "connect",
+        "disconnect",
+        "getListMainConnections",
+        "getListMainSources",
+        "getListMainSinks"
       ]
     }
   },

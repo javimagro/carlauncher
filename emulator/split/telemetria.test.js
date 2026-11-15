@@ -247,9 +247,9 @@ test('telemetry frames accept partial reads and reject malformed and oversized d
     assert.equal(read(Buffer.alloc(17 * 1024, 65)), false);
 });
 
-test('the dashboard shows diagnostics and a live thermal status alongside clearly marked example data', () => {
+test('the dashboard shows diagnostics and thermal status without demo route predictions', () => {
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     const state = { selected: 0, article: 0 };
@@ -263,15 +263,15 @@ test('the dashboard shows diagnostics and a live thermal status alongside clearl
         ]
     }, () => 1, 0);
     for (const label of ['Sí  ·  1', 'Android Auto · vídeo', 'No', 'Cluster renderer no responde',
-        'Error de lectura', 'TRAYECTO', 'Ruta de ejemplo']) assert(labels.includes(label), label);
-    for (const label of ['25,3 kWh/100 km', '50,9 km', '917 m', 'Activo', 'Periodo']) assert(!labels.includes(label), label);
+        'Error de lectura', 'TRAYECTO']) assert(labels.includes(label), label);
+    for (const label of ['25,3 kWh/100 km', '50,9 km', '917 m', 'Activo', 'Periodo', 'Ruta de ejemplo']) assert(!labels.includes(label), label);
     assert(!labels.includes('64%'));
     assert(!labels.includes('248 km'));
 });
 
 test('the dashboard converts validated readings and never substitutes demo values for missing live energy', () => {
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     const state = { selected: 0, article: 0 };
@@ -287,10 +287,11 @@ test('the dashboard converts validated readings and never substitutes demo value
     const data = { energy: [{ label: 'Ahora', soc: 64, range: 248 }, { label: 'En destino', soc: 24, range: 93 }],
         diagnostics: true, telemetry };
     drawHome(canvas, state, 0, data, () => 1, 1000);
-    for (const label of ['91%', '91 %', '431 km', '16 °C', '19 °C', '17,0  ·  – kWh/100 km', '24%', 'Ruta de ejemplo']) {
+    for (const label of ['91%', '91 %', '431 km', '16 °C', '19 °C', '17,0  ·  – kWh/100 km']) {
         assert(labels.includes(label), label);
     }
     assert.equal(labels.filter((label) => label === '431 km').length, 2);
+    for (const label of ['24%', 'En destino', 'Ruta de ejemplo', 'Sin previsión']) assert(!labels.includes(label), label);
     labels.length = 0;
     drawHome(canvas, state, 0, data, () => 1, 30000);
     for (const label of ['91%', '431 km', '16 °C', '19 °C', '64%', '248 km']) assert(!labels.includes(label), label);
@@ -307,7 +308,7 @@ test('the dashboard converts validated readings and never substitutes demo value
 
 test('the dashboard distinguishes zero speed, missing speed and an expired reading', () => {
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     const state = { selected: 0, article: 0 };
@@ -349,7 +350,7 @@ test('the trip probe maps periods by reset option and presents scaled distances 
     t.after(() => probe.stop());
     await turn();
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     const telemetry = probe.snapshot();
@@ -388,7 +389,7 @@ test('consumption readings need a fresh BMW digit with a supported unit', () => 
 
 test('the charging limit follows the fresh BMS status independently of battery temperature', () => {
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     const thermal = { signal: 'statusHighVoltageBattery', status: 'sample', sampledAt: 1000, freshForMs: 15000,
@@ -586,7 +587,7 @@ test('the battery power probe reads only the SME voltage and signed current and 
         assert.equal(request.udsDataLength, 2);
     }
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     drawHome(canvas, { selected: 0, article: 0 }, 0,
@@ -658,7 +659,7 @@ test('a negative SME reply identifies the current request and shows the UDS code
     const record = probe.snapshot();
     assert.deepEqual(record.fields, { stage: 'current', failure: 'uds', code: 0x31 });
     const labels = [];
-    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: () => 100 }, {
+    const canvas = new Proxy({ text: (text) => labels.push(text), textWidth: (text, size) => String(text).length * (size || 16) * 0.45 }, {
         get: (target, key) => target[key] || (() => {})
     });
     drawHome(canvas, { selected: 0, article: 0 }, 0,

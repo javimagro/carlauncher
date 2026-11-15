@@ -212,7 +212,7 @@ test('assistant and HV share a bottom toast that expires and is cleared when hid
     tap(map.x + 37, map.y + 310);
     assert(!labels.includes(hv));
     assert.equal(labels.filter((text) => text === assistant).length, 1);
-    assert(rectangles.some((r) => r.x > map.x && r.x + r.w < map.x + map.w && r.y + r.h === energyBar.y - 4));
+    assert(rectangles.some((r) => r.x > map.x && r.x + r.w < map.x + map.w && r.y + r.h === energyBar.y - 24));
     t.mock.timers.tick(4000);
     assert(!labels.includes(assistant));
     tap(box.x + 20, box.y + 20);
