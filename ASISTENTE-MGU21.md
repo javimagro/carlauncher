@@ -4,7 +4,9 @@ Implementación local del 14-11-2026, basada en CarLauncher Android/Carlinkit. N
 
 ## Uso
 
-El engranaje abre **Ajustes → Asistente**: OpenAI/Gemini, lista de voces, respuesta hablada y API key. El micrófono lateral abre la conversación. **Escribir** envía texto; **Hablar** inicia/termina una captura de hasta treinta segundos, cuando existe una entrada validada. **Detener**, cerrar la conversación, ocultar la app o perder la superficie cancela sesión y acciones pendientes.
+El engranaje abre **Ajustes → Asistente** con proveedor, voz y API key. Los ajustes se guardan al cambiarlos. **Oír voz** reproduce la muestra en ese mismo panel cuando hay salida de audio. **Escribir** abre la alternativa de texto.
+
+El micrófono del mapa inicia y cancela la sesión por voz. El indicador a la derecha muestra conexión y procesamiento en violeta, escucha en naranja y respuesta de voz en azul. La captura se envía por turnos con detección local de pausa. Tras entregar el audio, el asistente vuelve a escuchar. Ocultar la app o perder la superficie cancela la sesión y sus acciones pendientes.
 
 Se conservan los modelos de la referencia (`gpt-realtime-2.1`, `gemini-3.8-live`) y voces iniciales Marin/Kore. Cambiar configuración cierra la sesión anterior. No hay conexión de pago al arrancar: requiere una petición del usuario y una clave configurada.
 
@@ -36,19 +38,25 @@ Se incorpora `ws@7.5.14` (Node >=8.3.0) como transporte WebSocket, sin addons ni
 
 ## Claves de Carlinkit
 
-`AssistantPreferences` guarda `openai_api_key` y `gemini_api_key` en `assistant_preferences`, cifradas con AES-GCM mediante Android Keystore y el alias `bmwlauncher_conversational_assistant_key`. Copiar el XML cifrado no permite descifrarlo en PC/MGU. No había ningún dispositivo ADB conectado y los archivos de configuración locales examinados no contenían las claves del asistente. **No se han recuperado ni copiado claves reales.**
+`AssistantPreferences` guarda `openai_api_key` y `gemini_api_key` en `assistant_preferences`, cifradas con AES-GCM mediante Android Keystore y el alias `bmwlauncher_conversational_assistant_key`. El XML cifrado requiere el Keystore del dispositivo de origen. La referencia Android incluye `CredentialTransferInstrumentedTool`, que puede exportar solo las claves del asistente desde el contexto de la aplicación de depuración con `credentialTransferScope=assistant`. La exportación se lee en memoria y se elimina de la caché privada de la aplicación tras la transferencia.
 
 BMWLauncher utiliza `/var/opt/javi-carlab/assistant/settings.enc`, AES-256-GCM y una clave aleatoria en `device.key`. En Linux: directorio 0700, archivos 0600. No es un almacén hardware: leer ambos archivos permite descifrarlo. No se distribuyen en paquetes, Git, logs o capturas. El editor muestra asteriscos y el modelo nunca recibe las credenciales.
 
-`tools/Importar-Asistente.js` acepta una exportación **ya descifrada y autorizada**, con campos `provider`, `keys` y `voices`. Exige origen y destino fuera del repositorio y no imprime valores. No extrae secretos del Keystore ni conecta al coche. Queda recuperar las claves desde la app Carlinkit cuando esté disponible, o introducirlas en Ajustes. Transferir el almacén al coche requiere una sesión autorizada; no se hizo aquí.
+El simulador `node emulator/split/server.js --drivehub` utiliza el mismo formato de almacén en `%LOCALAPPDATA%\BMWLauncher-Assistant` (o en la carpeta personal si falta `LOCALAPPDATA`). Las claves guardadas desde **Ajustes → Asistente** se recuperan al reiniciar el simulador. Tras una importación externa, reinicia el servidor para cargar el almacén.
+
+El validador admite las claves de autorización de Gemini con prefijo `AQ.` según el formato empleado por Google AI Studio. La versión instalada en la MGU necesita esta revisión para poder leerlas y conectarse. [Tipos de claves de Gemini](https://ai.google.dev/gemini-api/docs/api-key#api-key-types).
+
+`tools/Importar-Asistente.js` acepta una exportación **ya descifrada y autorizada**, con campos `provider`, `keys` y `voices`. Exige origen y destino fuera del repositorio y no imprime valores. En la MGU también se pueden introducir las claves desde **Ajustes → Asistente**. Transferir el almacén al coche por conexión remota requiere autorización vigente.
 
 ## Límites de audio y validación real
 
-El micrófono del coche **no está conectado ni validado**. Sin entrada configurada, Hablar informa de ello y no abre sesión de pago. Se admite `arecord` mono 24 kHz con dispositivo explícito mediante `JAVI_ASSISTANT_CAPTURE_DEVICE`, solo después de verificarlo. No se adivina una entrada de llamadas/seguridad.
+El micrófono del coche **no está conectado ni validado**. Sin entrada configurada, el botón del micrófono muestra un aviso y evita abrir la sesión de pago. Se admite `arecord` mono 24 kHz con dispositivo explícito mediante `JAVI_ASSISTANT_CAPTURE_DEVICE`, solo después de verificarlo. No se adivina una entrada de llamadas/seguridad.
+
+En Windows, `JAVI_ASSISTANT_FFPLAY` apunta a `ffplay.exe` y `JAVI_TDT_FFMPEG` a `ffmpeg.exe` si no está en el `PATH`. Para el micrófono, `JAVI_ASSISTANT_PC_MIC` debe contener el nombre del dispositivo DirectShow. Estas variables se leen al arrancar el simulador. El indicador se ha comprobado con eventos simulados. Umbral de captura, cancelación de eco y reproducción audible requieren verificación con una entrada y salida reales.
 
 La salida usa la ruta multimedia de la app, cuya entrega a los altavoces del i4 sigue pendiente. Tampoco están validados foco, convivencia con Radio/TDT ni cancelación acústica de eco. Seleccionar voz y procesar PCM no demuestra conversación audible en el coche. Un fallo mantiene la respuesta escrita.
 
-No se ha realizado una conversación con cuentas reales de OpenAI/Gemini: faltan claves recuperadas. Los contratos se contrastan con documentación y servidores WebSocket locales de prueba, no con un servicio autenticado real.
+En el PC se comprobó una respuesta de texto autenticada con Gemini. En la MGU queda pendiente comprobar la conexión con ambos proveedores.
 
 ## Fuentes y reproducción
 

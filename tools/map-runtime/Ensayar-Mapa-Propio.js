@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
 const diagnostic = require('./Diagnosticar-Escena-Mapa');
-const OWNER = 0x424d5701;
+const OWNER = 0x424d5702; // Local record revision; GENIVI wire session is zero.
 const IVI = '/usr/bin/ivi-control';
 
 function rectangle(value) {
@@ -45,16 +45,6 @@ function validateNewObjects(before, after, surface, sceneText) {
     throw new Error('La capa aparece fuera de la pantalla central');
   }
   return report;
-}
-
-function revealCommands(before, after, surface, sceneText, previousFrames) {
-  const report = validateNewObjects(before, after, surface, sceneText);
-  const image = report.surface;
-  if (!Number.isSafeInteger(previousFrames) || previousFrames < 0 || !Number.isSafeInteger(image.frames) ||
-      image.frames <= previousFrames || !image.size || image.size[0] !== 1038 || image.size[1] !== 468 ||
-      report.nativeLayerOnScreens.length !== 1 || report.nativeLayerOnScreens[0] !== 4) return [];
-  // Advancing frames allow a visual trial, not a claim that the picture is a valid map.
-  return [['layer', String(surface), 'opacity', '1']];
 }
 
 function navigationProducer(sceneText, surface) {
@@ -182,7 +172,9 @@ async function run(options) {
   if (!before.screens.some(function (screen) { return screen.id === 4; })) throw new Error('No está la pantalla central esperada');
   const directory = fs.mkdtempSync('/tmp/bmwlauncher-map-trial-'); fs.chmodSync(directory, 0o700);
   const stateFile = path.join(directory, 'state.json');
-  const state = { native: native, surface: options.surface, before: before, created: false, done: false, startedAt: Date.now() };
+  const state = { native: native, surface: options.surface, before: before, createOnly: !!options.createOnly, composeOnly: !!options.composeOnly,
+    baseContent: !options.baseline && !options.createOnly && !options.composeOnly, nativeExitCode: null,
+    created: false, done: false, startedAt: Date.now() };
   save(stateFile, state);
   fs.writeFileSync(path.join(directory, 'before.txt'), baselineText, { mode: 0o600 });
   const watchdog = childProcess.spawn(process.execPath, [__filename, '--watchdog', directory], { detached: true, stdio: 'ignore' });
@@ -212,7 +204,7 @@ async function run(options) {
     }
   });
   session.on('error', function (error) { processError = error; closed = true; });
-  session.on('close', function () { closed = true; log.end(); });
+  session.on('close', function (code) { state.nativeExitCode = code; closed = true; log.end(); });
   session.stdin.on('error', function () {});
   process.on('SIGTERM', function () { session.kill('SIGTERM'); });
   process.on('SIGINT', function () { session.kill('SIGTERM'); });
@@ -230,31 +222,30 @@ async function run(options) {
       await wait(100);
     }
     if (!ready || closed) throw new Error('Objetos nativos propios no disponibles');
-    for (let i = 0; i < commands.length; ++i) await exec(IVI, commands[i]);
-    session.stdin.write('SHOW\n');
-    let previousFrames = null, revealed = false;
+    if (!options.createOnly) {
+      for (let i = 0; i < commands.length; ++i) await exec(IVI, commands[i]);
+      if (!options.composeOnly) session.stdin.write(options.baseline ? 'SHOW_BASELINE\n' : 'SHOW\n');
+    }
     for (let i = 0; i < 20 && !closed; ++i) {
       await wait(1000);
       const text = await exec(IVI, ['scene']);
       fs.writeFileSync(path.join(directory, 'during.txt'), text, { mode: 0o600 });
       const scene = diagnostic.parseScene(text);
       const report = validateNewObjects(before, scene, options.surface, text);
-      if (!revealed) {
-        const reveal = revealCommands(before, scene, options.surface, text, previousFrames);
-        for (let n = 0; n < reveal.length; ++n) await exec(IVI, reveal[n]);
-        revealed = reveal.length > 0;
-      }
-      previousFrames = report.surface.frames;
       process.stdout.write(JSON.stringify({ second: i + 1, status: report.status,
-        frames: report.surface.frames, revealed: revealed, nativeVisible: report.nativeLayer.visibility }) + '\n');
+        frames: report.surface.frames, nativeVisible: report.nativeLayer.visibility }) + '\n');
     }
     if (!closed) session.stdin.end('STOP\n');
   } finally {
     if (!closed) session.kill('SIGTERM');
     for (let i = 0; i < 60 && !closed; ++i) await wait(100);
     await cleanup(directory);
+    const finalState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    finalState.nativeExitCode = state.nativeExitCode; save(stateFile, finalState);
     process.stdout.write('Archivos privados de ensayo: ' + directory + '\n');
   }
+  if (processError) throw processError;
+  if (state.nativeExitCode !== 0) throw new Error('La sonda no terminó correctamente: ' + state.nativeExitCode);
 }
 
 async function main(args) {
@@ -263,13 +254,14 @@ async function main(args) {
     if (args[0] === '--watchdog') await wait(55000);
     await cleanup(args[1]); return;
   }
-  if (args[0] !== '--run' || args.length !== 5) {
-    throw new Error('Uso manual en MGU: node Ensayar-Mapa-Propio.js --run RUTA_SONDA SUPERFICIE SCENE_HEX x,y,ancho,alto');
+  if (['--run', '--run-baseline', '--create-only', '--compose-only'].indexOf(args[0]) === -1 || args.length !== 5) {
+    throw new Error('Uso manual en MGU: node Ensayar-Mapa-Propio.js --run|--run-baseline|--create-only|--compose-only RUTA_SONDA SUPERFICIE SCENE_HEX x,y,ancho,alto');
   }
-  await run({ native: args[1], surface: Number(args[2]), scene: args[3], rect: rectangle(args[4]) });
+  await run({ native: args[1], surface: Number(args[2]), scene: args[3], rect: rectangle(args[4]),
+    baseline: args[0] === '--run-baseline', createOnly: args[0] === '--create-only', composeOnly: args[0] === '--compose-only' });
 }
 if (require.main === module) main(process.argv.slice(2)).catch(function (error) {
   process.stderr.write(error.message + '\n'); process.exitCode = 1;
 });
 module.exports = { rectangle: rectangle, composeCommands: composeCommands, validateNewObjects: validateNewObjects,
-  removalCommands: removalCommands, revealCommands: revealCommands };
+  removalCommands: removalCommands };

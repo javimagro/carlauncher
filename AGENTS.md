@@ -8,6 +8,14 @@
 - Trabaja desde este proyecto Windows; usa PowerShell o un intérprete explícito. Las rutas de las referencias están en `README.md`. BMWLauncher Android y DriveHub son referencias de solo lectura.
 - Reproduce el síntoma y sigue el dato o evento hasta sus consumidores antes de corregirlo. Separa causa demostrada, hipótesis y comprobación pendiente. Una prueba del simulador no demuestra que funcione en el coche.
 
+## Trabajo en paralelo y publicación desde cualquier hilo
+
+- GitHub `main` es la referencia común del código integrado. Para una tarea en paralelo, ejecuta `git fetch origin main` y abre un worktree con su propia rama `codex/<tarea>` desde `origin/main`. Comprueba la ruta, la rama y `git status` antes de editar. Cada hilo conserva su índice y sus cambios locales.
+- Cuando la tarea esté probada, crea un commit con sus cambios, sube la rama y abre una PR a `main` dentro de la autorización del usuario. Incluye las pruebas ejecutadas y los límites pendientes. Si se ha autorizado integrar y la revisión pasa, integra la PR. Informa del commit o de la PR y de si quedó pendiente o ya está en `main`. Un cambio que solo existe en un worktree sigue pendiente.
+- Cuando el usuario pida publicar BMWLauncher desde cualquier hilo, consulta el `main` remoto actualizado, las PR abiertas hacia `main` y el estado de los worktrees locales de este repositorio. La petición de publicar incluye integrar las PR terminadas y verificadas que correspondan al alcance de esa versión. Si quedan cambios sin integrar, identifica su tarea y si afectan a la versión solicitada. Conserva borradores, experimentos y cambios ajenos a la versión en sus ramas.
+- Prepara la versión y empaqueta desde un checkout limpio del commit de `main` que vaya a etiquetarse. Ejecuta las comprobaciones del proyecto, comprueba versiones y dependencias de la app y del motor, y valida el ZIP de MGU Store. Verifica en GitHub que la etiqueta apunta al commit probado y que la release contiene el artefacto y su suma SHA-256. Comunica la etiqueta, el commit y el enlace de descarga.
+- Una integración en `main` prepara el próximo lanzamiento. La publicación de un tag y un ZIP de MGU Store se hace cuando se solicita una versión.
+
 ## Lenguaje según responsabilidad y medición
 
 | Parte | Implementación preferida | Cuándo usar otra |

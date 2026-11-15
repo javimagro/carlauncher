@@ -131,9 +131,11 @@ El guiado se mantiene en BMW mediante `Guidance.startGuidance`; el motor origina
 
 ### Asistente LLM
 
+La sesión de DriveHub comparte un aviso temporal para el asistente, el botón HV, las acciones del mapa y el regreso a iDrive. La vista lo centra en la parte inferior del mapa. El aviso más reciente sustituye al anterior, caduca a los cuatro segundos y se limpia al ocultar la superficie.
+
 La sesión posee `assistant.js` y el almacén asíncrono `assistant-config.js`. `assistant-panel.js` comparte controles y paletas de navegación; `assistant-tools.js` limita las herramientas y `assistant-drivehub.js` las resuelve contra los controladores existentes. El modelo no accede a credenciales ni ejecuta comandos arbitrarios. Radio requiere aceptación y anuncio de emisora activa antes de informar confirmación.
 
-WebSocket vive en `assistant-worker.js`, con UID OAP/uplink y `ws` compatible con Node 8. Otro auxiliar, `assistant-audio.js`, coordina conversión PCM por FFmpeg y destino multimedia de la app. Claves cifradas por dispositivo fuera del componente publicable; acciones con ID, cancelación y plazo. Micrófono, sonido real y cuentas API requieren validación posterior. [Contrato, capacidades y límites](ASISTENTE-MGU21.md).
+WebSocket vive en `assistant-worker.js`, con UID OAP/uplink y `ws` compatible con Node 8. Otro auxiliar, `assistant-audio.js`, coordina conversión PCM por FFmpeg y destino multimedia de la app. El almacén cifrado reside fuera del componente publicable, en el directorio de datos de la MGU o, para el simulador, en el perfil de usuario del PC. Las acciones tienen ID, cancelación y plazo. Micrófono, sonido y conexión del asistente requieren validación en la MGU. [Contrato, capacidades y límites](ASISTENTE-MGU21.md).
 
 ## Investigación comunitaria y validación
 

@@ -31,9 +31,29 @@ test('el plan no escribe en una superficie o capa existente', function () {
   const plan = probe.buildPlan(scene, 789, 0x424d5701);
   assert.equal(plan.execute, false);
   assert.equal(plan.nativeLayerId, plan.newSurfaceId);
-  assert.deepEqual(plan.steps.find(function (s) { return s.action === 'set-own-visibility'; }).args,
-    [0x424d5701, 'NEW_HANDLE', 67]);
-  assert.equal(plan.steps.filter(function (s) { return s.args; }).length, 2);
+  assert.equal(plan.owner, 0x424d5701);
+  assert.equal(plan.steps.find(function (s) { return s.action === 'create-own-instance'; }).sessionHandle, 0);
+  assert.deepEqual(plan.steps.find(function (s) { return s.action === 'set-own-rendering'; }).args,
+    [0, 'NEW_HANDLE', 67, []]);
+  assert.deepEqual(plan.steps.find(function (s) { return s.action === 'release-own-instance'; }).args,
+    [0, 'NEW_HANDLE']);
+  assert.deepEqual(plan.steps.find(function (s) { return s.action === 'initialize-own-performance'; }).args,
+    [0, 'NEW_HANDLE', 0x53]);
+  assert.deepEqual(plan.steps.find(function (s) { return s.action === 'initialize-own-base-content'; }).args,
+    [0, 'NEW_HANDLE', [[15, true]]]);
+  assert.equal(plan.steps.filter(function (s) { return s.args; }).length, 4);
+});
+
+test('la cartografía se habilita antes del dibujo y solo para el handle nuevo', function () {
+  const plan = probe.buildPlan(probe.parseScene(snapshot), 789, 0x424d5702);
+  const content = plan.steps.findIndex(function (s) { return s.action === 'initialize-own-base-content'; });
+  const rendering = plan.steps.findIndex(function (s) { return s.action === 'set-own-rendering'; });
+  assert.ok(content > 0 && content < rendering);
+  assert.equal(plan.steps[content].method, 0x20);
+  assert.equal(plan.steps[content].service, 'FA95');
+  plan.steps.filter(function (s) { return s.args; }).forEach(function (s) {
+    assert.equal(s.args[1], 'NEW_HANDLE');
+  });
 });
 
 test('el diagnóstico rechaza capturas concatenadas, IDs reservados y tamaños excesivos', function () {

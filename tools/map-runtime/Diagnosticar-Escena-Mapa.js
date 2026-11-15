@@ -100,16 +100,21 @@ function buildPlan(scene, surfaceId, ownerId) {
     limitSeconds: 45,
     steps: [
       { action: 'reserve-own-ids-and-arm-independent-cleanup', detail: 'Confirmar además que el sceneId RAMSES nuevo no está ocupado; IVI no enumera las escenas RAMSES.' },
-      { action: 'create-own-instance', service: 'FA94', instance: 1, version: '30.11', method: 2,
+      { action: 'create-own-instance', service: 'FA94', instance: 1, version: '30.11', method: 2, sessionHandle: 0,
         detail: 'Guardar únicamente el handle NUEVO de la respuesta; no aceptar MAIN, un handle existente ni un timeout como creación.' },
       { action: 'configure-native-layer', layerId: surfaceId, surfaceId: surfaceId,
-        detail: 'Esperar capa/superficie nuevas, comprobar NavigationBasic como productor, configurar tamaño y rectángulos del panel izquierdo con opacidad CERO antes de añadir SOLO esta capa a screen 4. No crear una segunda capa.' },
-      { action: 'set-own-visibility', service: 'FA95', instance: 1, version: '5.2', method: 0x30,
-        args: [ownerId, 'NEW_HANDLE', VISIBLE],
+        detail: 'Esperar capa/superficie nuevas, comprobar NavigationBasic como productor, configurar tamaño y rectángulos del panel izquierdo con opacidad cero y añadir solo esta capa a screen 4. Conservar el orden y las demás capas.' },
+      { action: 'initialize-own-performance', service: 'FA95', instance: 1, version: '5.2', method: 0x33,
+        args: [0, 'NEW_HANDLE', 0x53], detail: 'Nivel por instancia usado por NavController; abortar si no llega confirmación.' },
+      { action: 'initialize-own-base-content', service: 'FA95', instance: 1, version: '5.2', method: 0x20,
+        args: [0, 'NEW_HANDLE', [[15, true]]],
+        detail: 'Tras el tema, habilitar cartografía base solo en la vista propia. Un ACK no prueba dibujo. --run-baseline omite esta orden para comparar.' },
+      { action: 'set-own-rendering', service: 'FA94', instance: 1, version: '30.11', method: 0x3b,
+        args: [0, 'NEW_HANDLE', VISIBLE, []],
         detail: 'Correlacionar client/session/request y capturar respuesta o error; no acumular órdenes si expira.' },
-      { action: 'observe', detail: 'Mantener opacidad cero hasta observar avance de frames propios y tamaño correcto; entonces permitir ensayo visual. Contadores antes/después, respuesta de transacción y captura; cero frames sigue siendo fallo aunque el RPC sea OK.' },
+      { action: 'observe', detail: 'Mantener opacidad cero durante la sonda. Comparar contadores, respuesta de transacción y captura directa de la superficie propia. Ni los contadores ni un ACK validan el contenido de la imagen.' },
       { action: 'release-own-instance', service: 'FA95', instance: 1, version: '5.2', method: 3,
-        args: [ownerId, 'NEW_HANDLE'] },
+        args: [0, 'NEW_HANDLE'] },
       { action: 'restore-and-compare', detail: 'Retirar únicamente objetos propios; comparar la escena con la referencia y confirmar cockpit intacto. No parar ni borrar guiado.' }
     ]
   };

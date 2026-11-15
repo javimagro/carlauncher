@@ -13,6 +13,10 @@ New-Item -ItemType Directory -Force -Path $Output | Out-Null
 $mapSource = Join-Path $PSScriptRoot 'map-own-instance.cpp'
 $mapObject = Join-Path $Output 'map-own-instance.o'
 $mapBinary = Join-Path $Output 'map-own-instance'
+& "$LlvmRoot/bin/clang.exe" --target=x86_64-linux-gnu "--sysroot=$Sysroot" -std=c++14 -Wall -Wextra -Werror -nostdinc++ `
+    -isystem "$Sysroot/usr/include/c++/7" -isystem "$Sysroot/usr/include/x86_64-linux-gnu/c++/7" `
+    -fsyntax-only (Join-Path $PSScriptRoot 'map-base-content.test.cpp')
+if ($LASTEXITCODE -ne 0) { throw 'Falló la regresión de serialización de cartografía' }
 & "$LlvmRoot/bin/clang.exe" --target=x86_64-linux-gnu "--sysroot=$Sysroot" -std=c++14 -O2 -fPIE -Wall -Wextra -Werror -nostdinc++ `
     -isystem "$Sysroot/usr/include/c++/7" -isystem "$Sysroot/usr/include/x86_64-linux-gnu/c++/7" -isystem $VsomeipHeaders `
     -idirafter "$LlvmRoot/sysroot/usr/include/x86_64-linux-android" -idirafter "$LlvmRoot/sysroot/usr/include" `
@@ -28,8 +32,12 @@ $mapElf = & "$LlvmRoot/bin/llvm-readelf.exe" -h -l -d --version-info $mapBinary
 if ($LASTEXITCODE -ne 0) { throw 'Falló la inspección ELF' }
 $mapElf | Set-Content -LiteralPath (Join-Path $Output 'elf.txt') -Encoding utf8
 if (!(($mapElf -join "`n") -match '/lib/ld-linux-x86-64.so.2')) { throw 'Intérprete inesperado' }
+foreach ($mapScript in @('Ensayar-Mapa-Propio.js', 'Diagnosticar-Escena-Mapa.js')) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $mapScript) -Destination (Join-Path $Output $mapScript)
+}
 @{
     sourceSha256 = (Get-FileHash -LiteralPath $mapSource -Algorithm SHA256).Hash.ToLowerInvariant()
+    contentHeaderSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'map-base-content.h') -Algorithm SHA256).Hash.ToLowerInvariant()
     binarySha256 = (Get-FileHash -LiteralPath $mapBinary -Algorithm SHA256).Hash.ToLowerInvariant()
     compiler = (& "$LlvmRoot/bin/clang.exe" --version | Select-Object -First 1)
     flags = '-std=c++14 -O2 -fPIE -Wall -Wextra -Werror; Ubuntu 18.04/glibc 2.27 sysroot'
