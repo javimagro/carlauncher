@@ -1,14 +1,16 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.15 de prueba** corrige pérdidas de audio por desbordamiento de la cola PCM de TDTWorld y limita los reintentos cuando falla el arranque del auxiliar de audio. Conserva la selección de fuente de La Sexta, la corrección de tensión/corriente HV y la interfaz de 0.2.14.
+La **0.2.16 de prueba** activa la vista alta de BMWLauncher después de instalar y reiniciar iDrive: aprovecha los 76 píxeles de la barra superior sin ocupar la climatización. Ajusta también el toque de esa franja. Conserva los cambios de vídeo, audio, tensión/corriente HV e interfaz de las versiones anteriores; no añade una solución nueva al sonido ni a los mapas.
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.15**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15). Pasan **226 pruebas locales** y comprobaciones de sintaxis/carga con Node 8.16.2.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.16**. **Reinicia iDrive con el coche parado** para activar el área táctil ampliada. Hasta entonces la app conserva el tamaño normal. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.16).
+
+Verificación local: 232 pruebas, capturas de ambos tamaños, activación/retirada en Node 8.16.2 y empaquetado de los tres componentes mediante el lector de Store.
 
 El ensayo local de TDT pasa de descartar 169.088 bytes de audio (0,88 s) a cero por desbordamiento, sin aumentar el búfer. Entrega 250 cuadros sin vaciados ni reconexiones, también con la salida PCM bloqueada y con Node 8.16.2. Es una prueba con receptor de audio en el PC; no demuestra sonido limpio ni sincronía en los altavoces del i4. [Medidas y límites](TDT-AUDIO-MGU21.md).
 
-La investigación de BMW/AA añade protecciones para rechazar superficies del cockpit, Hmi8 y capas compartidas. La herramienta manual de mapa empieza transparente y exige cuadros propios antes de mostrar la capa. Estas herramientas no activan automáticamente un mapa en la app. El perfil alto continúa siendo optativo.
+La investigación de BMW/AA añade protecciones para rechazar superficies del cockpit, Hmi8 y capas compartidas. La herramienta manual de mapa empieza transparente y exige cuadros propios antes de mostrar la capa. Estas herramientas no activan automáticamente un mapa en la app.
 
-**El audio TDT continuo y sincronizado y los mapas BMW/AA a la izquierda siguen pendientes.** No se modifica el mapa del cockpit. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
+**El audio TDT continuo y sincronizado y los mapas BMW/AA a la izquierda siguen pendientes.** La cobertura física de la barra y el toque de la vista alta requieren prueba en el i4. No se modifica el mapa del cockpit. Para volver atrás, reinstala BMWLauncher y Motor gráfico de la [0.2.15](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15) mediante la Store y reinicia iDrive; el hook de retirada elimina únicamente nuestro ajuste táctil.
 
 ## Referencia de la versión anterior
 
@@ -43,7 +45,7 @@ La interfaz reserva el lado izquierdo para la cartografía BMW, todavía pendien
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.15**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. Reinicia iDrive con el coche parado si la Store indica que el filtro requiere reinicio. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15).
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.16**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. El motor requiere mgu-deploy 0.7.0 o superior para sus hooks. Reinicia iDrive con el coche parado para aplicar el nuevo toque. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.16).
 
 La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
 
@@ -90,7 +92,19 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Toca la casita para cerrar la vista.
+El simulador arranca con contenido reproducible. Añade `--tall` para probar la vista de 1960 × 572, `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Toca la casita para cerrar la vista.
+
+### Vista alta de prueba en iDrive 8
+
+**La 0.2.16 activa el perfil alto al instalar y reiniciar iDrive.** Las versiones 0.2.14 y 0.2.15 incluían el tamaño, pero no su activación. La 0.2.13 no lo incluía.
+
+El área normal de ID8 es `0,76,2880,764`: deja los 76 píxeles físicos superiores para la barra BMW y termina en y=840, antes de climatización. El perfil alto usa 1960 × 572 y necesita el área física `0,0,2880,840`, tanto para dibujo como para toque. Cambiar solo la altura del lienzo no ocupa esa franja.
+
+El motor incluye `JAVI_DRIVEHUB_TALL=1` y hooks de instalación/retirada. El de instalación añade un bloque identificado con `touch_area = 0,0,2880,840` en `/var/opt/mgu-render/mgu-render.local.conf`. **Amplía el límite táctil global, pero solo se consumen los toques reclamados por una app visible.** No cambia `app_area`: las demás apps reciben el tamaño normal. BMWLauncher sitúa únicamente su propia capa más arriba mediante PLACE y la oculta al salir o ceder ante la cámara. No se activa el modo overlay que pasaría por encima de la cámara.
+
+Un marcador temporal en `/run` impide usar el tamaño alto antes de reiniciar. Tras el arranque se verifica nuestro bloque antes de cargar la geometría; si falta o se ha alterado, se conserva el perfil normal. Los hooks son idempotentes, conservan las otras opciones y rechazan áreas personalizadas incompatibles en lugar de sustituirlas. No reinician la MGU ni el renderizador durante la instalación. La retirada borra solo nuestro bloque y solicita reinicio.
+
+Pendiente de validar en el i4: cobertura real de la barra, toque en toda la superficie, casita/retorno y prioridad de cámara, conservando climatización y cockpit. En local se comprueban ambos tamaños, el ciclo de activación/reinicio/retirada, configuraciones personalizadas, toque en la casita superior y recuperación tras ocultación. Para revertir, reinstalar la 0.2.15 desde la Store y reiniciar. [Configuración de mgu-render](https://github.com/robertnisipeanu/mgu-store/blob/main/native/mgu-render/README.md#settings).
 
 ### TDTWorld en DriveHub
 

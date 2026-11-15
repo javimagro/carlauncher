@@ -28,7 +28,13 @@ JavaScript es la opción para lógica de producto, eventos y E/S. C y C++ se res
 
 - El runner OAP ejecuta el bundle en otra VM. En respuestas binarias SOME/IP, validar Buffer con `Buffer.isBuffer` antes de usar `instanceof` de constructores del contexto. El cierre del SDK instalado es `shutdown()`; esperar su finalización antes de crear un cliente sustituto.
 - La selección de fuentes por proveedor pertenece al catálogo. Atres prioriza DASH para usar el adaptador MGU validado; mantiene HLS como alternativa y resuelve sus URL temporales de nuevo al cambiar de canal. La vista no decide transportes ni guarda sus credenciales.
-- TDT reproduce por toque/OK y conserva navegación del foco con la rueda; sus listas comparten EPG/progreso. Configuración contiene país, duración de información y último canal. Los avisos de navegación/asistente/preacondicionamiento comparten el toast del panel izquierdo. El perfil alto es optativo, con dibujo y toque del renderer en la misma área; el perfil normal sigue siendo el predeterminado.
+- TDT reproduce por toque/OK y conserva navegación del foco con la rueda; sus listas comparten EPG/progreso. Configuración contiene país, duración de información y último canal. Los avisos de navegación/asistente/preacondicionamiento comparten el toast del panel izquierdo. Desde 0.2.16 el servicio pide el perfil alto, condicionado a la instalación y reinicio descritos a continuación.
+
+### Vista alta y límite táctil desde 0.2.16
+
+`display-profile.js` decide el perfil antes de cargar el estado/interfaz. `display-profile-install.js` añade y retira un bloque propio en la configuración local de mgu-render mediante hooks de mgu-deploy >=0.7.0, sin reiniciar servicios. Amplía únicamente `touch_area` a 0,0,2880,840; no modifica `app_area` ni el modo de overlay. Así las demás apps siguen recibiendo el encuadre habitual y BMWLauncher usa PLACE en su propia capa para el lienzo de 1960×572. Las reclamaciones táctiles siguen dependiendo de visibilidad y cesión a la cámara del renderer existente.
+
+El hook crea primero un marcador en `/run`, escribe atómicamente el bloque y comunica reinicio pendiente. Hasta el siguiente arranque el servicio usa 1960×520. Después exige el bloque sin anulaciones para habilitar la vista alta; no infiere que cambiar un archivo haya reconfigurado el renderer activo. Áreas personalizadas incompatibles detienen la activación sin sobrescribirlas. La retirada conserva las demás opciones y restaura el límite previo tras reiniciar. La configuración se consulta una vez al iniciar el servicio, nunca por fotograma. No modifica capas del cockpit. La verificación física de cobertura/toque sigue pendiente.
 
 ## Límites entre componentes
 

@@ -1,7 +1,7 @@
 {
   "id": "javi-carlab",
   "kind": "tool",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "title": "Motor gráfico de BMWLauncher",
   "description": "Dibuja BMWLauncher y gestiona sus tarjetas integradas.",
   "mguHmi": [
@@ -11,7 +11,8 @@
   "uninstallable": true,
   "requires": {
     "mgu-render": "0.6.10",
-    "iteriodev-overlays": "0.4.0"
+    "iteriodev-overlays": "0.4.0",
+    "mgu-deploy": "0.7.0"
   },
   "files": [
     {
@@ -513,6 +514,16 @@
       "path": "navigation-displays.js",
       "from": "navigation-displays.js",
       "mode": "0644"
+    },
+    {
+      "path": "display-profile.js",
+      "from": "display-profile.js",
+      "mode": "0644"
+    },
+    {
+      "path": "display-profile-install.js",
+      "from": "display-profile-install.js",
+      "mode": "0644"
     }
   ],
   "units": [
@@ -529,5 +540,15 @@
   ],
   "recmgr": [
     "javi-carlab"
+  ],
+  "activate": [
+    "node",
+    "display-profile-install.js",
+    "activate"
+  ],
+  "deactivate": [
+    "node",
+    "display-profile-install.js",
+    "deactivate"
   ]
 }

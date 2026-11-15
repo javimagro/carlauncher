@@ -2,6 +2,31 @@
 
 Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden a reproducirlas. La [arquitectura](ARQUITECTURA.md) describe las decisiones vigentes. Lee las entradas relacionadas antes de cambiar el mismo componente. Añade las entradas más recientes arriba y actualiza una incidencia abierta cuando se confirme su causa o se cierre.
 
+## 2026-11-15 · Entrega 0.2.16: activación de la vista alta
+
+- **Petición:** publicar la corrección para aprovechar la franja superior de BMWLauncher. La investigación anterior detectó que 0.2.14/15 solo incluían el perfil de simulador, sin activarlo en la unidad.
+- **Implementación:** unidad systemd pide el perfil alto. Hooks de mgu-deploy >=0.7.0 añaden/retiran un bloque propio de `touch_area=0,0,2880,840`; conservan `app_area` para las otras apps. Solo la capa de BMWLauncher usa el nuevo PLACE. No se activa overlay ni se alteran capas del cockpit.
+- **Reinicio y reversión:** el hook marca reinicio pendiente en `/run` antes de escribir y no reinicia servicios. El proceso conserva 520 de alto hasta el arranque siguiente; después habilita 572 solo con configuración válida. Escrituras atómicas, idempotencia, retirada del bloque propio y rechazo de áreas personalizadas incompatibles. Reinstalar 0.2.15 mediante Store y reiniciar revierte el ajuste.
+- **Verificación:** regresiones de instalación/retirada, configuración ausente/personalizada/modificada, dimensiones centrales, casita en la franja ganada, ocultación y recuperación. Capturas locales comparadas a 1960×520 y 1960×572. Node 8.16.2 carga los módulos y ejecuta el ciclo real de escritura/espera de reinicio/retirada sobre archivos temporales. Sin nuevos binarios nativos.
+- **Resultado final local:** 232 pruebas correctas; lector Store empaqueta los tres componentes con `ok:true` en Node 8.16.2; enlace OAP sintético de 17 módulos. ZIP de 131 archivos, 10.525.756 bytes, SHA-256 `bcc35572fe256db53392fa6b3e2880b74da1c6b674a528def37374ab4dc0cea6`. Los auxiliares y hooks están incluidos; SDK y paquetes sintéticos quedan fuera de la publicación.
+- **Entrega:** BMWLauncher y Motor gráfico 0.2.16; Captura del mando 1.0.0. Se conservan la investigación documental AA/RideTube y las correcciones de 0.2.15. Se verifican suite completa, lector de Store, enlace OAP sintético, ZIP y publicación remota antes de anunciarla.
+- **Pendiente:** validar cobertura real de la barra, toque, casita y cámara en el i4. No se ha accedido por ENET/SSH ni instalado/reiniciado el coche. El sonido TDT y la imagen BMW/AA siguen pendientes; esta entrega no los presenta como resueltos.
+
+## 2026-11-15 · Por qué la actualización conserva la barra superior BMW
+
+- **Síntoma:** el usuario esperaba la vista alta acordada en el chat «Cambios esteticos sencillos», pero la versión instalada conservaba la barra superior.
+- **Contraste:** leído ese chat y comparadas las etiquetas 0.2.13, 0.2.14 y 0.2.15. La 0.2.13 fija 520 de alto. Las dos siguientes contienen el selector `JAVI_DRIVEHUB_TALL=1` para 572; ninguna lo activa en la unidad systemd ni configura mgu-render. El chat original solo daba por lista la vista en el emulador y dejaba pendiente la activación física.
+- **Causa demostrada en la entrega:** la actualización instala soporte optativo, pero conserva el perfil normal. mgu-render limita el toque normal de ID8 a `0,76,2880,764` y anuncia esa misma área; las capturas guardadas de la unidad corroboran y=76/alto=764. No basta con estirar el dibujo para cubrir y=0..76. Con perfil alto, el servicio exige `0,0,2880,840`.
+- **Corrección documental:** recuperada en este README la sección de vista alta del otro chat y aclarado que no se activa al actualizar. No se han cambiado servicios ni configuración del coche. No hay un fallo nuevo de renderizado demostrado: faltó completar la activación para la instalación física.
+- **Pendiente:** activar/validar dibujo y toque conjuntamente, comprobar casita/cámara/climatización y preservar cockpit. Los parámetros actuales son globales para otras apps del renderer; no introducir un cambio global silencioso en una actualización. No se publica una versión nueva por esta revisión.
+
+## 2026-11-15 · Referencias Waze on cluster y RideTube
+
+- **Estado:** 0.2.15 publicada en `main` y `v0.2.15`, commit `aa702b286f447607175794ce1323a00ff9e4fa34`. Release y SHA-256 remoto coinciden con el paquete final. La petición posterior de investigar Waze/YouTube se documenta en local, sin cambiar esa etiqueta.
+- **Mapas:** revisado código y documentación de idrive-apps `1fc3812`: el receptor adicional AVB recibe el mapa secundario RTP/H.264, no la superficie central. Waze se documenta por CarPlay; AA, con Google Maps. Su parche rechaza una revisión ID8. No aplicar el parche del cuadro para conseguir el mapa izquierdo; primero validar un flujo independiente y pasivo. [Detalle y límites](ANDROID-AUTO-MGU21.md).
+- **Audio:** revisado RideTube `6336494`: MediaPlayer/OapGenericMedia + CommandControl + playFile, con vídeo siguiendo el reloj BMW. El catálogo y la captura de fuentes de nuestro i4 confirman instancia 40, fuente 1046 OAPGenericMedia y salida 1024 MediaSink_Front. Diferente de DynamicTempMedia + PCM/ALSA de nuestros ensayos. Queda probar audio audible y soporte continuo; sus archivos M4A completos no prueban HLS en directo. [Contratos y prueba propuesta](TDT-AUDIO-MGU21.md).
+- **Cambios y verificación:** documentación de fuentes primarias fijadas por revisión y contraste con catálogos/capturas locales, sin cambios de producción ni pruebas nuevas de altavoces. Sin acceso SSH, instalación, reinicio ni cambios del cockpit.
+
 ## 2026-11-15 · Entrega 0.2.15: correcciones offline de TDT y protecciones de mapas
 
 - **Petición:** publicar los cambios locales de la entrada siguiente. App y Motor gráfico pasan a 0.2.15; Captura del mando permanece en 1.0.0, sin cambiar identificadores, UUID ni nativos.

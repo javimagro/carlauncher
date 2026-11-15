@@ -1,5 +1,24 @@
 # Vídeo de Android Auto en MGU21
 
+## Referencia comunitaria contrastada · 15-11-2026
+
+Petición del usuario: estudiar los mapas de Waze en el cockpit de otros proyectos para aprovechar su vídeo en el panel izquierdo. Consulta pública de `robertnisipeanu/idrive-apps`, revisión **1fc3812993847096311e629fe4cb2a73439c241e**, posterior a la entrega 0.2.15. No se ha conectado ni modificado la MGU.
+
+### Qué hace realmente Waze on cluster
+
+- [README del receptor](https://github.com/robertnisipeanu/idrive-apps/blob/1fc3812993847096311e629fe4cb2a73439c241e/native/waze-on-cluster/README.md): recibe un **segundo flujo de proyección** que el teléfono genera para el cuadro. Documenta Waze/Apple Maps/Google Maps por **CarPlay** y Google Maps por **Android Auto**. Esto no establece qué mapas alternativos admite hoy cada versión de Waze para Android.
+- El flujo es H.264 en RTP en `media_transport.avb_streaming.15`. [avb_source.cpp](https://github.com/robertnisipeanu/idrive-apps/blob/1fc3812993847096311e629fe4cb2a73439c241e/native/waze-on-cluster/src/avb_source.cpp) usa un receptor adicional con `ias_avbbridge_create_receiver`, `ias_avbbridge_register_H264_cb` y `ias_avbbridge_destroy_receiver`. No captura la pantalla completa de Hmi8. La cola acotada separa recepción, decodificación Media SDK y presentación en cluster-render.
+- El [parche de AA](https://github.com/robertnisipeanu/idrive-apps/blob/1fc3812993847096311e629fe4cb2a73439c241e/native/waze-on-cluster/patch/PATCH.md#android-auto) habilita el segundo display, su arranque y geometría en aapd/aapd.conf. **El propio proyecto rechaza aapd 23.16.5 de ID8**, build-id `ef291b7185f210a24d8e68855d94d44e9f32cb62`: cambia la condición SECOND_VIDEO_SCREEN_MODE y falta onNewNavigationStatus. No es evidencia de compatibilidad del parche con nuestro i4 ni una identificación del build-id de nuestro ELF.
+- Esta ruta contiene el mapa secundario: no implica disponer de los menús o del vídeo central completo, ni admite asumir entrada táctil/rueda sobre esa imagen. La activación y el dibujo en el cuadro del proyecto son ajenos a nuestro objetivo de preservar el cockpit.
+
+### Aplicación a BMWLauncher
+
+La referencia refuerza la viabilidad de recibir vídeo **antes de la composición**, pero no resuelve qué flujo central publica nuestra MGU. El análisis local anterior ya encontró la URI AVB .15; todavía no se ha probado su asociación con MAIN_DISPLAY. El ensayo físico del 14-11 únicamente confirmó el estado de streaming central con BMWLauncher abierto.
+
+La próxima comprobación útil es inventariar de forma pasiva la configuración AVB y el puente de esta unidad, identificar el flujo MAIN y comprobar si admite un receptor adicional sin cambiar productor ni destinatario. Faltan en las extracciones revisadas aapd.conf y la implementación del puente `libias-media_transport-avb_ufipc_bridge`. Un segundo flujo ya activo podría ser otra fuente de imagen, pero no se solicitará ni reconfigurará el display IC para hacerlo aparecer. No se instala el parche de Waze on cluster ni se toca coding, RAMSES, DCSM o la geometría de Hmi8.
+
+Si se valida una fuente independiente: recibir RTP/H.264 con cola acotada, esperar SPS/PPS/keyframe, decodificar y escribir nuestro anillo MGVF para dibujarlo solo en el panel izquierdo. Si el central sigue siendo interno de Cinemo, continuar con el consumidor OnVideoFrame documentado abajo. La imagen real y el control interactivo son verificaciones separadas. Esta investigación **no añade una captura operativa a 0.2.15**.
+
 ## Continuación sin ENET · 14-11-2026
 
 Análisis de los mismos ELF descargados, sin conexión a la MGU. El proveedor ELF de REA sigue sin estar disponible en Windows; se usó el **Ghidra 12.1.4 local**, con base de imagen cero, decompilación centrada en funciones y contraste de límites con `.eh_frame`/LLVM. Pseudocódigo y binarios se conservan fuera del repositorio. Los tipos inferidos no son una cabecera ABI validada.

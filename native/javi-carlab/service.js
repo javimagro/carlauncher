@@ -3,7 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile, fork } = require('child_process');
-const { fitArea } = require('./layout.js');
+const displayProfile = require('./display-profile');
+if (process.env.JAVI_DRIVEHUB_TALL === '1' && !displayProfile.selectEnvironment(process.env)) {
+    console.warn('BMWLauncher: vista normal hasta reiniciar iDrive y confirmar la configuración táctil');
+}
 const record = require('./vendor/kit_record.js');
 const createSession = require('./drivehub-session.js');
 const { listen } = require('./controller-input.js');
@@ -106,15 +109,9 @@ const session = createSession(gpu, {
     },
     get: downloadAsApp,
     area(screen, info) {
-        if (!info || info.modes.indexOf('layer') < 0 || screen.w !== 2880 || screen.h !== 960) {
-            console.warn('BMWLauncher requiere la salida ID8 de 2880 x 960 y el modo layer');
-            return null;
-        }
-        if (height === 572 && (!info.appArea || info.appArea.x !== 0 || info.appArea.y !== 0 || info.appArea.w !== 2880 || info.appArea.h !== 840)) {
-            console.warn('BMWLauncher: la vista alta requiere que mgu-render anuncie 0,0,2880,840');
-            return null;
-        }
-        return fitArea(info.appArea, width, height);
+        const area = displayProfile.selectArea(screen, info, width, height);
+        if (!area) console.warn('BMWLauncher requiere el área central ID8 de 2880 x 960 y modo layer');
+        return area;
     }
 });
 const input = listen('/run/javi-carlab/controller.sock', (event) => {

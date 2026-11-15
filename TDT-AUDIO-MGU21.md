@@ -1,5 +1,41 @@
 # Audio nativo de TDT · MGU21
 
+## Ruta de RideTube contrastada con el i4 · 15-11-2026
+
+Investigación pública posterior a publicar 0.2.15, sin ENET. Referencia: `JustAnotherPU/ridetube`, revisión **63364945d85344071dda0821464c4822372001e7**. Su [README](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/README.md) declara prueba en un X5 G05 iDrive 7; no valida automáticamente MGU21/ID8. Las capturas de interfaz del README son renders de PC, no fotos del coche.
+
+### Diferencia respecto a nuestra reproducción
+
+[ytd.js, Audio](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/native/jap-ridetube-d/ytd.js#L650) obtiene `MediaPlayer` en la instancia `OapGenericMedia`, conecta la fuente 1046 al sink 1024 mediante `CommandControl.connect` y llama `playFile` sobre un archivo de audio local. **No entrega PCM a nuestro auxiliar ALSA ni usa DynamicTempMedia para reproducirlo.** Se suscribe a tiempo, estado y error de reproducción; su vídeo sigue el tiempo que anuncia el reproductor BMW.
+
+Su [decodificador](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/native/ytdec/README.md) usa Media SDK/VPP y copia GPU antes de escribir MGVF, el mismo formato de anillo que admite nuestro renderer. Es una referencia para un backend futuro, no motivo para cambiar ahora el decodificador ya publicado. No se han trasladado a nuestro rendimiento las cifras que el autor mide en otro coche.
+
+### Coincidencias comprobadas en nuestros datos descargados
+
+Catálogo `someip-interfaces.json` del 14-11 y captura `audio-active-decoded.json` del 13-11, mantenidos fuera del repositorio:
+
+| Elemento | MGU21 del i4 |
+| --- | --- |
+| MediaPlayer | Servicio `0xb042`, versión 2.0; instancia `OapGenericMedia = 40` |
+| playFile | Método `258`; path UTF-16BE y LanguageCode; responde EntError |
+| setTime / sendButtonEvent | Métodos `264` / `257` |
+| CommandControl | Servicio `0xb020`, versión 1.1, instancia 1 |
+| connect / disconnect | Métodos 1 / 2 |
+| Fuente anunciada | `1046`, nombre `OAPGenericMedia` |
+| Salida anunciada | `1024`, nombre `MediaSink_Front` |
+
+Esto demuestra coincidencia de contrato e identificadores. **No demuestra que playFile esté disponible ni suene en nuestro coche**, porque no se ha probado esa combinación. La prueba anterior de foco y PCM utilizaba otra ruta. Los números se volverán a verificar por nombre y disponibilidad en el coche, sin elegir fuentes de avisos o llamadas.
+
+### Límite del directo y ensayo siguiente
+
+El [servicio de RideTube](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/native/jap-ridetube-d/README.md) necesita archivos M4A completos: primero prepara un fragmento inicial y luego cambia al archivo completo. El autor advierte que la transición puede oírse. **Esto no prueba reproducción HLS en directo ni audio sin huecos con fragmentos sucesivos.** No se sustituye TDT por archivos parciales concatenados ni se anuncia resuelto el audio.
+
+La prueba siguiente debe separar tres hechos: (1) reproducir un WAV/M4A completo mediante esta fuente y confirmar sonido limpio; (2) reproducir una muestra finita del canal y seguir el reloj BMW para medir A/V; (3) comprobar si el motor admite una fuente continua, registrando errores y tiempo efectivo, antes de diseñar el transporte del directo. Sin el tercer punto, RideTube aporta una vía para diagnosticar la salida, no una solución completa a TDT.
+
+El ensayo debe negarse si OAPGenericMedia ya está ocupado y liberar únicamente una conexión creada por él. No copiar el barrido de conexiones por sourceID que realiza RideTube: la fuente puede estar compartida con otra app. No cambiar volumen, rutas globales ni estado de las fuentes de seguridad. Es investigación local; **ninguna de estas acciones se ejecuta al instalar 0.2.15**.
+
+Se revisó también [MGU Video Hub](https://github.com/NamelsMissing/mgu-apps/blob/6440ecd937d98306e096168967e8798e52f819a1/apps/mgu_video_hub/README.md): documenta ALSA/aplay experimental, apagado por defecto y sin ruta BMW verificada. No aporta evidencia de sonido corregido frente a nuestro fallo.
+
 ## Corrección local de pérdidas de PCM · 14-11-2026, sin ENET
 
 **Hay una pérdida de audio corregida en el PC; el sonido limpio en el i4 sigue pendiente.** No se incorporan las variantes ALSA que el usuario seguía oyendo distorsionadas.
