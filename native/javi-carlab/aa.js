@@ -5,7 +5,14 @@ const { execFile } = require('child_process');
 
 const profileFile = '/var/opt/javi-carlab/aa.json';
 const recoveryFile = '/run/javi-carlab/aa-restore.json';
-const reserved = [0x197, 0x198, 0x19d, 0x19f];
+// MGU21 composes central AA inside Hmi8/100. It is not an AA-only surface.
+const reserved = [100, 0x197, 0x198, 0x19d, 0x19f];
+function isolatedProfile(p) {
+    const validId = (n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff;
+    return p && [p.layer, p.surface].every((id) => validId(id) && reserved.indexOf(id) < 0) &&
+        typeof p.process === 'string' && /^[A-Za-z0-9_.-]+$/.test(p.process) &&
+        !/^(?:hmi|cockpit|cluster)/i.test(p.process);
+}
 
 function ivi(args) {
     return new Promise((resolve, reject) => {
@@ -23,20 +30,33 @@ function loadProfile(file) {
     catch (err) { if (err.code === 'ENOENT') return null; throw err; }
     const validId = (n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff;
     if (!p || p.enabled !== true) return null;
-    if (![p.state, p.applet, p.layer, p.surface].every(validId) || reserved.indexOf(p.surface) >= 0 ||
-        typeof p.process !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(p.process)) throw new Error('Perfil AA incompleto o superficie reservada');
+    if (![p.state, p.applet].every(validId) || !isolatedProfile(p)) throw new Error('Perfil AA incompleto o superficie reservada');
     return p;
 }
 
 function layerInfo(scene, profile) {
+    if (!isolatedProfile(profile) || typeof scene !== 'string' || scene.length > 256 * 1024) return null;
     const blocks = new Map();
-    const heading = /^[ \t]*(screen|layer|surface)[ \t]+(\d+)[ \t]*:/gim;
+    const heading = /^[ \t]*(screen|layer|surface)[ \t]+(\d+)[ \t]*:?[ \t]*\r?$/gim;
     const headings = [];
     let match;
     while ((match = heading.exec(scene))) headings.push(match);
-    headings.forEach((m, index) => {
-        blocks.set(m[1].toLowerCase() + ':' + Number(m[2]), scene.slice(m.index + m[0].length, index + 1 < headings.length ? headings[index + 1].index : scene.length));
-    });
+    for (let index = 0; index < headings.length; index++) {
+        const m = headings[index], key = m[1].toLowerCase() + ':' + Number(m[2]);
+        if (blocks.has(key)) return null; // Concatenated snapshots are not one scene.
+        blocks.set(key, scene.slice(m.index + m[0].length, index + 1 < headings.length ? headings[index + 1].index : scene.length));
+    }
+    const members = (block, name) => {
+        const value = (new RegExp('^[ \\t]*' + name + ':[ \\t]*([^\\r\\n]*)', 'im').exec(block) || [])[1];
+        return value && /^[\d\s,]+$/.test(value) ? value.trim().split(/[\s,]+/).map(Number) : [];
+    };
+    if (members(blocks.get('screen:4') || '', 'layers').indexOf(profile.layer) < 0) return null;
+    for (const pair of blocks) {
+        if (pair[0].startsWith('layer:') && pair[0] !== 'layer:' + profile.layer &&
+            members(pair[1], 'surfaces').indexOf(profile.surface) >= 0) return null;
+        if (pair[0].startsWith('screen:') && pair[0] !== 'screen:4' &&
+            members(pair[1], 'layers').indexOf(profile.layer) >= 0) return null;
+    }
     const layer = blocks.get('layer:' + profile.layer) || '';
     const surface = blocks.get('surface:' + profile.surface) || '';
     const ids = (/^[ \t]*surfaces:[ \t]*([^\r\n]*)/im.exec(layer) || [])[1];

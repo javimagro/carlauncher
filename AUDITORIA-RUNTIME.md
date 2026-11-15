@@ -2,6 +2,8 @@
 
 La revisión posterior de las funciones nuevas, sus correcciones y medidas del 14-11-2026 está en [Auditoría integral](AUDITORIA-INTEGRAL.md). Este documento conserva la evidencia histórica de multimedia y mando.
 
+La continuación sin ENET del 14-11-2026 reproduce y corrige desbordamiento PCM con FFmpeg local, añade contadores por etapa y compara recepción normal/bloqueada con Node 24 y 8.16.2. La decompilación centrada con Ghidra local amplía el análisis anterior, aunque el proveedor ELF de REA siga sin estar disponible. [Mediciones actuales y pendientes de SmartX](TDT-AUDIO-MGU21.md#corrección-local-de-pérdidas-de-pcm--14-11-2026-sin-enet).
+
 ## Alcance y resultado
 
 Base: `7c5b544` / `v0.2.9`, más los cambios locales previos de los iconos y centrado del cockpit, que se conservan. Revisión de OAP, servicio, sesión, proveedores, reproducción, telemetría, captura C++ y manifiestos. Incluye dos revisiones independientes de corrección y estructura, reproducción local e inspección del firmware descargado. No se ha conectado con el coche ni publicado una versión durante esta auditoría.

@@ -103,11 +103,11 @@ function buildPlan(scene, surfaceId, ownerId) {
       { action: 'create-own-instance', service: 'FA94', instance: 1, version: '30.11', method: 2,
         detail: 'Guardar únicamente el handle NUEVO de la respuesta; no aceptar MAIN, un handle existente ni un timeout como creación.' },
       { action: 'configure-native-layer', layerId: surfaceId, surfaceId: surfaceId,
-        detail: 'Esperar capa/superficie nuevas, comprobar NavigationBasic como productor, configurar tamaño y rectángulos del panel izquierdo, añadir SOLO esta capa a la pantalla central preservando su orden anterior. No crear una segunda capa.' },
+        detail: 'Esperar capa/superficie nuevas, comprobar NavigationBasic como productor, configurar tamaño y rectángulos del panel izquierdo con opacidad CERO antes de añadir SOLO esta capa a screen 4. No crear una segunda capa.' },
       { action: 'set-own-visibility', service: 'FA95', instance: 1, version: '5.2', method: 0x30,
         args: [ownerId, 'NEW_HANDLE', VISIBLE],
         detail: 'Correlacionar client/session/request y capturar respuesta o error; no acumular órdenes si expira.' },
-      { action: 'observe', detail: 'Contadores antes/después, fuente RGBA, respuesta de transacción y captura; cero frames sigue siendo fallo aunque el RPC sea OK.' },
+      { action: 'observe', detail: 'Mantener opacidad cero hasta observar avance de frames propios y tamaño correcto; entonces permitir ensayo visual. Contadores antes/después, respuesta de transacción y captura; cero frames sigue siendo fallo aunque el RPC sea OK.' },
       { action: 'release-own-instance', service: 'FA95', instance: 1, version: '5.2', method: 3,
         args: [ownerId, 'NEW_HANDLE'] },
       { action: 'restore-and-compare', detail: 'Retirar únicamente objetos propios; comparar la escena con la referencia y confirmar cockpit intacto. No parar ni borrar guiado.' }

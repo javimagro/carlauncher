@@ -1,5 +1,13 @@
 # Mapa BMW: análisis del ensayo sin fotogramas
 
+## Ensayo actualizado sin ENET · 14-11-2026
+
+El ejecutor manual todavía añadía la capa propia con opacidad 1. Se ha incorporado la conclusión del ensayo físico: añadir la capa vacía produjo un pantallazo negro, mientras la misma capa transparente no lo produjo. `composeCommands` establece ahora **opacidad 0 antes de añadirla a screen 4**. Solo la revela tras dos observaciones con contador de cuadros creciente, tamaño 1038×468, productor NavigationBasic y pertenencia exclusiva a la pantalla central. Cada observación vuelve a comprobar propiedad; los objetos existentes y el cockpit no se modifican.
+
+Las regresiones comprueban que cero cuadros, contador desconocido/estático, tamaño inválido o capa compartida no permiten mostrarla. Esto prepara una prueba menos intrusiva; **no resuelve ni demuestra el origen de los cero cuadros**. Si el compositor limita el dibujo de capas transparentes, habrá que observar los eventos del productor antes de cambiar esa condición, sin presentar una capa vacía opaca como solución.
+
+La siguiente conexión sigue requiriendo IDs nuevos y autorización de ensayo temporal. No se ha abierto SSH, ejecutado el helper ni instalado ningún componente durante esta revisión local.
+
 13-11-2026. Continuación **en local**, con ENET desconectado. No se ha instalado ni ejecutado otra sonda en el coche. Se conserva el panel «Mapa BMW no disponible»: este análisis no convierte las superficies vacías del ensayo en un mapa funcional.
 
 ## Resultado

@@ -22,7 +22,7 @@ function composeCommands(surface, rect) {
     ['layer', id, 'configure', '1038', '468'],
     ['layer', id, 'srcrect', '0', '0', '1038', '468'],
     ['layer', id, 'dstrect'].concat(r.map(String)),
-    ['layer', id, 'opacity', '1'],
+    ['layer', id, 'opacity', '0'], // An empty opaque layer caused the confirmed black flash.
     ['layer', id, 'visibility', '1'],
     ['surface', id, 'srcrect', '0', '0', '1038', '468'],
     ['surface', id, 'dstrect', '0', '0', '1038', '468'],
@@ -41,7 +41,20 @@ function validateNewObjects(before, after, surface, sceneText) {
   if (!navigationProducer(sceneText, surface)) {
     throw new Error('La superficie no anuncia NavigationBasic como productor');
   }
+  if (report.nativeLayerOnScreens.some(function (id) { return id !== 4; })) {
+    throw new Error('La capa aparece fuera de la pantalla central');
+  }
   return report;
+}
+
+function revealCommands(before, after, surface, sceneText, previousFrames) {
+  const report = validateNewObjects(before, after, surface, sceneText);
+  const image = report.surface;
+  if (!Number.isSafeInteger(previousFrames) || previousFrames < 0 || !Number.isSafeInteger(image.frames) ||
+      image.frames <= previousFrames || !image.size || image.size[0] !== 1038 || image.size[1] !== 468 ||
+      report.nativeLayerOnScreens.length !== 1 || report.nativeLayerOnScreens[0] !== 4) return [];
+  // Advancing frames allow a visual trial, not a claim that the picture is a valid map.
+  return [['layer', String(surface), 'opacity', '1']];
 }
 
 function navigationProducer(sceneText, surface) {
@@ -219,13 +232,21 @@ async function run(options) {
     if (!ready || closed) throw new Error('Objetos nativos propios no disponibles');
     for (let i = 0; i < commands.length; ++i) await exec(IVI, commands[i]);
     session.stdin.write('SHOW\n');
+    let previousFrames = null, revealed = false;
     for (let i = 0; i < 20 && !closed; ++i) {
       await wait(1000);
       const text = await exec(IVI, ['scene']);
       fs.writeFileSync(path.join(directory, 'during.txt'), text, { mode: 0o600 });
-      const report = diagnostic.diagnose(diagnostic.parseScene(text), options.surface);
+      const scene = diagnostic.parseScene(text);
+      const report = validateNewObjects(before, scene, options.surface, text);
+      if (!revealed) {
+        const reveal = revealCommands(before, scene, options.surface, text, previousFrames);
+        for (let n = 0; n < reveal.length; ++n) await exec(IVI, reveal[n]);
+        revealed = reveal.length > 0;
+      }
+      previousFrames = report.surface.frames;
       process.stdout.write(JSON.stringify({ second: i + 1, status: report.status,
-        frames: report.surface && report.surface.frames, nativeVisible: report.nativeLayer && report.nativeLayer.visibility }) + '\n');
+        frames: report.surface.frames, revealed: revealed, nativeVisible: report.nativeLayer.visibility }) + '\n');
     }
     if (!closed) session.stdin.end('STOP\n');
   } finally {
@@ -251,4 +272,4 @@ if (require.main === module) main(process.argv.slice(2)).catch(function (error) 
   process.stderr.write(error.message + '\n'); process.exitCode = 1;
 });
 module.exports = { rectangle: rectangle, composeCommands: composeCommands, validateNewObjects: validateNewObjects,
-  removalCommands: removalCommands };
+  removalCommands: removalCommands, revealCommands: revealCommands };

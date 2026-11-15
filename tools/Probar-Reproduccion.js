@@ -79,7 +79,8 @@ if (process.argv[2] === '--server') {
             console.log(JSON.stringify({ isolated, blockAudio, noAudio, faults, firstFrameMs,
                 ringObservedGapMs: { p50: gaps[Math.floor(gaps.length * .5)], p95: gaps[Math.floor(gaps.length * .95)], max: gaps[gaps.length - 1] },
                 frames: seq, pcmBytes, advancesWhileBlocked, stats, statuses }, null, 2));
-            if (seq < 250 || (!noAudio && !pcmBytes) || faults !== 1 || (isolated && advancesWhileBlocked < 8)) process.exitCode = 1;
+            if (seq < 250 || (!noAudio && !pcmBytes) || faults !== 1 || (isolated && advancesWhileBlocked < 8) ||
+                (!noAudio && (!stats || !stats.pcmQueue || stats.pcmQueue.overflowBytes > 0))) process.exitCode = 1;
         }, 20);
     });
     server.on('error', (error) => { player.stop(); console.error(error.message); process.exitCode = 1; });

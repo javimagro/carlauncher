@@ -435,6 +435,36 @@ test('an initial HTTP failure retries with audio and never downgrades silently t
     assert(!states.includes('audio-unavailable'));
 });
 
+test('decoded PCM is throttled only with buffered video and drains after sink failure or cancellation', async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-pcm-flow-'));
+    const decoder = new EventEmitter(), sink = new EventEmitter();
+    decoder.kill = sink.kill = () => {};
+    decoder.stdout = new PassThrough(); decoder.stderr = new PassThrough();
+    decoder.stdio = [null, decoder.stdout, decoder.stderr, new PassThrough()];
+    sink.stdin = new PassThrough(); sink.stderr = new PassThrough(); sink.stdin.resume();
+    let attachment;
+    const player = createPlayer({ video(id, file) { attachment = file; } }, {
+        directory, bufferSeconds: 0.15, audio: { command: 'sink', args: [], maxRetries: 0 },
+        log: { warn() {} }, spawnProcess: (command) => command === 'sink' ? sink : decoder
+    });
+    t.after(() => { player.stop(); fs.rmdirSync(directory); });
+    player.ready({ video: true }); player.start(first.sources, () => {});
+    await new Promise((resolve) => setImmediate(resolve));
+    decoder.stdio[3].write(Buffer.alloc(64000));
+    assert.equal(decoder.stdio[3].isPaused(), false, 'PCM alone must not prevent the first video frame');
+    decoder.stdout.write(Buffer.alloc(640 * 360 * 3 / 2 * 6));
+    assert.equal(decoder.stdio[3].isPaused(), true, 'preserve decoded-ahead PCM instead of dropping it');
+    sink.emit('close', 8);
+    await eventually(() => attachment && fs.readFileSync(attachment).readUInt32LE(16) === 6);
+    assert.equal(decoder.stdio[3].isPaused(), false, 'ALSA failure must not leave the decoder blocked');
+    decoder.stdio[3].write(Buffer.alloc(64000));
+    decoder.stdout.write(Buffer.alloc(640 * 360 * 3 / 2 * 6));
+    assert.equal(decoder.stdio[3].isPaused(), true);
+    player.stop();
+    assert.equal(decoder.stdio[3].isPaused(), false);
+    assert.equal(decoder.stdout.isPaused(), false);
+});
+
 test('only a confirmed missing audio stream permits a video-only recovery', async (t) => {
     const decoders = [], states = [];
     const player = createPlayer({ video() {} }, { directory: os.tmpdir(), audio: { command: 'sink', args: [] },

@@ -2,7 +2,8 @@
 
 // Audio failure never pauses FFmpeg's PCM pipe or restarts its video decoder.
 function playAudio(pcm, changed, queue, audio, spawn, log) {
-    const stats = { receivedBytes: 0, submittedBytes: 0, droppedBytes: 0, backpressure: 0, failures: 0 };
+    const stats = { receivedBytes: 0, submittedBytes: 0, droppedBytes: 0,
+        notReadyBytes: 0, blockedBytes: 0, backpressure: 0, failures: 0 };
     let sink, ready = false, blocked = false, stopped = false;
     let timer, stalled, retry, draining;
     let failures = 0;
@@ -30,13 +31,13 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         release();
         log.warn('TDTWorld: salida de audio: ' + reason + (detail ? ' (' + detail + ')' : ''));
         changed('audio-' + reason, detail);
-        if (failures++ < maxRetries) retry = setTimeout(() => { retry = null; open(); }, retryMs * failures);
+        if (failures++ < maxRetries && !stopped) retry = setTimeout(() => { retry = null; open(); }, retryMs * failures);
     }
     function open() {
         if (stopped || sink) return;
         let peer;
         try { peer = spawn(audio.command, audio.args, { stdio: ['pipe', audio.handshake ? 'pipe' : 'ignore', 'pipe'] }); }
-        catch (_) { changed('audio-unavailable'); return; }
+        catch (_) { fail(sink, 'unavailable'); return; }
         sink = peer;
         changed('audio-connecting');
         let diagnostic = '', stderr = '', reply = '';
@@ -79,7 +80,12 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         timer = setTimeout(() => failure('timeout'), 4000);
     }
     function write(bytes) {
-        if (stopped || !ready || blocked) { stats.droppedBytes += bytes.length; return; }
+        if (stopped || !ready || blocked) {
+            stats.droppedBytes += bytes.length;
+            if (blocked && ready && !stopped) stats.blockedBytes += bytes.length;
+            else stats.notReadyBytes += bytes.length;
+            return;
+        }
         const peer = sink;
         stats.submittedBytes += bytes.length; // Pipe accepted bytes, NOT proof of ALSA playback.
         if (!peer.stdin.write(bytes)) {

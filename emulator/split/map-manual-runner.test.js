@@ -16,6 +16,7 @@ test('el ensayo compone únicamente la capa nativa propia y añade solo esa capa
   const commands = runner.composeCommands(id, [0, 0, 1038, 468]);
   const screenCommands = commands.filter(function (c) { return c[0] === 'screen'; });
   assert.deepEqual(screenCommands, [['screen', '4', 'add', String(id)]]);
+  assert.deepEqual(commands.filter((c) => c[2] === 'opacity'), [['layer', String(id), 'opacity', '0']]);
   commands.filter(function (c) { return c[0] !== 'screen'; }).forEach(function (c) {
     assert.equal(c[1], String(id));
     assert.notEqual(c[2], 'create');
@@ -23,6 +24,19 @@ test('el ensayo compone únicamente la capa nativa propia y añade solo esa capa
   });
   assert.throws(function () { runner.composeCommands(200, [0, 0, 1038, 468]); }, /reservado/);
   assert.throws(function () { runner.rectangle('2100,0,1038,468'); }, /fuera/);
+});
+
+test('el mapa empieza transparente y solo se revela tras avanzar sus cuadros propios', () => {
+  const visible = created('/usr/bin/NavigationBasic').replace('layers: 100', 'layers: 100 ' + id);
+  const reveal = (text, previous) => runner.revealCommands(baseline, diagnostic.parseScene(text), id, text, previous);
+  assert.deepEqual(reveal(visible, 0), []);
+  const withFrames = visible.replace('frames: 0', 'frames: 2');
+  assert.deepEqual(reveal(withFrames, null), []);
+  assert.deepEqual(reveal(withFrames, 2), []);
+  assert.deepEqual(reveal(withFrames, 1), [['layer', String(id), 'opacity', '1']]);
+  assert.deepEqual(reveal(withFrames.replace('1038x468', '0x0'), 1), []);
+  assert.throws(() => reveal(withFrames.replace('layers: 200', 'layers: 200 ' + id), 1), /fuera/);
+  assert.throws(() => reveal(withFrames.replace('/usr/bin/NavigationBasic', '/usr/bin/Hmi8'), 1), /productor/);
 });
 
 test('la creación exige IDs libres, productor NavigationBasic y pertenencia exclusiva', function () {

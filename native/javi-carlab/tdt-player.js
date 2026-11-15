@@ -82,12 +82,13 @@ function createRing(directory, w, h) {
 }
 
 function createPcmQueue(limit) {
+    if (!Number.isSafeInteger(limit) || limit < 4 || limit % 4) throw new Error('Límite PCM inválido');
     const chunks = [];
     let queued = 0;
     let offset = 0;
+    const stats = { receivedBytes: 0, deliveredBytes: 0, overflowBytes: 0, skippedBytes: 0, emptyReads: 0 };
 
-    function take(length, target) {
-        if (queued < length) return false;
+    function consume(length, target) {
         for (let at = 0; at < length;) {
             const chunk = chunks[0];
             const count = Math.min(length - at, chunk.length - offset);
@@ -99,14 +100,30 @@ function createPcmQueue(limit) {
         queued -= length;
         return true;
     }
+    function take(length, target) {
+        if (!Number.isSafeInteger(length) || length < 0 || length % 4 || (target && target.length < length))
+            throw new Error('Bloque PCM inválido');
+        if (queued < length) { stats.emptyReads++; return false; }
+        consume(length, target);
+        if (target) stats.deliveredBytes += length; else stats.skippedBytes += length;
+        return true;
+    }
 
     return {
         push(chunk) {
+            if (!chunk.length) return;
             chunks.push(chunk);
             queued += chunk.length;
-            if (queued > limit) take(Math.ceil((queued - limit) / 4) * 4);
+            stats.receivedBytes += chunk.length;
+            if (queued > limit) {
+                const removed = Math.ceil((queued - limit) / 4) * 4;
+                consume(removed);
+                stats.overflowBytes += removed;
+            }
         },
-        take
+        take,
+        bytes: () => queued,
+        stats: () => Object.assign({}, stats, { queuedBytes: queued })
     };
 }
 
@@ -137,6 +154,7 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
             // A paused pipe must still close after cancellation; its callbacks
             // already reject this generation before copying any bytes.
             if (video.stdout) video.stdout.resume();
+            if (video.stdio && video.stdio[3]) video.stdio[3].resume();
             const force = setTimeout(() => { if (video.exitCode === null) video.kill('SIGKILL'); }, 500);
             force.unref();
         }
@@ -196,9 +214,23 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         const spareFrames = [];
         const queue = withAudio && prebuffer ? createPcmQueue((maxFrames + fps) * pcmSize) : null;
         const pcm = queue && Buffer.allocUnsafe(pcmSize);
+        let pcmPaused = false, pcmPauses = 0;
+        function updatePcmFlow() {
+            if (!queue || job !== current || current.video !== video) return;
+            // Both streams have bounded decoded-ahead queues. Stop the PCM producer
+            // only when video is also buffered. Sink readiness/failure never controls
+            // this valve; the presentation clock drains PCM even with ALSA unavailable.
+            // Leave one second of headroom for the current pipe chunk.
+            if (pcmPaused && (queue.bytes() <= prebuffer * pcmSize || frames.length < prebuffer)) {
+                pcmPaused = false; video.stdio[3].resume();
+            } else if (!pcmPaused && queue.bytes() >= maxFrames * pcmSize && frames.length >= prebuffer) {
+                pcmPaused = true; pcmPauses++; video.stdio[3].pause();
+            }
+        }
         let output;
         if (withAudio) {
-            output = playAudio(video.stdio[3], changed, queue, audio, spawnProcess, log);
+            const receiver = queue && { push(bytes) { queue.push(bytes); updatePcmFlow(); } };
+            output = playAudio(video.stdio[3], changed, receiver, audio, spawnProcess, log);
             current.closeAudio = output.close;
         }
         else if (audio) changed('audio-unavailable');
@@ -217,7 +249,9 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
         let lastDecoded = 0;
         stats.attempts++;
         stats.audioEnabled = !!withAudio;
-        current.statsTimer = setInterval(() => onStats(Object.assign({}, stats, { queued: frames.length, fps, audio: output ? output.stats() : null })), 5000);
+        current.statsTimer = setInterval(() => onStats(Object.assign({}, stats, { queued: frames.length, fps,
+            pcmQueue: queue ? Object.assign(queue.stats(), { producerPaused: pcmPaused, producerPauses: pcmPauses }) : null,
+            audio: output ? output.stats() : null })), 5000);
         function present(bytes) {
             try {
                 if (preview) {
@@ -271,6 +305,7 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
                         // The pending write owns its buffer until the stream consumes it.
                         if (queue.take(pcmSize, pcm)) output.write(Buffer.from(pcm));
                     }
+                    updatePcmFlow();
                     if (video.stdout.isPaused() && frames.length <= prebuffer) {
                         const pending = pendingBytes;
                         pendingBytes = undefined;
@@ -306,6 +341,7 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
                 if (prebuffer) {
                     frames.push(frame);
                     frame = spareFrames.pop() || Buffer.allocUnsafe(size);
+                    updatePcmFlow();
                 } else present(frame);
                 if (job !== current || current.video !== video) return;
                 clearTimeout(current.timer);
@@ -397,4 +433,4 @@ function createPlayer(gpu, { ffmpeg = 'ffmpeg', caFile, proxy, audio, directory 
     };
 }
 
-module.exports = { createPlayer, createRing, hlsProgram };
+module.exports = { createPlayer, createRing, createPcmQueue, hlsProgram };

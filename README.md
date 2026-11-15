@@ -1,14 +1,14 @@
 # BMWLauncher para iDrive 8
 
-La **0.2.14 de prueba** corrige la selección de fuente de La Sexta al cambiar de canal, la recepción de tensión/corriente HV a través del contexto JavaScript de iDrive e integra los cambios visuales y de interacción que faltaban en 0.2.13.
+La **0.2.15 de prueba** corrige pérdidas de audio por desbordamiento de la cola PCM de TDTWorld y limita los reintentos cuando falla el arranque del auxiliar de audio. Conserva la selección de fuente de La Sexta, la corrección de tensión/corriente HV y la interfaz de 0.2.14.
 
-En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.14**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14). Pasan **216 pruebas locales**, comprobaciones Node 8.16.2 y contratos de la MGU.
+En MGU Store, fuente `javimagro/carlauncher`, canal **Tags**, pulsa **Comprobar ahora** y actualiza **BMWLauncher** y **Motor gráfico** a **0.2.15**. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15). Pasan **226 pruebas locales** y comprobaciones de sintaxis/carga con Node 8.16.2.
 
-La Sexta comienza por DASH, evitando recorrer primero varias fuentes HLS que reiniciaban el vídeo. La prueba local completa mantuvo un intento y cero reconexiones durante 30 segundos; hay que repetir el cambio de canal en la app instalada. La sonda corregida ya recibió tensión y corriente reales en la MGU y calculó kW; falta contrastar la pantalla instalada y el signo con OBD2. El consumo instantáneo BMW continúa separado de la potencia HV.
+El ensayo local de TDT pasa de descartar 169.088 bytes de audio (0,88 s) a cero por desbordamiento, sin aumentar el búfer. Entrega 250 cuadros sin vaciados ni reconexiones, también con la salida PCM bloqueada y con Node 8.16.2. Es una prueba con receptor de audio en el PC; no demuestra sonido limpio ni sincronía en los altavoces del i4. [Medidas y límites](TDT-AUDIO-MGU21.md).
 
-Los cambios de interfaz incluyen listas/configuración de TDT, Noticias, Radio, navegación, asistente, voz de maniobras y avisos centrados. El perfil alto sigue siendo optativo y no cambia por sí solo el área global del renderer.
+La investigación de BMW/AA añade protecciones para rechazar superficies del cockpit, Hmi8 y capas compartidas. La herramienta manual de mapa empieza transparente y exige cuadros propios antes de mostrar la capa. Estas herramientas no activan automáticamente un mapa en la app. El perfil alto continúa siendo optativo.
 
-**El audio TDT y el mapa BMW izquierdo siguen pendientes.** No se afirma sonido continuo por los altavoces. No se modifica el mapa del cockpit. Para volver atrás, instala ambos componentes de la 0.2.13.
+**El audio TDT continuo y sincronizado y los mapas BMW/AA a la izquierda siguen pendientes.** No se modifica el mapa del cockpit. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
 
 ## Referencia de la versión anterior
 
@@ -43,9 +43,9 @@ La interfaz reserva el lado izquierdo para la cartografía BMW, todavía pendien
 
 ### Actualizar desde MGU Store
 
-En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.11**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. Reinicia iDrive con el coche parado si la Store indica que el filtro requiere reinicio. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.11).
+En la fuente `javimagro/carlauncher`, selecciona el canal **Tags**. Pulsa **Ajustes → Comprobar ahora**, abre **Instaladas** y actualiza **BMWLauncher** y su **Motor gráfico** a la versión de prueba **0.2.15**. La app declara también la dependencia **Captura del mando de BMWLauncher** 1.0.0; comprueba que quede instalada. Reinicia iDrive con el coche parado si la Store indica que el filtro requiere reinicio. [Release y ZIP para USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.15).
 
-La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.10](https://github.com/javimagro/carlauncher/releases/tag/v0.2.10).
+La radio y las llamadas de navegación requieren validación en el i4. Las mejoras de TDT y captura no demuestran todavía que se hayan resuelto el sonido ni la exclusividad física del mando. Para volver atrás, instala BMWLauncher y Motor gráfico de la [0.2.14](https://github.com/javimagro/carlauncher/releases/tag/v0.2.14).
 
 Con el coche parado y `mgu-uplink` conectado, abre BMWLauncher, entra en **TDTWorld** y prueba **La 2** o **24h** con **Ver en directo**. Comprueba imagen, sonido y cambio de canal con la rueda. Si falla el sonido, anota el canal y el mensaje de audio que aparece encima del vídeo.
 
