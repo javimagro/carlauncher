@@ -30,15 +30,18 @@ function createIntegration(gpu, options) {
     options = Object.assign({}, options || {});
     const now = options.now || monotonic;
     const resolveProfile = options.resolveGeometryProfile;
+    const createFormat = options.createFormat;
     if (resolveProfile !== undefined && typeof resolveProfile !== 'function') throw new Error('geometry-resolver');
     if (resolveProfile && options.geometryProfile !== undefined) throw new Error('geometry-resolver-conflict');
+    if (createFormat !== undefined && typeof createFormat !== 'function') throw new Error('format-owner');
+    if (createFormat && (resolveProfile || options.geometryProfile !== undefined)) throw new Error('format-owner-conflict');
     const initialGeometry = resolveGeometry(options.geometryProfile, options.nativeCrop);
     const initialProfile = options.geometryProfile === undefined ? undefined :
         Object.freeze(Object.assign({ display: 'MAIN', confirmed: true }, initialGeometry));
     const player = (options.createPlayer || createAAPlayer)(gpu, options);
     let listeners = [], shown = false, capable = false, closed = false;
     let epoch = 0, initialProfileUsed = false;
-    let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, waiting = false;
+    let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, waiting = false, closing;
     let state = { state: 'unavailable', inputReady: false };
     function update(next, detail) {
         state = { state: next, inputReady: false, detail: detail && detail.code };
@@ -50,22 +53,27 @@ function createIntegration(gpu, options) {
     }
     function validContext() { return now() - contextAt < 1600 && isLauncher(context, applet); }
     function active(job) { return !closed && shown && capable && current === job && !job.cancelled; }
+    function releaseFailure(code) {
+        blocked = code;
+        update('error', { code });
+    }
+    function safely(work) { try { return Promise.resolve(work()); } catch (error) { return Promise.reject(error); } }
     function stopJob() {
         const old = current; current = undefined;
         if (old) {
             old.cancelled = true;
             if (old.cancelGeometry) old.cancelGeometry();
         }
-        player.stop();
         if (options.input) options.input.setVisible(false);
-        const release = old && old.focus ? old.focus.stop() : Promise.resolve();
-        // Attach the rejection handler immediately; a previous generation may
-        // still be draining. A failed restoration prevents every new acquisition.
-        const finished = release.catch(() => {
-            blocked = 'focus-restoration-unconfirmed';
-            update('error', { code: blocked });
-        });
-        serial = serial.then(() => finished);
+        // Cancel the format owner now, even if capture is still withdrawing.
+        // Otherwise a pending acquisition could SET while shutdown is waiting.
+        // Keep MAIN underlay until both have finished, including restoration.
+        const video = safely(() => player.stop()).catch(() => releaseFailure('capture-stop-unconfirmed'));
+        const format = old && old.format ? safely(() => old.format.close()).catch(() =>
+            releaseFailure('format-restoration-unconfirmed')) : Promise.resolve();
+        const finished = Promise.all([video, format]).then(() => old && old.focus ? old.focus.stop() : undefined)
+            .catch(() => releaseFailure('focus-restoration-unconfirmed'));
+        serial = Promise.all([serial, finished]).then(() => {});
         return serial;
     }
     function fail(job, code) {
@@ -100,6 +108,70 @@ function createIntegration(gpu, options) {
         const selected = resolveGeometry(profile, options.nativeCrop);
         return profile === undefined ? undefined : Object.freeze(Object.assign({ display: 'MAIN', confirmed: true }, selected));
     }
+    async function configureFormat(job) {
+        if (!active(job) || job.configuring) return;
+        job.configuring = true;
+        let deadline;
+        const expires = now() + 4000;
+        try {
+            // The owner verifies native epoch/generation and rearms only after
+            // observing restoration, on a new connection, before its own SET.
+            job.format = createFormat({ onError: code => {
+                // Also handle a factory that reports a failure synchronously.
+                Promise.resolve().then(() => fail(job, code || 'format-lost'));
+            } });
+            if (!job.format || typeof job.format.acquire !== 'function' || typeof job.format.geometryProfile !== 'function' ||
+                typeof job.format.close !== 'function') throw new Error('format-owner');
+            const profile = await Promise.race([
+                Promise.resolve().then(async () => {
+                    if (!active(job)) throw new Error('geometry-cancelled');
+                    const identity = Object.freeze(Object.assign({}, job.identity));
+                    await job.format.acquire(identity);
+                    if (!active(job)) throw new Error('geometry-cancelled');
+                    return job.format.geometryProfile(identity);
+                }),
+                new Promise((resolve, reject) => {
+                    job.cancelGeometry = () => reject(new Error('geometry-cancelled'));
+                    deadline = setTimeout(() => reject(new Error('geometry-timeout')), 4000);
+                })
+            ]);
+            if (!active(job)) return;
+            if (now() >= expires) throw new Error('geometry-timeout');
+            if (profile === undefined) throw new Error('geometry-unconfirmed');
+            const selected = resolveGeometry(profile, options.nativeCrop);
+            if (typeof profile.setStartedNs !== 'string' || !/^[1-9]\d{0,19}$/.test(profile.setStartedNs) ||
+                (profile.setStartedNs.length === 20 && profile.setStartedNs > '18446744073709551615'))
+                throw new Error('geometry-boundary');
+            job.configured = true;
+            if (player.configure(Object.freeze(Object.assign({ display: 'MAIN', confirmed: true }, selected,
+                { setStartedNs: profile.setStartedNs }))) !== true)
+                throw new Error('geometry-configure');
+        } catch (error) { fail(job, error.code || error.message || 'format'); }
+        finally { clearTimeout(deadline); job.cancelGeometry = undefined; }
+    }
+    function acquireFocus(job) {
+        if (job.focus || job.focusStarting) return;
+        if (!validContext()) return fail(job, 'context-changed');
+        const missing = requirement();
+        if (missing) return fail(job, missing);
+        job.focusStarting = true;
+        update('armed');
+        if (!active(job)) return;
+        try {
+            job.focus = (options.createFocus || createFocus)(applet, message => {
+                if (!active(job)) return;
+                if (message.state === 'error') fail(job, message.code);
+                else if (message.state === 'ready') {
+                    job.focusReady = true;
+                    // A provider can report ready synchronously during creation;
+                    // wait until its release handle belongs to this generation.
+                    if (createFormat) Promise.resolve().then(() => configureFormat(job));
+                    listeners.slice().forEach(fn => fn());
+                }
+            });
+            if (!job.focus || typeof job.focus.stop !== 'function') throw new Error('focus-owner');
+        } catch (_) { fail(job, 'focus-start'); }
+    }
     async function launch(job) {
         await serial;
         if (!active(job)) return;
@@ -107,24 +179,14 @@ function createIntegration(gpu, options) {
         try {
             const identity = await (options.inspect || inspect)(options.capture);
             if (!active(job)) return;
-            const profile = await geometryProfile(job, identity);
+            const profile = createFormat ? undefined : await geometryProfile(job, identity);
             if (!active(job)) return;
             if (!validContext()) return fail(job, 'context-unavailable');
-            identity.initialBytes = job.initialBytes;
-            job.identity = identity;
-            player.start(identity, (value, detail) => {
+            job.identity = Object.freeze(Object.assign({}, identity, { initialBytes: job.initialBytes }));
+            const changed = (value, detail) => {
                 if (!active(job)) return;
                 if (value === 'armed') {
-                    if (job.focus) return;
-                    if (!validContext()) return fail(job, 'context-changed');
-                    const missing = requirement();
-                    if (missing) return fail(job, missing);
-                    update('armed');
-                    job.focus = (options.createFocus || createFocus)(applet, message => {
-                        if (!active(job)) return;
-                        if (message.state === 'error') fail(job, message.code);
-                        else if (message.state === 'ready') listeners.slice().forEach(fn => fn());
-                    });
+                    acquireFocus(job);
                 } else if (value === 'recovery-needed') {
                     if (job.retries >= 2) return fail(job, 'recovery-exhausted');
                     const bytes = detail && detail.requiredBytes;
@@ -139,11 +201,14 @@ function createIntegration(gpu, options) {
                     current = next; update('recovery-needed', detail); launch(next);
                 } else if (value === 'error' || value === 'unavailable') fail(job, detail && detail.code || 'playback');
                 else if (value === 'playing') {
+                    if (createFormat && (!job.focusReady || !job.configured)) return fail(job, 'geometry-not-configured');
                     update('playing');
                     // Input is enabled only by a verified transport, never by video alone.
-                    if (options.input) options.input.setVisible(true);
+                    if (active(job) && options.input) options.input.setVisible(true);
                 } else update(value, detail);
-            }, profile);
+            };
+            if (createFormat) player.arm(job.identity, changed);
+            else player.start(job.identity, changed, profile);
         } catch (error) { fail(job, error.message || 'capture'); }
     }
     function start() {
@@ -184,10 +249,15 @@ function createIntegration(gpu, options) {
         setInputFocus(on) { if (options.input) options.input.setFocus(on && this.status().inputReady); },
         changed(fn) { listeners.push(fn); return () => { listeners = listeners.filter(item => item !== fn); }; },
         close() {
-            if (closed) return serial;
+            if (closing) return closing;
             closed = true; shown = false; listeners = [];
             const release = stopJob();
-            return options.input ? Promise.all([release, options.input.close()]) : release;
+            const input = options.input ? safely(() => options.input.close()).catch(() => releaseFailure('input-stop-unconfirmed')) : undefined;
+            closing = Promise.all([release, input]).then(() => { if (blocked) throw new Error(blocked); });
+            // UI owners may close without awaiting, but an awaiting supervisor
+            // must still receive restoration/removal failure rather than success.
+            closing.catch(() => {});
+            return closing;
         }
     };
 }

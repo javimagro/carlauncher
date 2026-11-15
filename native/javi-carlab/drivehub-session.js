@@ -32,6 +32,7 @@ module.exports = function createSession(gpu, options) {
     let confirmedOnScreen = false;
     let homeGesture;
     let mapGesture;
+    let closing;
     const navigation = createNavigation();
     const navigationUi = createNavigationUI(options, () => { dirty = true; });
     const preconditioning = createPreconditioningUI(options.preconditioningCommand, () => { dirty = true; }, notify);
@@ -230,7 +231,7 @@ module.exports = function createSession(gpu, options) {
         },
         controller(event) { if (shown && onScreen && !canGrab) controller(event); },
         show(on) {
-            if (shown === on) return;
+            if (closing || shown === on) return;
             shown = on;
             if (!on) {
                 data.toast = undefined;
@@ -255,6 +256,7 @@ module.exports = function createSession(gpu, options) {
             present();
         },
         close() {
+            if (closing) return closing;
             hidden();
             clearInterval(timer);
             provider.close();
@@ -263,8 +265,9 @@ module.exports = function createSession(gpu, options) {
             assistant.close();
             radio.close();
             tdt.close();
-            if (aa) aa.close();
+            closing = aa ? aa.close() : Promise.resolve();
             gpu.close();
+            return closing;
         }
     };
 };

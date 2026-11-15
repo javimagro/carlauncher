@@ -11,7 +11,8 @@
       ],
       "requires": {
         "javi-carlab": "0.2.20",
-        "javi-ccu-gate": "1.1.0"
+        "javi-ccu-gate": "1.1.0",
+        "javi-aa-format": "1.0.0"
       }
     },
     {
@@ -38,6 +39,26 @@
         "library": "javi-ccu-gate.so",
         "unit": "hmi.service",
         "process": "Hmi8",
+        "strikes": 2,
+        "checkAfterSeconds": 120,
+        "healthySeconds": 60
+      }
+    },
+    {
+      "id": "javi-aa-format",
+      "kind": "tool",
+      "path": "native/javi-aa-format",
+      "version": "1.0.0",
+      "title": "Formato de Android Auto para BMWLauncher",
+      "description": "Adapta Android Auto al panel izquierdo. Se activa al reiniciar iDrive después de instalarlo.",
+      "mguHmi": ["ID8"],
+      "optional": true,
+      "uninstallable": true,
+      "requires": { "mgu-deploy": "0.7.0" },
+      "preload": {
+        "library": "javi-aa-format.so",
+        "unit": "aapd.service",
+        "process": "aapd",
         "strikes": 2,
         "checkAfterSeconds": 120,
         "healthySeconds": 60

@@ -38,7 +38,10 @@ function child() {
     c.exitCode = null; c.connected = true; c.messages = [];
     c.send = (m, cb) => { c.messages.push(m); if (cb) cb(); };
     c.disconnect = () => { c.connected = false; };
-    c.kill = () => { c.exitCode = 0; c.emit('exit', 0); c.emit('close', 0); };
+    c.kill = () => {
+        if (c.confirmClose !== false && c.messages.some(m => m.type === 'stop')) c.emit('message', { type: 'closed', ok: true });
+        c.exitCode = 0; c.emit('exit', 0); c.emit('close', 0);
+    };
     return c;
 }
 function fixture(t, extra) {
@@ -47,8 +50,8 @@ function fixture(t, extra) {
     const player = createPlayer(Object.assign({ ffmpeg: 'decoder', capture: 'capture', createRing: (directory, width, height) => { ring.width = width; ring.height = height; return ring; },
         spawnProcess(file, args) { const c = child(); c.file = file; c.args = args; children.push(c); return c; } }, extra), m => messages.push(m));
     player.start({ pid: 77, starttime: '123456', profile: 'mgu21-aa-20261115' });
-    t.after(() => { player.stop(); children.forEach(c => c.kill()); });
-    return { player, children, decoder: children[0], capture: children[1], messages, frames, ring };
+    t.after(() => { const closing = player.stop(); children.forEach(c => c.kill()); return closing; });
+    return { player, children, decoder: children.find(c => c.file === 'decoder'), capture: children.find(c => c.file === 'capture'), messages, frames, ring };
 }
 
 test('AAF1 accepts fragmented/multiple complete records and rejects another process/display or truncation', () => {
@@ -251,7 +254,9 @@ test('worker geometry must match the acquired profile and cannot change after th
     const profile = tallProfile(), expected = resolveGeometry(profile);
     p.start({ pid: 77 }, (state, detail) => states.push([state, detail]), profile);
     profile.x = 0;
-    assert.equal(c.messages[0].options.geometryProfile.x, 376);
+    assert.equal(c.messages[0].type, 'arm');
+    assert.equal(c.messages[1].type, 'configure');
+    assert.equal(c.messages[1].profile.x, 376);
     const file = '/dev/shm/mgu-video-bmwlauncher-0123456789abcdef';
     c.emit('message', { type: 'video', file, geometry: expected });
     c.emit('message', { type: 'status', status: 'playing' });
@@ -270,11 +275,300 @@ test('UI isolates worker generations, rejects foreign paths and cleans late ring
         forkProcess() { const c = child(); children.push(c); return c; } });
     t.after(() => { p.stop(); children.forEach(c => c.kill()); });
     p.ready({ video: true }); p.start({ pid: 77 }, (state, detail) => states.push([state, detail]));
-    const old = children[0]; p.stop();
+    const old = children[0], stopping = p.stop();
     const late = path.join(dir, 'mgu-video-bmwlauncher-0123456789abcdef'); fs.writeFileSync(late, 'ring');
     old.emit('message', { type: 'ring', file: late }); await delay(30); assert(!fs.existsSync(late));
+    old.kill(); await stopping;
     p.start({ pid: 77 }, (state, detail) => states.push([state, detail])); const current = children[1];
     old.emit('message', { type: 'status', status: 'playing' }); assert(!states.some(s => s[0] === 'playing'));
     current.emit('message', { type: 'video', file: path.join(dir, '..', 'unrelated') });
     assert(states.some(s => s[0] === 'error' && s[1].code === 'worker-ring')); assert.equal(p.frame(), undefined);
+});
+
+function armedFixture(t, extra) {
+    const children = [], messages = [], ring = { file: '/dev/shm/mgu-video-bmwlauncher-0123456789abcdef',
+        count: 0, closed: false, push() {}, close() { this.closed = true; } };
+    const player = createPlayer(Object.assign({ ffmpeg: 'decoder', capture: 'capture',
+        createRing() { ring.count++; return ring; },
+        spawnProcess(file, args) { const c = child(); c.file = file; c.args = args; children.push(c); return c; }
+    }, extra), message => messages.push(message));
+    assert.equal(player.arm({ pid: 77, starttime: '123456' }), true);
+    t.after(() => { const closing = player.stop(); children.forEach(c => c.kill()); return closing; });
+    children[0].stderr.write('{"type":"armed"}\n');
+    return { player, children, capture: children[0], messages, ring };
+}
+
+test('legacy two-phase capture keeps SPS/PPS and the latest keyframe before allocating a configured decoder', async t => {
+    const f = armedFixture(t);
+    assert.equal(f.children.length, 1); assert.equal(f.ring.count, 0);
+    f.capture.stdout.write(Buffer.concat([record(nal(sps()), 100), record(nal(Buffer.from([0x68, 0xaa])), 110),
+        record(nal(Buffer.from([0x65, 0x80, 1])), 120), record(pframe, 130),
+        record(nal(Buffer.from([0x65, 0x80, 2])), 140), record(pframe, 150)]));
+    await delay(70);
+    assert.equal(f.player.stats().warmFrames, 2); assert.equal(f.player.stats().encoded, 0);
+    assert.equal(f.children.length, 1); assert.equal(f.ring.count, 0);
+    assert.throws(() => f.player.configure(Object.assign(tallProfile(), { confirmed: false })), /unconfirmed/);
+    assert.equal(f.children.length, 1); assert.equal(f.ring.count, 0);
+    assert.equal(f.player.configure(), true); assert.equal(f.player.configure(), false);
+    const decoder = f.children[1];
+    assert.equal(decoder.args[decoder.args.indexOf('-vf') + 1], 'fps=20,crop=1920:560:0:260,scale=1536:448');
+    assert.equal(f.player.stats().encoded, 2); assert.equal(f.player.stats().warmBytes, 0);
+    const payload = unpackTs(Buffer.concat(decoder.stdin.bytes)).data;
+    assert.deepEqual(nals(payload).map(unit => unit.type), [7, 8, 5, 1]);
+    assert.equal(nals(payload)[2].bytes[nals(payload)[2].bytes.length - 1], 2);
+});
+
+test('preconfigure GOP overflow stays bounded, drains capture and resumes from a fresh IDR', async t => {
+    let clock = 0;
+    const f = armedFixture(t, { now: () => clock });
+    f.capture.stdout.write(record(keyframe(), 100)); clock += 50; await delay(30);
+    for (let batch = 0; batch < 4; batch++) {
+        f.capture.stdout.write(Buffer.concat(Array.from({ length: 40 }, (_, i) => record(pframe, 120 + (batch * 40 + i) * 20))));
+        clock += 50; await delay(30);
+        assert(f.player.stats().warmFrames <= 128); assert(f.player.stats().warmBytes <= 2 * 1024 * 1024);
+    }
+    assert.equal(f.player.stats().warmFrames, 0); assert(f.player.stats().preconfigureDropped > 0);
+    assert(!f.messages.some(m => m.status === 'error' || m.status === 'recovery-needed'));
+    assert.equal(f.player.configure(tallProfile()), true); assert.equal(f.children[1].stdin.bytes.length, 0);
+    f.capture.stdout.write(record(nal(Buffer.from([0x65, 0x80, 9])), 4000)); clock += 50; await delay(30);
+    assert.equal(f.player.stats().encoded, 1);
+    assert.deepEqual(nals(unpackTs(Buffer.concat(f.children[1].stdin.bytes)).data).map(unit => unit.type), [7, 8, 5]);
+});
+
+test('stop drains neither late records nor pixels and waits for close of every native child', async t => {
+    const f = armedFixture(t);
+    f.capture.stdout.write(record(keyframe())); await delay(60);
+    f.player.configure(tallProfile());
+    let complete = false;
+    const closing = f.player.stop().then(() => { complete = true; });
+    assert.equal(f.player.stats().warmFrames, 0); assert.equal(f.player.stats().pendingBytes, 0);
+    assert.equal(f.player.configure(tallProfile()), false); assert(f.ring.closed);
+    f.capture.stdout.write(record(keyframe(), 2000));
+    f.capture.emit('exit', 0); await delay(10); assert.equal(complete, false);
+    f.capture.kill(); await delay(10); assert.equal(complete, false);
+    f.children[1].kill(); await closing; assert.equal(complete, true);
+});
+
+test('capture EOF before configure discards retained frames and prevents decoder allocation', async t => {
+    const f = armedFixture(t);
+    f.capture.stdout.write(record(keyframe())); await delay(60);
+    assert.equal(f.player.stats().warmFrames, 1);
+    f.capture.stdout.end(); await delay(15);
+    assert.equal(f.player.configure(tallProfile()), false); assert.equal(f.ring.count, 0);
+    await delay(260); f.capture.kill();
+    await f.player.stop();
+    assert.equal(f.player.configure(tallProfile()), false); assert.equal(f.children.length, 1);
+    assert.equal(f.player.stats().warmBytes, 0);
+    assert(f.messages.some(m => m.status === 'error' && m.detail.code === 'capture-eof'));
+});
+
+test('preconfigure and first-frame deadlines are independent', async t => {
+    let clock = 0;
+    const f = armedFixture(t, { now: () => clock });
+    clock = 15000; await delay(270);
+    assert(!f.messages.some(m => m.status === 'error'));
+    f.player.configure(tallProfile()); clock = 25000; await delay(270);
+    assert(!f.messages.some(m => m.status === 'error'));
+    clock = 27001; await delay(270);
+    assert(f.messages.some(m => m.status === 'error' && m.detail.code === 'video-keyframe-timeout'));
+});
+
+test('negotiated configure excludes prior GOP, reordered and late pipe records until a post-configure IDR', async t => {
+    let clock = 900;
+    const f = armedFixture(t, { now: () => clock });
+    f.capture.stdout.write(record(keyframe(), 900)); clock = 950; await delay(30);
+    assert.equal(f.player.stats().warmFrames, 1);
+    f.capture.stdout.write(record(pframe, 950));
+    assert(f.player.stats().pendingBytes > 0);
+    clock = 1000; assert.equal(f.player.configure(tallProfile()), true);
+    const decoder = f.children[1];
+    assert.equal(f.player.stats().warmFrames, 0); assert.equal(f.player.stats().pendingBytes, 0);
+    assert.equal(decoder.stdin.bytes.length, 0);
+    f.capture.stdout.write(Buffer.concat([record(keyframe(), 999), record(keyframe(), 1000), record(pframe, 1001)]));
+    clock = 1050; await delay(30);
+    assert.equal(decoder.stdin.bytes.length, 0, 'old buffered IDRs and new dependent pictures cannot start the decoder');
+    f.capture.stdout.write(Buffer.concat([record(nal(Buffer.from([0x65, 0x80, 9])), 1051), record(pframe, 1052)]));
+    clock = 1100; await delay(30);
+    assert.equal(f.player.stats().encoded, 2);
+    const units = nals(unpackTs(Buffer.concat(decoder.stdin.bytes)).data);
+    assert.deepEqual(units.map(unit => unit.type), [7, 8, 5, 1]);
+    assert.equal(units[2].bytes[units[2].bytes.length - 1], 9);
+});
+
+test('cancel while waiting for a negotiated IDR publishes no stale video or late input', async t => {
+    let clock = 900;
+    const f = armedFixture(t, { now: () => clock });
+    f.capture.stdout.write(record(keyframe(), 900)); clock = 950; await delay(30);
+    clock = 1000; f.player.configure(tallProfile());
+    const closing = f.player.stop(), decoder = f.children[1];
+    f.capture.stdout.write(record(keyframe(), 1100)); clock = 1200; await delay(30);
+    assert.equal(decoder.stdin.bytes.length, 0);
+    assert(!f.messages.some(m => m.type === 'video' || m.status === 'playing'));
+    f.children.forEach(c => c.kill()); await closing;
+    assert.equal(f.player.configure(tallProfile()), false); assert(f.ring.closed);
+});
+
+test('native SET boundary retains the new IDR received during ACK without decoding the previous GOP', async t => {
+    let clock = 900;
+    const f = armedFixture(t, { now: () => clock });
+    f.capture.stdout.write(record(keyframe(), 900)); clock = 950; await delay(30);
+    f.capture.stdout.write(Buffer.concat([record(nal(Buffer.from([0x65, 0x80, 7])), 1100), record(pframe, 1120)]));
+    clock = 1200; await delay(30);
+    assert.equal(f.player.stats().warmFrames, 2);
+    f.capture.stdout.write(record(pframe, 1400));
+    clock = 1500;
+    assert.equal(f.player.configure(Object.assign(tallProfile(), { setStartedNs: '1000000000' })), true);
+    assert.equal(f.player.stats().encoded, 2, 'new IDR captured before ACK is immediately decodable');
+    const decoder = f.children[1];
+    f.capture.stdout.write(record(keyframe(), 999)); clock = 1550; await delay(30);
+    assert.equal(f.player.stats().encoded, 3);
+    const units = nals(unpackTs(Buffer.concat(decoder.stdin.bytes)).data);
+    assert.deepEqual(units.map(unit => unit.type), [7, 8, 5, 1, 1]);
+    assert.equal(units[2].bytes[units[2].bytes.length - 1], 7);
+});
+
+test('SET boundary is an exact uint64 and rejects an older GOP even above Number safe precision', async t => {
+    let clock = 0;
+    const f = armedFixture(t, { now: () => clock });
+    for (const setStartedNs of ['0', '-1', '1.5', '18446744073709551616', 1000])
+        assert.throws(() => f.player.configure(Object.assign(tallProfile(), { setStartedNs })), /frame-boundary/);
+    assert.equal(f.children.length, 1);
+    f.player.configure(Object.assign(tallProfile(), { setStartedNs: '9007199254740993' }));
+    function exact(low, marker) {
+        const b = record(Buffer.concat([nal(sps()), nal(Buffer.from([0x68, 0xaa])), nal(Buffer.from([0x65, 0x80, marker]))]));
+        b.writeUInt32LE(low, 8); b.writeUInt32LE(2097152, 12); return b;
+    }
+    f.capture.stdout.write(Buffer.concat([exact(0, 1), exact(1, 9)])); clock = 50; await delay(30);
+    assert.equal(f.player.stats().encoded, 1);
+    const units = nals(unpackTs(Buffer.concat(f.children[1].stdin.bytes)).data);
+    assert.equal(units[2].bytes[units[2].bytes.length - 1], 9);
+});
+
+test('UI transports the attested SET boundary independently of renderer geometry', async t => {
+    const c = child(), p = createAAPlayer({ video() {} }, { forkProcess: () => c });
+    t.after(() => { const closing = p.stop(); c.kill(); return closing; });
+    p.ready({ video: true }); p.arm({ pid: 77 });
+    assert.throws(() => p.configure(Object.assign(tallProfile(), { setStartedNs: '0' })), /frame-boundary/);
+    assert.equal(c.messages.length, 1);
+    assert.equal(p.configure(Object.assign(tallProfile(), { setStartedNs: '9007199254740993' })), true);
+    assert.equal(c.messages[1].profile.setStartedNs, '9007199254740993');
+    c.emit('message', { type: 'video', file: '/dev/shm/mgu-video-bmwlauncher-0123456789abcdef', geometry: resolveGeometry(tallProfile()) });
+    assert.equal(p.frame().geometry.setStartedNs, undefined);
+});
+
+test('UI serializes workers and awaits close after the worker confirms native cleanup', async t => {
+    const children = [], states = [];
+    const p = createAAPlayer({ video() {} }, { forkProcess() { const c = child(); children.push(c); return c; } });
+    t.after(() => { const closing = p.stop(); children.forEach(c => c.kill()); return closing; });
+    p.ready({ video: true }); assert.equal(p.arm({ pid: 77 }, state => states.push(state)), true);
+    assert.equal(children[0].messages.length, 1); assert.equal(children[0].messages[0].type, 'arm');
+    assert.throws(() => p.configure({ display: 'IC', confirmed: true }), /unconfirmed/);
+    assert.equal(children[0].messages.length, 1);
+    assert.equal(p.configure(tallProfile()), true); assert.equal(p.configure(tallProfile()), false);
+    const old = children[0], closing = p.stop(); let closed = false; closing.then(() => { closed = true; });
+    assert.equal(p.arm({ pid: 78 }, state => states.push(state)), true);
+    assert.equal(p.configure(tallProfile()), true); assert.equal(children.length, 1);
+    old.emit('message', { type: 'closed', ok: true }); old.emit('exit', 0); await delay(10);
+    assert.equal(closed, false); assert.equal(children.length, 1);
+    old.emit('close', 0); await closing; await delay(0);
+    assert.equal(children.length, 2); assert.deepEqual(children[1].messages.map(m => m.type), ['arm', 'configure']);
+    const first = children[1], waiting = p.stop();
+    p.arm({ pid: 79 }); const cancelled = p.stop(); first.kill(); await waiting; await cancelled; await delay(0);
+    assert.equal(children.length, 2, 'cancelled pending acquisition must not create a worker');
+});
+
+test('unconfirmed worker exit rejects cleanup and forbids a replacement capture', async () => {
+    const c = child(), states = []; c.confirmClose = false;
+    const p = createAAPlayer({ video() {} }, { forkProcess: () => c }); p.ready({ video: true });
+    p.arm({ pid: 77 }); const closing = p.stop(); c.kill();
+    await assert.rejects(closing, /unconfirmed/);
+    assert.equal(p.arm({ pid: 78 }, (state, detail) => states.push([state, detail])), false);
+    assert(states.some(value => value[1].code === 'worker-close-unconfirmed'));
+});
+
+test('native cleanup errors received during stop reject withdrawal confirmation', async () => {
+    const c = child(), player = createPlayer({ capture: 'capture', spawnProcess: () => c }, () => {});
+    player.arm({ pid: 77, starttime: '123456' });
+    const closing = player.stop();
+    c.stderr.write('{"type":"error","code":"guardian-cleanup-pending","errno":16}\n'); c.kill();
+    await assert.rejects(closing, /capture-cleanup-pending/);
+    await assert.rejects(player.stop(), /capture-cleanup-pending/);
+});
+
+test('lost renderer cannot interrupt worker shutdown', async () => {
+    const c = child(), p = createAAPlayer({ video() { throw Error('lost layer'); } }, { forkProcess: () => c });
+    p.ready({ video: true }); p.arm({ pid: 77 });
+    const closing = p.stop(); c.kill(); await closing;
+    assert(c.messages.some(m => m.type === 'stop'));
+});
+
+test('preconfigure also bounds large frames by bytes rather than only GOP length', async t => {
+    let clock = 0;
+    const f = armedFixture(t, { now: () => clock });
+    f.capture.stdout.write(record(keyframe(), 100)); clock += 50; await delay(30);
+    const large = nal(Buffer.alloc(250000, 0x41));
+    for (let batch = 0; batch < 3; batch++) {
+        f.capture.stdout.write(Buffer.concat(Array.from({ length: 3 }, (_, i) => record(large, 120 + (batch * 3 + i) * 20))));
+        clock += 50; await delay(30);
+        assert(f.player.stats().warmBytes <= 2 * 1024 * 1024);
+    }
+    assert(f.player.stats().preconfigureDropped > 0); assert.equal(f.player.stats().warmBytes, 0);
+    assert.equal(f.children.length, 1); assert(!f.messages.some(m => m.status === 'recovery-needed' || m.status === 'error'));
+});
+
+test('real worker reports unavailable capture closure as uncertain without allocating a decoder', async t => {
+    let worker;
+    const p = createAAPlayer({ video() {} }, { capture: process.execPath,
+        forkProcess(file, args, options) { worker = require('node:child_process').fork(file, args, options); return worker; } });
+    t.after(() => { if (worker && worker.exitCode === null) worker.kill('SIGKILL'); });
+    p.ready({ video: true }); p.arm({ pid: 77, starttime: '123456' });
+    await assert.rejects(p.stop(), /worker-close-unconfirmed/);
+    assert.equal(worker.exitCode, 1); assert.equal(p.frame(), undefined);
+});
+
+test('capture closure distinguishes cooperative stop, confirmed recovery and forced or unsuccessful exit', async () => {
+    for (const result of [{ code: 0, good: true }, { code: 75, terminal: true, good: true },
+        { code: 75 }, { code: 1 }, { code: null, signal: 'SIGKILL' }, { code: null, signal: 'SIGSEGV', terminal: true }]) {
+        const c = child(), player = createPlayer({ capture: 'capture', spawnProcess: () => c }, () => {});
+        player.arm({ pid: 77, starttime: '123456' });
+        const closing = player.stop();
+        if (result.terminal) c.stderr.write('{"type":"closed","code":"recovery-required","errno":0}\n');
+        c.emit('exit', result.code, result.signal); c.emit('close', result.code, result.signal);
+        if (result.good) await closing;
+        else await assert.rejects(closing, /capture-close-unconfirmed/);
+    }
+});
+
+test('decoder termination does not replace the capture cooperative-cleanup contract', async t => {
+    const f = armedFixture(t); f.player.configure();
+    const closing = f.player.stop();
+    f.capture.emit('close', 0, null); f.children[1].emit('close', null, 'SIGKILL');
+    await closing;
+});
+
+test('parent watchdog expires video and touch if a playing worker stops reporting', async t => {
+    let clock = 0;
+    const c = child(), states = [], p = createAAPlayer({ video() {} }, { forkProcess: () => c, now: () => clock });
+    t.after(() => { const closing = p.stop(); c.kill(); return closing; });
+    p.ready({ video: true }); p.start({ pid: 77 }, (state, detail) => states.push([state, detail]));
+    c.emit('message', { type: 'video', file: '/dev/shm/mgu-video-bmwlauncher-0123456789abcdef', geometry });
+    c.emit('message', { type: 'status', status: 'playing' });
+    assert(p.inputPoint({ x: 0, y: 0, w: 960, h: 280 }, 100, 100));
+    clock = 2400; c.emit('message', { type: 'stats', value: {} }); await delay(260);
+    assert(p.frame());
+    clock = 4901; await delay(270);
+    assert.equal(p.frame(), undefined); assert.equal(p.inputPoint({ x: 0, y: 0, w: 960, h: 280 }, 100, 100), null);
+    assert(states.some(s => s[0] === 'error' && s[1].code === 'worker-stale'));
+    assert(c.messages.some(m => m.type === 'stop'));
+});
+
+test('parent watchdog allows cold startup but bounds a worker that never replies', async t => {
+    let clock = 0;
+    const c = child(), states = [], p = createAAPlayer({ video() {} }, { forkProcess: () => c, now: () => clock });
+    t.after(() => { const closing = p.stop(); c.kill(); return closing; });
+    p.ready({ video: true }); p.arm({ pid: 77 }, (state, detail) => states.push([state, detail]));
+    clock = 9000; await delay(270); assert(!states.some(s => s[0] === 'error'));
+    clock = 10001; await delay(270);
+    assert(states.some(s => s[0] === 'error' && s[1].code === 'worker-start-timeout'));
+    assert(c.messages.some(m => m.type === 'stop'));
 });

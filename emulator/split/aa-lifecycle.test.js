@@ -141,3 +141,184 @@ test('AA waits for loaded input support and starts only when its requirements be
     assert.equal(f.callbacks.length, 1, 'a failed acquisition does not retry indefinitely');
     await f.api.close();
 });
+
+function deferred() {
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+}
+
+function formatFixture(extra) {
+    extra = extra || {};
+    const calls = [], callbacks = [], focusCallbacks = [], profiles = [];
+    const profile = { display: 'MAIN', confirmed: true, x: 376, y: 250, w: 1168, h: 580, setStartedNs: '12345678901234567' };
+    let time = 100, formatError, inputVisible = false;
+    const player = {
+        ready() {}, frame: () => null, stats: () => null,
+        arm(identity, changed) { calls.push('arm'); callbacks.push(changed); assert(Object.isFrozen(identity)); },
+        configure(value) { calls.push('configure'); profiles.push(value); return extra.configure !== false; },
+        stop() { calls.push('video-stop'); return extra.videoStop && extra.videoStop.promise; }
+    };
+    const api = createIntegration({}, {
+        now: () => time, createPlayer: () => player,
+        inspect: async () => ({ pid: 2, starttime: '10', profile: 'mgu21-aa-20261115' }),
+        createFocus(applet, changed) {
+            calls.push('focus'); focusCallbacks.push(changed);
+            if (extra.syncReady) changed({ state: 'ready' });
+            return { stop() { calls.push('focus-stop'); return Promise.resolve(); } };
+        },
+        createFormat(options) {
+            calls.push('format-owner'); formatError = options.onError;
+            return {
+                acquire(identity) {
+                    calls.push('format-acquire'); assert(Object.isFrozen(identity));
+                    return extra.acquire ? extra.acquire.promise : Promise.resolve();
+                },
+                geometryProfile() { calls.push('format-profile'); return extra.profile ? extra.profile.promise : Promise.resolve(profile); },
+                close() { calls.push('format-close'); return extra.restore ? extra.restore.promise : Promise.resolve(); }
+            };
+        },
+        input: {
+            setVisible(value) { calls.push('input-' + value); inputVisible = value; },
+            ready: () => inputVisible, setFocus() {}, close: () => Promise.resolve(), touch: () => true
+        }
+    });
+    api.context({ state: 1, applet: 1000 }, 1000); api.ready({ video: true });
+    async function armed() { api.setVisible(true); await tick(); callbacks[0]('armed'); }
+    async function ready() { await armed(); if (!extra.syncReady) focusCallbacks[0]({ state: 'ready' }); await tick(); }
+    return { api, calls, callbacks, focusCallbacks, profiles, profile, armed, ready,
+        clock: value => { time = value; }, lose: code => formatError(code) };
+}
+
+test('format acquisition starts only after capture armed and underlay ready, then enables the matching decoder', async () => {
+    const f = formatFixture(); await f.armed();
+    assert.deepEqual(f.calls, ['arm', 'focus']); assert.equal(f.api.status().inputReady, false);
+    f.focusCallbacks[0]({ state: 'ready' }); await tick();
+    assert.deepEqual(f.calls, ['arm', 'focus', 'format-owner', 'format-acquire', 'format-profile', 'configure']);
+    assert(Object.isFrozen(f.profiles[0])); f.profile.x = 0; assert.equal(f.profiles[0].x, 376);
+    assert.equal(f.profiles[0].setStartedNs, '12345678901234567');
+    assert.equal(f.api.status().inputReady, false);
+    f.callbacks[0]('playing'); assert.equal(f.api.status().inputReady, true);
+    await f.api.close();
+    assert(f.calls.indexOf('format-close') < f.calls.indexOf('focus-stop'));
+});
+
+test('synchronous underlay ready still assigns its release owner before acquiring format', async () => {
+    const f = formatFixture({ syncReady: true }); await f.ready();
+    assert.equal(f.calls.filter(value => value === 'format-acquire').length, 1);
+    f.focusCallbacks[0]({ state: 'ready' }); await tick();
+    assert.equal(f.calls.filter(value => value === 'configure').length, 1);
+    await f.api.close(); assert.equal(f.calls.filter(value => value === 'focus-stop').length, 1);
+});
+
+test('hiding while acquiring cancels the owner immediately and retains underlay until video and restoration finish', async () => {
+    const acquire = deferred(), videoStop = deferred(), restore = deferred();
+    const f = formatFixture({ acquire, videoStop, restore }); await f.ready();
+    assert(f.calls.includes('format-acquire')); assert.equal(f.calls.includes('configure'), false);
+    f.api.setVisible(false);
+    assert(f.calls.includes('video-stop')); assert(f.calls.includes('format-close'));
+    assert.equal(f.calls.includes('focus-stop'), false);
+    acquire.resolve(); await tick(); assert.equal(f.calls.includes('format-profile'), false);
+    videoStop.resolve(); await tick(); assert.equal(f.calls.includes('focus-stop'), false);
+    restore.resolve(); await tick(); assert(f.calls.includes('focus-stop'));
+    assert.equal(f.calls.includes('configure'), false); await f.api.close();
+});
+
+test('a late geometry result after hiding cannot configure or enable input', async () => {
+    const profile = deferred(), f = formatFixture({ profile }); await f.ready();
+    assert(f.calls.includes('format-profile')); f.api.setVisible(false);
+    profile.resolve(f.profile); await tick();
+    assert.equal(f.calls.includes('configure'), false); assert.equal(f.api.status().inputReady, false);
+    assert(f.calls.includes('format-close')); await f.api.close();
+});
+
+test('format geometry deadline closes its owner while keeping the underlay for restoration', async () => {
+    const profile = deferred(), restore = deferred(), f = formatFixture({ profile, restore }); await f.ready();
+    f.clock(4100); profile.resolve(f.profile); await tick();
+    assert.equal(f.api.status().detail, 'geometry-timeout');
+    assert.equal(f.calls.includes('configure'), false); assert(f.calls.includes('format-close'));
+    assert.equal(f.calls.includes('focus-stop'), false);
+    restore.resolve(); await tick(); await f.api.close();
+});
+
+test('format loss disables input and an unconfirmed restoration blocks further acquisition', async () => {
+    const restore = deferred(), f = formatFixture({ restore }); await f.ready(); f.callbacks[0]('playing');
+    f.lose('bridge-epoch-changed'); await tick();
+    assert.equal(f.api.status().inputReady, false); assert(f.calls.includes('format-close'));
+    assert.equal(f.calls.includes('focus-stop'), false);
+    restore.reject(Error('restore-unconfirmed')); await tick();
+    assert.equal(f.api.status().detail, 'format-restoration-unconfirmed'); assert(f.calls.includes('focus-stop'));
+    f.api.setVisible(false); f.api.setVisible(true); await tick();
+    assert.equal(f.calls.filter(value => value === 'arm').length, 1);
+    assert.equal(f.api.status().detail, 'format-restoration-unconfirmed');
+    await assert.rejects(f.api.close(), /format-restoration-unconfirmed/);
+});
+
+test('failed capture removal still restores format and releases underlay but blocks a new generation', async () => {
+    const videoStop = deferred(), f = formatFixture({ videoStop }); await f.ready(); f.api.setVisible(false);
+    videoStop.reject(Error('worker-stop-timeout')); await tick();
+    assert(f.calls.includes('format-close')); assert(f.calls.includes('focus-stop'));
+    f.api.setVisible(true); await tick();
+    assert.equal(f.api.status().detail, 'capture-stop-unconfirmed');
+    assert.equal(f.calls.filter(value => value === 'arm').length, 1);
+    await assert.rejects(f.api.close(), /capture-stop-unconfirmed/);
+});
+
+test('format recovery waits for video withdrawal and observed restoration before acquiring a new owner', async () => {
+    const videoStop = deferred(), restore = deferred(), f = formatFixture({ videoStop, restore }); await f.ready();
+    f.callbacks[0]('recovery-needed', { requiredBytes: 200000 }); await tick();
+    assert.equal(f.api.status().state, 'recovery-needed');
+    assert.equal(f.calls.filter(value => value === 'arm').length, 1);
+    videoStop.resolve(); await tick();
+    assert.equal(f.calls.filter(value => value === 'arm').length, 1);
+    restore.resolve(); await tick();
+    assert.equal(f.calls.filter(value => value === 'format-acquire').length, 1);
+    assert.equal(f.calls.filter(value => value === 'arm').length, 2);
+    f.callbacks[1]('armed'); f.focusCallbacks[1]({ state: 'ready' }); await tick();
+    assert.equal(f.calls.filter(value => value === 'format-acquire').length, 2); await f.api.close();
+});
+
+test('playing cannot enable input before format configuration, and a refused configure closes the owner', async () => {
+    const a = formatFixture(); await a.armed(); a.callbacks[0]('playing'); await tick();
+    assert.equal(a.api.status().detail, 'geometry-not-configured'); assert.equal(a.api.status().inputReady, false);
+    await a.api.close();
+    const b = formatFixture({ configure: false }); await b.ready();
+    assert.equal(b.api.status().detail, 'geometry-configure'); assert(b.calls.includes('format-close'));
+    assert.equal(b.api.status().inputReady, false); await b.api.close();
+});
+
+test('an owned format cannot be combined with detached geometry resolvers or confirmations', () => {
+    assert.throws(() => fixture({ createFormat: () => {}, resolveGeometryProfile: () => {} }), /format-owner-conflict/);
+    assert.throws(() => fixture({ createFormat: true }), /format-owner/);
+});
+
+test('owned geometry requires an exact positive uint64 setter boundary before configuring', async () => {
+    for (const boundary of [undefined, 12345, '0', '18446744073709551616']) {
+        const f = formatFixture(); f.profile.setStartedNs = boundary; await f.ready();
+        assert.equal(f.api.status().detail, 'geometry-boundary'); assert.equal(f.calls.includes('configure'), false);
+        assert(f.calls.includes('format-close')); await f.api.close();
+    }
+});
+
+test('a UI hiding during armed notification prevents underlay acquisition', async () => {
+    const f = formatFixture();
+    f.api.changed(() => { if (f.api.status().state === 'armed') f.api.setVisible(false); });
+    f.api.setVisible(true); await tick(); f.callbacks[0]('armed'); await tick();
+    assert.equal(f.calls.includes('focus'), false); assert.equal(f.calls.includes('format-acquire'), false);
+    await f.api.close();
+});
+
+test('a UI hiding during playing notification cannot re-enable input afterwards', async () => {
+    const f = formatFixture(); await f.ready();
+    f.api.changed(() => { if (f.api.status().state === 'playing') f.api.setVisible(false); });
+    f.callbacks[0]('playing'); await tick();
+    assert.equal(f.calls.includes('input-true'), false); assert.equal(f.api.status().inputReady, false);
+    await f.api.close();
+});
+
+test('repeated close shares completion until both capture and input have stopped', async () => {
+    const videoStop = deferred(), f = formatFixture({ videoStop }); await f.ready();
+    const closing = f.api.close(); assert.equal(f.api.close(), closing);
+    let done = false; closing.then(() => { done = true; }); await tick(); assert.equal(done, false);
+    videoStop.resolve(); await closing; assert.equal(done, true);
+});

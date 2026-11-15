@@ -166,3 +166,25 @@ test('session routes AA settings to Datos/home without hidden BMW hotspots and r
     touch(layout.settings); touch(layout.home); assert.equal(exits, 1);
     gpu.emit('state', { onScreen: false }); assert.deepEqual(f.calls.filter(x => x[0] === 'visible').at(-1), ['visible', false]);
 });
+
+test('session close waits for AA restoration once and preserves a restoration failure', async () => {
+    const createSession = require('../../native/javi-carlab/drivehub-session');
+    for (const fails of [false, true]) {
+        const f = fixture(), gpu = new EventEmitter();
+        let finish, reject, stopped = 0, gpuClosed = 0, settled = false;
+        const restored = new Promise((yes, no) => { finish = yes; reject = no; });
+        f.adapter.close = () => { stopped++; return restored; };
+        Object.assign(gpu, { place() {}, claim() {}, show() {}, grab() {}, frame() {}, close() { gpuClosed++; } });
+        const session = createSession(gpu, { aa: f.adapter, fixture: { news: [] } });
+        const closing = session.close();
+        closing.then(() => { settled = true; }, () => { settled = true; });
+        assert.equal(session.close(), closing);
+        session.show(true);
+        assert.equal(f.calls.some(call => call[0] === 'visible' && call[1]), false);
+        await Promise.resolve();
+        assert.equal(settled, false); assert.equal(stopped, 1); assert.equal(gpuClosed, 1);
+        if (fails) { reject(Error('restore-unconfirmed')); await assert.rejects(closing, /restore-unconfirmed/); }
+        else { finish(); await closing; }
+        assert.equal(settled, true);
+    }
+});

@@ -1,5 +1,35 @@
 # Vídeo de Android Auto en MGU21
 
+## Candidato de integración local · 15-11-2026
+
+El servicio ya integra captura, ajuste de formato, vídeo y entrada. `javi-aa-format` se prepara mediante Store para el siguiente arranque completo; no reinicia `aapd` durante la instalación. El cliente solo acepta el protocolo 3, identidad y socket privados verificados. Otra adquisición en la misma sesión requiere cierre/restauración limpia y REARM con la observación exacta. [Contrato y análisis de reentrada](tools/aa-format-runtime/REENTRY.md).
+
+La captura se arma antes del ajuste, con colas acotadas. Se conserva únicamente un GOP posterior al inicio real del setter, aunque su IDR llegue antes de la confirmación. Así no se pierde el único IDR observado en una muestra real ni se muestra un GOP antiguo con un recorte nuevo. El tiempo de captura comparte CLOCK_MONOTONIC con el puente; no se compara con el PTS del teléfono. El padre detecta un worker sin respuesta y el cierre comprueba la retirada, propagando fallos en vez de asumir que salir equivale a limpiar.
+
+Pasaron 430 pruebas del proyecto y 406 comprobaciones del modelo nativo, además de Node 8 y el empaquetado de los cuatro componentes. **No está instalado ni publicado.** La recomposición correcta y la entrada se habían confirmado en ensayos distintos; falta validarlas juntas con este candidato, incluyendo alternar AA/BMW y recuperar AA original sin reconectar el teléfono. El último acceso SSH no respondió y se sigue en local. [Ensayo y reversión](tools/aa-format-runtime/TEST-PLAN.md).
+
+## Formato adaptado confirmado; entrada pendiente · 15-11-2026
+
+Con la variante temporal write (`3be626ec845bf730e572b0ed8aa13aeb2664476c58c83773c7fc21f36ecad8c7`) se aplicaron exclusivamente márgenes MAIN T/B=250, L/R=376, conservando la imagen codificada de 1920×1080. El contenido útil 1168×580 se presentó en el panel alto. La captura muestra que el teléfono recompone AA con la barra de aplicaciones abajo; no es un estiramiento del escritorio ancho. **El usuario confirmó tamaño correcto y cockpit igual, pero el toque y la rueda no respondían.** No se considera terminada la integración interactiva.
+
+La petición pasó a active en epoch 1. El ensayo temporal de 40 s registró 20 gestos recibidos por nuestra capa, primer ACK del auxiliar a 441 ms, 733 cuadros decodificados y hueco máximo del productor 187,8 ms; sin pérdidas/incompletos/malformados declarados. Esos gestos y el ACK no prueban respuesta de AA, que el usuario negó.
+
+La comparación posterior **sin preload y con el formato ancho original** también perdió toque y rueda, confirmado por el usuario. Nuestra auditoría contó 438 ACK aceptados y UDP down/move/up 16/406/16, sin rechazos; la lease FrontCCU estuvo ausente en las 179 muestras. La sonda no registró eventos de entrada en aapd, sin pérdidas declaradas; ese cero requiere distinguir ausencia de entrega de límites de observación. El usuario confirmó después que tampoco funcionaba AA original a pantalla completa y que reconectar el teléfono no lo recuperaba. Por tanto, no se atribuye el fallo a los márgenes ni se modifica su escala táctil por esa suposición.
+
+Se verificaron cero procesos experimentales, cero sondas propias, cero mappings del puente y la unidad aapd original antes de solicitar autorización separada para reiniciar la MGU completa. El usuario autorizó ese reinicio de recuperación; se ejecutó sin instalar cambios. Tras arrancar, SSH confirmó aapd activo con el preload original y sin override, y **el usuario confirmó toque y rueda recuperados en AA original**. No repetir reinicios aislados de aapd como si su ciclo completo de entrada estuviera validado.
+
+El análisis estático aporta un mecanismo compatible, aún sin observar el código de error real de esta incidencia: Hmi8 `createInputRelay` devuelve error 3 si ya existe el UUID; aapd solo acepta error 0 y exige los proxies foreground y background para crear InputConsumer. Su destructor de watcher solo retira el UUID foreground observado. Un relay conservado puede dejar el vídeo operativo y la entrada sin consumidor después de un reinicio aislado. No se eliminan relays ni se atribuye certeza causal a ese mecanismo solo por el desensamblado. La carga de producto debe acompañar un arranque completo mediante el preload de Store, sin reiniciar servicios BMW durante la instalación.
+
+Al cerrar, el cliente recibió done sin estado sucio ni incertidumbre para los márgenes originales. Antes de retirar el puente se capturó de nuevo el formato ancho 1536×448 con barra lateral AA: confirma visualmente el regreso a la composición anterior. Después se retiró el override y se comprobó otro proceso de aapd activo con su preload original y sin el puente. No se modificó IC ni se reinició la MGU. Capturas, cliente privado y trazas quedan fuera del árbol publicable; no hay nueva release.
+
+## Puente MAIN: lectura inicial comprobada · 15-11-2026
+
+El usuario autorizó cargar temporalmente el puente de formato y reiniciar solo el servicio AA durante el ensayo, con retirada automática. La primera carga no llegó a aplicarse: `aapd` usa UID/GID 13006 y no podía abrir una biblioteca dentro de un directorio temporal root 0700. Se retiró el override y se verificó el servicio original activo, sin biblioteca adicional. No se cambió el usuario del servicio.
+
+La variante de observación corregida usa biblioteca root 0644 bajo `/run` root 0755 e IPC privado de 13006, admitiendo únicamente cliente root. Verifica hashes del firmware y UID/GID; pasó 217 comprobaciones locales y revisión independiente. SHA observe: `485ab1bf775e7873250f314b912745df70af0f6fbf3ad6a089ff3eef9ae700bc`. No se distribuye todavía.
+
+La carga real confirmó factoría, callbacks, display MAIN y sesión. La baseline no llega solo por conectar el teléfono: apareció al iniciar el vídeo MAIN mediante el ensayo temporal. Se obtuvo epoch 1, config 0, máscara seleccionada 2015, UiConfig 9, insets **248/248/0/0**, sin incertidumbre ni fallos. Una solicitud SET se rechazó porque esta variante tiene escrituras deshabilitadas. Se cerró el vídeo, se retiró el override y se confirmó un nuevo proceso con el preload original y sin el puente. Esto valida la lectura inicial y la retirada del preload, **no** el ajuste ni la restauración de márgenes; ambos siguen pendientes. No se solicitó el display IC ni se reinició la MGU.
+
 ## Toque y rueda confirmados; encuadre pendiente · 15-11-2026
 
 En otro ensayo temporal el usuario confirmó **toque, arrastre y rueda funcionando dentro del panel izquierdo**, con el cockpit igual. Después señaló que el mapa se veía pequeño y con franjas negras. Esa observación limita la validación: la entrada funciona, pero el formato panorámico original aún no se adapta al área del producto. La integración completa y su publicación siguen pendientes; no se instaló ni reinició la MGU en este ensayo.

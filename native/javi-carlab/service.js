@@ -20,6 +20,7 @@ const { appUid, authorizeApp } = require('./drivehub-uplink.js');
 const { width, height } = require('./drivehub-state.js');
 const { createCockpit } = require('./cockpit.js');
 const { createIntegration: createAndroidAuto } = require('./aa-integration');
+const { createFormat } = require('./aa-format');
 const { createUnderlay } = require('./aa-underlay');
 const { createInput: createAAInput } = require('./aa-input-process');
 const { RenderClient } = require('/var/opt/mgu-render/current/mgu_render_client.js');
@@ -48,6 +49,7 @@ let contextAt = 0;
 let gate = false;
 let gateCheckedAt = 0;
 let gatePending = false;
+let stopping = false;
 const inspectGate = createGateProbe();
 const installation = createInstallation(directory, launcherId);
 
@@ -60,6 +62,7 @@ function aaRequirement() {
 }
 
 function renewController() {
+    if (stopping) return;
     const now = Date.now();
     if (!gatePending && now - gateCheckedAt >= 2000) {
         gatePending = true;
@@ -97,6 +100,7 @@ const androidAuto = createAndroidAuto(gpu, {
     ffmpeg: path.join(__dirname, 'bin/ffmpeg'),
     capture: path.join(__dirname, 'bin/aa-capture'),
     input: aaInput,
+    createFormat: options => createFormat(Object.assign({ displayHeight: height }, options)),
     requirement: aaRequirement,
     createFocus: underlay.acquire
 });
@@ -213,26 +217,21 @@ async function startTdtProxy() {
 
 const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl', (err) => {
     console.error(err.message);
-    releaseController();
-    input.close();
-    telemetry.close();
-    navigation.close();
-    radio.close();
-    bmwAudio.stop();
-    audio.close();
-    session.close();
-    process.exit(1);
+    shutdown(1);
 });
 
 async function poll() {
+    if (stopping) return;
     try {
         const installed = await installation();
         const id = installed.applet;
         const context = parseContext(await request('ctx'));
+        if (stopping) return;
         if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
         contextAt = Date.now();
         androidAuto.context(context, id);
         await underlay.poll(context, id);
+        if (stopping) return;
         let visible = isLauncher(context, id) || underlay.owns(context);
         if (visible) {
             if (!launcherVisible) returnContext = lastContext && !isLauncher(lastContext, id) ? lastContext : null;
@@ -251,6 +250,7 @@ async function poll() {
                 homeRequest = false;
                 homeDeadline = Date.now() + 1800;
                 const result = await request(openContext(returnContext));
+                if (stopping) return;
                 if (!/^ok(?:\s|$)/.test(result)) failExit();
                 else { underlay.abandon(); visible = false; }
             } else if (homeDeadline && Date.now() >= homeDeadline) failExit();
@@ -267,6 +267,7 @@ async function poll() {
         session.show(visible);
         renewController();
     } catch (err) {
+        if (stopping) return;
         console.warn(err.message);
         launcherVisible = false;
         underlay.abandon();
@@ -276,7 +277,7 @@ async function poll() {
         releaseController();
         session.show(false);
     } finally {
-        setTimeout(poll, 400);
+        if (!stopping) setTimeout(poll, 400);
     }
 }
 
@@ -290,7 +291,9 @@ gpu.connect();
 poll();
 const controllerTimer = setInterval(renewController, 200);
 
-process.once('SIGTERM', () => {
+function shutdown(code) {
+    if (stopping) return;
+    stopping = true;
     clearInterval(controllerTimer);
     releaseController();
     input.close();
@@ -299,6 +302,18 @@ process.once('SIGTERM', () => {
     radio.close();
     bmwAudio.stop();
     audio.close();
-    session.close();
-    process.exit(0);
-});
+    // Preserve the process long enough to observe format restoration and the
+    // capture guardian's retirement. Dropping IPC immediately is not proof.
+    const deadline = setTimeout(() => {
+        console.warn('BMWLauncher: cierre de Android Auto sin confirmar');
+        process.exit(1);
+    }, 15000);
+    session.close().then(() => {
+        clearTimeout(deadline); process.exit(code);
+    }, () => {
+        clearTimeout(deadline);
+        console.warn('BMWLauncher: no se confirmó la retirada de Android Auto');
+        process.exit(1);
+    });
+}
+process.once('SIGTERM', () => shutdown(0));

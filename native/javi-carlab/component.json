@@ -596,6 +596,11 @@
       "mode": "0644"
     },
     {
+      "path": "aa-format.js",
+      "from": "aa-format.js",
+      "mode": "0644"
+    },
+    {
       "path": "aa-frame.js",
       "from": "aa-frame.js",
       "mode": "0644"

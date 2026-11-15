@@ -8,7 +8,7 @@ const { layout, menuActions } = require('./aa-view');
 function createAAUI(adapter, changed, notify, action) {
     const state = { source: adapter ? 'aa' : 'bmw', focus: 'drivehub', header: false, settings: false, menu: false, menuIndex: 0 };
     let visible = false, active = false, closed = false, inputFocused = false, gesture, lastPoint, unwatch;
-    let menuKnob, menuPressed = false;
+    let menuKnob, menuPressed = false, closing;
     changed = changed || (() => {}); notify = notify || (() => {});
     action = action || (() => {});
     function status() { return adapter && adapter.status() || { state: 'unavailable', inputReady: false }; }
@@ -41,6 +41,7 @@ function createAAUI(adapter, changed, notify, action) {
         cancel(); active = next; synchronizeFocus(); adapter.setVisible(next); changed();
     }
     function update(onScreen, diagnostics, header) {
+        if (closed) return;
         visible = !!onScreen;
         state.header = !!adapter && visible && !diagnostics && state.source === 'bmw' && !!header;
         state.settings = !!adapter && visible && !diagnostics && state.source === 'aa';
@@ -79,7 +80,7 @@ function createAAUI(adapter, changed, notify, action) {
         if (state.header && contains(layout.source, x, y)) return 'aa';
     }
     function touch(phase, x, y) {
-        if (!adapter || !visible) return false;
+        if (closed || !adapter || !visible) return false;
         const action = actionAt(x, y);
         if (phase === 'down') {
             cancel();
@@ -115,6 +116,7 @@ function createAAUI(adapter, changed, notify, action) {
         frame: () => active && adapter.frame(),
         ready(info) { if (adapter) adapter.ready(info); },
         controller(event) {
+            if (closed) return false;
             if (state.menu) {
                 const valid = Number.isInteger(event.knob) && event.knob >= 0 && event.knob < 65535;
                 const pressed = event.press === 1 || event.press === 2;
@@ -134,10 +136,13 @@ function createAAUI(adapter, changed, notify, action) {
         ownsInput: () => active && state.focus === 'aa' && !state.menu,
         focusDriveHub: () => focus('drivehub'),
         close() {
-            if (closed) return;
+            if (closed) return closing;
             cancel(); if (adapter) setActive(false); closed = true;
             if (typeof unwatch === 'function') unwatch();
-            if (adapter) adapter.close();
+            try { closing = Promise.resolve(adapter && adapter.close()); }
+            catch (error) { closing = Promise.reject(error); }
+            closing.catch(() => {});
+            return closing;
         }
     };
 }
