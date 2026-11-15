@@ -1,3 +1,5 @@
+Consulta `ESTADO.md` en la raíz del repositorio cuando la tarea dependa de decisiones previas, pruebas ya realizadas o pendientes del proyecto.
+
 # BMWLauncher · instrucciones de desarrollo
 
 ## Antes de modificar código
