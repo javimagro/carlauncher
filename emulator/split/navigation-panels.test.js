@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fsCallbacks = require('node:fs');
 const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
 const { createNavigationUI } = require('../../native/javi-carlab/navigation-ui');
 const { controls } = require('../../native/javi-carlab/navigation-panels');
@@ -40,10 +41,17 @@ function insideFrame(s, points) {
     }
 }
 
-test('route settings save as they change and load even when edited before the file finishes reading', async (t) => {
+test('route settings save during loading even if the first replacement is temporarily blocked', async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-prefs-'));
     const navigationFile = path.join(root, 'navigation.json');
     await fs.writeFile(navigationFile, JSON.stringify({ preferences: { arrival: 25, motorways: false }, theme: 'day' }));
+    const rename = fsCallbacks.rename;
+    let replacements = 0;
+    t.mock.method(fsCallbacks, 'rename', (file, dest, callback) => {
+        if (dest === navigationFile && replacements++ === 0) {
+            setImmediate(() => callback(Object.assign(new Error('test blocked replacement'), { code: 'EPERM' })));
+        } else rename(file, dest, callback);
+    });
     const ui = createNavigationUI({ navigationFile }, () => {});
     let restored;
     t.after(async () => { ui.close(); if (restored) restored.close(); await fs.rm(root, { recursive: true, force: true }); });
@@ -56,6 +64,7 @@ test('route settings save as they change and load even when edited before the fi
         await new Promise((resolve) => setTimeout(resolve, 25));
     } while (Date.now() < saveDeadline);
     assert.deepEqual(saved.preferences, { tolls: false, arrival: 25, motorways: false });
+    assert(replacements >= 2);
     restored = createNavigationUI({ navigationFile }, () => {});
     const loadDeadline = Date.now() + 4000;
     while (restored.state.preferences.arrival !== 25 && Date.now() < loadDeadline) {

@@ -82,8 +82,17 @@ function createNavigationUI(options, invalidate) {
             if (error && !closed) notify('No se han podido guardar los ajustes y destinos');
             if (saveAgain) { saveAgain = false; save(); }
         }
-        fs.writeFile(options.navigationFile + '.tmp', content, { mode: 0o600 }, (err) => {
-            if (err) done(err); else fs.rename(options.navigationFile + '.tmp', options.navigationFile, done);
+        const temporary = options.navigationFile + '.tmp';
+        function replace(attempt) {
+            fs.rename(temporary, options.navigationFile, (error) => {
+                // Windows can temporarily refuse replacing a file held open by a reader.
+                if (error && ['EPERM', 'EBUSY'].includes(error.code) && attempt < 4) {
+                    setTimeout(() => replace(attempt + 1), 25 * (attempt + 1));
+                } else done(error);
+            });
+        }
+        fs.writeFile(temporary, content, { mode: 0o600 }, (error) => {
+            if (error) done(error); else replace(0);
         });
     }
     function setPreference(key, value) {
