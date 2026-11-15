@@ -10,6 +10,7 @@ Registra aquí los cambios relevantes, las incidencias y las pruebas que ayuden 
 - Cuadro: se trasladaron tiempo, batería HV y potencia/consumo a los ejes derechos de la composición de CarLauncher, manteniendo el rectángulo ID8 del widget. La mitad izquierda se compone con alpha cero.
 - Verificación local: 260 pruebas de `node --test emulator/split/*.test.js`, 60 del perfil alto, capturas de ambos perfiles y temas, captura del cuadro con y sin datos, sintaxis Node 8.16.2, permiso del volante contra el catálogo y empaquetado del motor con enlace OAP sintético. Queda contrastar el mando físico y la posición del widget en el i4.
 - La app y el motor pasan a 0.2.18 y el filtro de FrontCCU conserva la 1.0.0. La distribución se prepara desde el commit integrado con la app OAP fuente y los dos componentes nativos. La reversión consiste en reinstalar la app y el motor de la 0.2.17.
+- Antes de etiquetar se reprodujo en Windows que un lector con el archivo abierto puede bloquear `rename` con `EPERM`. El guardado reintenta el reemplazo atómico con un límite de cuatro reintentos. La regresión fuerza el primer fallo y comprueba que se conserva el cambio realizado mientras cargaban los ajustes.
 
 ## 2026-11-15 · Integración de cambios entre worktrees
 
