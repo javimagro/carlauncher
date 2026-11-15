@@ -27,6 +27,12 @@
 - Nativo compilado con avisos como errores, ELF revisado, pruebas de ensamblaje/parser y muestra real decodificada. Una unidad superó 61.440 bytes y se descartó; hubo un DTS fuera de orden entre CPU. Coste total, sesiones largas, recorte adaptable, toque y mando siguen pendientes. Fuentes de diagnóstico, registros y muestras permanecen fuera de Git. [Evidencia y límites](ANDROID-AUTO-MGU21.md).
 - Pasaron 272/272 pruebas generales, sintaxis del build y revisión del diff. Tras un reinicio realizado por el usuario, SSH volvió a responder y se verificaron cero auxiliares y ausencia de archivos, anillo y eventos temporales. No se ha cerrado SSH. Cambios locales en documentación/build; el binario publicado permanece intacto.
 
+## 2026-11-15 · Foco del mando al pasar por Radio
+
+- Al girar desde Trayecto, el segundo paso quedaba en Radio y enviaba una sintonización. Las regresiones reprodujeron ese giro y el que se recibía al cerrar un panel de navegación. El carrusel delegaba el giro a Radio aunque estuviese en el resumen de la emisora.
+- El giro recorre el carrusel en el resumen y las filas cuando se abre Emisoras por OK o toque. OK o un toque en una fila sintonizan. Volver, inclinar a la izquierda con la lista abierta, cambiar de tarjeta u ocultar la app devuelven Radio al resumen. Se conserva el salto directo de los botones del volante y la prioridad de los paneles de navegación.
+- Pasaron 272 pruebas del simulador, 24 de Radio en el perfil alto y la carga con Node 8.16.2. La herramienta de previsualización generó seis capturas de los estados de Radio. Queda comprobar el giro físico en el i4.
+
 ## 2026-11-15 · 0.2.20: rótulo, logos TDT y cockpit integrados
 
 - Petición: esperar a terminar e integrar también los cambios del otro hilo. PR #7: rótulo completo con ocultación, recuperación por toque/OK y logos locales. PR #8: composición de cockpit ampliada, indicadores a la derecha a escala 1:1, transparencia y máscaras del arte. PR #9: iconos del mapa reducidos y ETA compacto de 334 × 150. Se conserva el foco de audio de la 0.2.19 y el resto de mejoras ya integradas.
