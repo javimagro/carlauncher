@@ -11,7 +11,10 @@ const { setTimeout: delay } = require('node:timers/promises');
 const catalog = require('../../native/javi-carlab/tdt-catalog');
 const { createPlayer, createRing } = require('../../native/javi-carlab/tdt-player');
 const { createTdt, layout } = require('../../native/javi-carlab/tdtworld');
-const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
+const { resolve } = require('../../native/javi-carlab/tdt-logos');
+const { Recorder, makeImage } = require('../../native/javi-carlab/vendor/kit_record');
+const { drawHome } = require('../../native/javi-carlab/drivehub-view');
+const { cards, width, height } = require('../../native/javi-carlab/drivehub-state');
 
 const first = { id: 'la1', epg: 'La1.TV', name: 'La 1', group: 'Generalistas', sources: ['https://example.com/uno.m3u8'] };
 const second = { id: 'la2', epg: 'La2.TV', name: 'La 2', group: 'Generalistas', sources: ['https://example.com/dos.mpd'] };
@@ -107,6 +110,65 @@ test('switching channel and programme discards fanart that arrives after the foc
     await eventually(() => tdt.state.art);
     assert.deepEqual(requested, ['actual.png', 'siguiente.png', 'otro.png']);
     assert.equal(tdt.program(tdt.selected(), 50, true).title, 'Actual');
+});
+
+test('the current TDT channel uses its offline logo and EPG until the information times out', async (t) => {
+    const start = Date.UTC(2026, 10, 15, 11), end = start + 3600000;
+    const guide = { aliases: new Map([[first.epg, [{ title: 'Informativo actual', description: 'Titulares de hoy',
+        icon: 'https://example.com/actual.png', start, end }]]]) };
+    let now = start + 900000, status;
+    const requests = [];
+    const tdt = createTdt({ fixture: { tdtChannels: [first, second], tdtGuide: guide }, now: () => now,
+        async photo(url, get, w, h) { requests.push([url, w, h]); return makeImage(w, h, Buffer.alloc(w * h * 4)); },
+        get: () => assert.fail('channel logos must be local'),
+        tdtPlayer: { start(sources, callback) { status = callback; status('playing'); }, stop() {}, frame() { return null; } }
+    }, () => {});
+    t.after(() => tdt.close());
+    tdt.update(now, true); tdt.press(false);
+    await eventually(() => { tdt.update(now, true); return tdt.logo(first) && tdt.state.art; });
+    assert.equal(tdt.state.playerChoice, undefined);
+    assert.equal(tdt.logo(first).w, 90);
+    assert(requests.some(([url, w, h]) => url.endsWith('/actual.png') && w === 96 && h === 128));
+
+    function draw() {
+        const cv = new Recorder(width, height), labels = [], tracks = [];
+        const text = cv.text.bind(cv), rect = cv.roundRect.bind(cv);
+        cv.text = (value, ...args) => { labels.push(value); return text(value, ...args); };
+        cv.roundRect = (x, y, w, h, r, color) => { tracks.push({ w, h, color }); return rect(x, y, w, h, r, color); };
+        const index = cards.findIndex((card) => card.id === 'tdtworld');
+        drawHome(cv, { selected: index }, cards[index].x, { tdt, energy: [] }, () => null, now);
+        return { labels, tracks };
+    }
+    const before = draw();
+    for (const label of ['Informativo actual', 'Titulares de hoy', 'En directo · 15 min emitidos', tdt.time(start), tdt.time(end)]) {
+        assert(before.labels.includes(label), label);
+    }
+    const fill = before.tracks.find((track) => track.color === '#49C5B6');
+    const track = before.tracks.find((track) => Array.isArray(track.color) && track.h === 5);
+    assert.equal(fill.w, track.w / 4);
+    now += 5000;
+    tdt.update(now, true);
+    assert.equal(tdt.overlayVisible(now), false);
+    assert.equal(tdt.state.art, undefined);
+    assert(!draw().labels.includes('Informativo actual'));
+    status('buffering'); status('playing');
+    assert.equal(tdt.overlayVisible(now), false, 'recovering one stream must not show the banner again');
+    tdt.press(false);
+    assert.equal(tdt.overlayVisible(now), true);
+});
+
+test('Carlinkit logos use country aliases and the same offline file in the channel list', async (t) => {
+    const logos = require('../../native/javi-carlab/tdt-logos.json');
+    assert.deepEqual(Object.keys(logos.regions).sort(), Object.keys(catalog.countries).sort());
+    const local = resolve(logos, 'es', first);
+    assert(Number.isInteger(local) && local !== logos.generic);
+    const french = resolve(logos, 'fr', { name: 'France 2', epg: 'France2.fr@SD' });
+    assert(Number.isInteger(french) && french !== local);
+    assert.equal(resolve(logos, 'fr', { name: 'No existe en Carlinkit' }), undefined);
+    const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, get: () => assert.fail('must work offline') }, () => {});
+    t.after(() => tdt.close());
+    await eventually(() => { tdt.update(Date.now(), true); return tdt.logo(first) && tdt.logo(second); });
+    assert.notEqual(tdt.logo(first), tdt.logo(second));
 });
 
 test('Atres retuning selects DASH before failing legacy HLS and never repeats an identical source', async () => {

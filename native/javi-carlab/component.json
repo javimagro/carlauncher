@@ -236,6 +236,21 @@
       "mode": "0644"
     },
     {
+      "path": "tdt-logos.js",
+      "from": "tdt-logos.js",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-logos.json",
+      "from": "tdt-logos.json",
+      "mode": "0644"
+    },
+    {
+      "path": "tdt-logos.pack",
+      "from": "tdt-logos.pack",
+      "mode": "0644"
+    },
+    {
       "path": "tdt-player.js",
       "from": "tdt-player.js",
       "mode": "0644"

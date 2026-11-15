@@ -1,7 +1,7 @@
 'use strict';
 
 const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
-const { layout: tdtLayout, visibleChannels } = require('./tdtworld.js');
+const { layout: tdtLayout, playerOverlay, visibleChannels } = require('./tdtworld.js');
 const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require('./vehicle-readings.js');
 const { drawNavigation, drawToggle } = require('./navigation-view.js');
 const { drawPreconditioning } = require('./preconditioning-ui');
@@ -422,14 +422,56 @@ function programmeTimes(tdt, item) {
     return item.startLabel ? [item.startLabel, item.endLabel] : [tdt.time(item.start), tdt.time(item.end)];
 }
 
+function programmeProgress(item, now) {
+    if (!item) return 0;
+    const progress = item.progress === undefined ? (now - item.start) / (item.end - item.start) : item.progress;
+    return Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+}
+
+function drawTdtOverlay(cv, tdt, channel, programme, x, bottom, w, now) {
+    const { height, logoSize, posterWidth } = playerOverlay;
+    const y = bottom - height, logoWidth = 124, logoX = x + (logoWidth - logoSize) / 2;
+    const textX = x + logoWidth + 12, posterX = x + w - posterWidth, endX = posterX - 12;
+    const textWidth = endX - textX, white = '#FFFFFF';
+    cv.roundRect(x, y, w, height, 8, [7, 17, 30, 192]);
+    cv.rampRect(x, y, logoWidth, height, 0, ['#5F6976', '#699D9D']);
+    const logoY = y + (height - logoSize) / 2;
+    cv.roundRect(logoX, logoY, logoSize, logoSize, 8, '#1B4D89');
+    const logo = tdt.logo(channel);
+    if (logo) cv.image(logo, logoX, logoY, logoSize, logoSize, 8);
+    else cv.text(channel.badge || channel.name.slice(0, 2).toUpperCase(), x + logoWidth / 2, y + height / 2 + 8, 22, white, { align: 'center', font: 'bold' });
+    fit(cv, programme ? programme.title : channel.name, textX, y + 31, 19, textWidth, white, bold);
+    const trackY = y + 45, progress = programmeProgress(programme, now);
+    cv.roundRect(textX, trackY, textWidth, 5, 2, [93, 113, 138, 51]);
+    if (progress > 0) cv.roundRect(textX, trackY, textWidth * progress, 5, 2, '#49C5B6');
+    const [start, end] = programme ? programmeTimes(tdt, programme) : ['--:--', '--:--'];
+    const status = { playing: 'En directo', loading: 'Preparando canal…', buffering: 'Cargando vídeo…', reconnecting: 'Reconectando…',
+        'native-recording': 'Preparando canal…', 'native-waiting': 'Preparando canal…' }[tdt.state.playback] || 'Sin emisión';
+    const elapsed = programme && Number.isFinite(programme.start) && Number.isFinite(programme.end)
+        ? Math.floor((programme.end - programme.start) * progress / 60000) : null;
+    const info = status === 'En directo' && elapsed !== null ? status + ' · ' + elapsed + ' min emitidos' : status;
+    cv.text(start, textX, y + 72, 13, white, bold);
+    cv.text(end, endX, y + 72, 13, white, { align: 'right', font: 'bold' });
+    fit(cv, info, (textX + endX) / 2, y + 72, 13, textWidth - 98, white, { align: 'center', font: 'bold' });
+    if (programme && programme.description) {
+        const lines = wrap(cv, programme.description.slice(0, 700), 12, () => textWidth);
+        lines.slice(0, 2).forEach((line, row) => fit(cv, row === 1 && lines.length > 2 ? line + '…' : line,
+            textX, y + 95 + row * 14, 12, textWidth, white));
+    }
+    if (tdt.state.art) cv.image(tdt.state.art, posterX, y, posterWidth, height);
+    else {
+        cv.gradientRect(posterX, y, posterWidth, height, [[0, '#1D3148'], [0.5, '#102235'], [1, '#07111E']]);
+        cv.strokeRoundRect(posterX, y, posterWidth, height, 0, 1, '#172638');
+    }
+}
+
 function tdtChannels(cv, tdt, l, left, top, first, focus, now) {
     tdt.state.channels.slice(first, first + visibleChannels).forEach((channel, index) => {
         const at = top + index * l.rowHeight;
         const selected = first + index === focus;
         const info = tdt.program(channel, now, false);
         const [start, end] = programmeTimes(tdt, info);
-        const progress = info ? (info.progress === undefined
-            ? Math.min(1, Math.max(0, (now - info.start) / (info.end - info.start))) : info.progress) : 0;
+        const progress = programmeProgress(info, now);
         cv.card(left, at, l.listWidth, l.rowHeight - 4, 7, selected
             ? [[0, '#19374e'], [1, '#112940']] : [[0, '#132638'], [1, '#0e1b2a']]);
         if (selected) cv.strokeRoundRect(left, at, l.listWidth, l.rowHeight - 4, 7, 1.5, '#6a8aa4');
@@ -457,7 +499,6 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
     const detailX = x + l.detailX;
     const detailRight = detailX + l.detailWidth;
     const item = tdt.selected();
-    const programme = tdt.program(item, now, true);
     const action = state.mode === 'browse' ? 'Configuración' : 'Volver';
     cv.roundRect(x + l.actionX, y + 7, l.actionWidth, 23, 5, '#173043');
     cv.text(action, x + l.actionX + l.actionWidth / 2, y + 23, 13, primary, centered);
@@ -478,6 +519,7 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         return;
     }
     if (state.mode === 'player') {
+        const showInfo = item && tdt.overlayVisible(now);
         const listOpen = state.playerChoice !== undefined;
         const playerLeft = listOpen ? detailX : left;
         const playerWidth = detailRight - playerLeft;
@@ -517,13 +559,14 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
             const code = /^\w+=(-?\d{1,4})$/.exec(state.audioDiagnostic || '');
             const label = code ? audioError + ' (' + code[1] + ')' : audioError;
             const badgeWidth = cv.textWidth(label, 13) + 24;
-            cv.roundRect(x + w - badgeWidth - 18, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
-            cv.text(label, x + w - badgeWidth / 2 - 18, top + 24, 13, primary, centered);
+            const badgeRight = x + w - (showInfo ? 99 : 18);
+            cv.roundRect(badgeRight - badgeWidth, top + 8, badgeWidth, 24, 5, [7, 17, 30, 220]);
+            cv.text(label, badgeRight - badgeWidth / 2, top + 24, 13, primary, centered);
         }
-        if (item && state.overlayUntil > now) {
-            cv.fillRect(playerLeft, top + l.body - 57, playerWidth, 57, [7, 17, 30, 225]);
-            fit(cv, item.name, playerLeft + 15, top + l.body - 31, 21, playerWidth - 32, primary, bold);
-            if (programme) fit(cv, programme.title, playerLeft + 15, top + l.body - 11, 15, playerWidth - 32, secondary);
+        if (showInfo) {
+            cv.roundRect(x + w - 86, top + 8, 68, 34, 8, [0, 0, 0, 204]);
+            cv.text(tdt.time(now), x + w - 52, top + 31, 18, '#FFFFFF', { align: 'center', font: 'bold' });
+            drawTdtOverlay(cv, tdt, item, tdt.program(item, now, false), playerLeft, top + l.body, playerWidth, now);
         }
         if (listOpen) {
             cv.fillRect(left, top, l.detailX - 9, l.body, '#07111e');
@@ -538,6 +581,7 @@ function tdtworld(cv, x, y, w, h, tdt, focused, clipLeft, clipRight, now) {
         cv.text(status || 'No hay canales en esta lista', x + w / 2, top + l.body / 2, 20, primary, centered);
         return;
     }
+    const programme = tdt.program(item, now, true);
     const detailLeft = Math.max(detailX, clipLeft);
     const visibleRight = Math.min(detailRight, clipRight);
     if (visibleRight <= detailLeft) return;
