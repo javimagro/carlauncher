@@ -68,6 +68,29 @@ test('BMW search owns its decimal session list, filters foreign results and pres
     await f.engine.stop(); assert.equal(f.calls.filter((c) => c[0] === 'deleteSession').length, 2);
 });
 
+test('adding from ETA preserves the active BMW destination and avoids copying past or automatic stops', async (t) => {
+    const f = fixture(); t.after(() => f.engine.stop());
+    await select(f);
+    const command = { action: 'add-stop', activeRoute: true };
+    await f.engine.command({ ...command, request: 3 });
+    assert.equal(f.engine.snapshot().error, 'BMW_ACTIVE_TRIP_UNAVAILABLE');
+    assert(!f.calls.some(([name]) => name === 'createRoutingSession'));
+
+    const waypoint = poiAt(40.45), final = poiAt(40.5);
+    function poiAt(latitude) { return { optionPOILocation: { ...address.optionPOILocation, latitude } }; }
+    f.proxies.trips.currentTrips.getValue = async () => [{ active: true, tripDefinition: { tripSegment: [
+        { destination: poiAt(40.42), destinationStatus: 'PASSED' },
+        { destination: waypoint, destinationStatus: 'ACTIVATED' },
+        { destination: poiAt(40.48), destinationStatus: 'UPCOMING', isERouteTripSegment: true },
+        { destination: final, destinationStatus: 'UPCOMING' }
+    ] } }];
+    await f.engine.command({ ...command, request: 4 });
+    const segments = f.calls.find(([name]) => name === 'createRoutingSession')[1].tripDefinition.tripSegment;
+    assert.deepEqual(segments.map((segment) => segment.destination), [waypoint, address, final]);
+    assert.equal(segments[2].destinationType, 'DESTINATION');
+    assert(!f.calls.some(([name]) => name === 'startGuidance' || name === 'stopGuidance'));
+});
+
 test('charge search uses the vehicle category IDs and explicit view bounds, without text guessing', async () => {
     const f = fixture(); await f.engine.command({ request: 1, action: 'chargers' }); f.results(true);
     assert.equal(f.engine.snapshot().results[0].type, 'charger');

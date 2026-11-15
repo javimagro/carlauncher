@@ -41,6 +41,38 @@ function insideFrame(s, points) {
     }
 }
 
+test('ETA shows CarLauncher actions and reads arrival time and zero battery from the BMW route', (t) => {
+    const r = rig(); t.after(() => r.ui.close());
+    Object.assign(r.nav, { state: 'active', at: new Date(2026, 0, 1, 23, 36).getTime(),
+        destinations: [{ final: true, metres: 92000, seconds: 3960 }], energy: { source: 'bmw', destinationSoc: 0 } });
+    r.receive({});
+    const cv = new Recorder(1960, 520), labels = [];
+    const text = cv.text.bind(cv);
+    cv.text = (label, ...args) => { labels.push(label); return text(label, ...args); };
+    controls(cv, r.ui, r.nav);
+    assert.deepEqual(r.ui.state.buttons.filter((b) => b.x >= layout.panel(r.ui.state).x && b.y > map.y + map.h / 2).map((b) => b.id),
+        ['stop', 'add-stop-search', 'route-panel']);
+    assert.equal(r.ui.state.buttons.filter((b) => b.id === 'settings').length, 1);
+    for (const label of ['1 h y 6 min', '92 km - ', '00:42', '0 %']) assert(labels.includes(label), label);
+    delete r.nav.energy;
+    labels.length = 0;
+    controls(cv, r.ui, r.nav);
+    assert(!labels.includes('0 %') && !labels.includes('— %'));
+    r.tap('stop');
+    assert.equal(r.ui.state.panel, 'stop');
+    assert.equal(r.sent.length, 0);
+    r.tap('close');
+    r.tap('add-stop-search');
+    assert.equal(r.ui.state.addingStop, 'active');
+    r.ui.activate('add-stop');
+    assert.equal(r.sent[0].activeRoute, true);
+    r.receive({});
+    r.ui.activate('close');
+    r.tap('route-panel');
+    assert.equal(r.ui.state.panel, 'route');
+    assert.equal(r.sent[1].action, 'itinerary');
+});
+
 test('route settings save during loading even if the first replacement is temporarily blocked', async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-prefs-'));
     const navigationFile = path.join(root, 'navigation.json');

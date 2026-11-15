@@ -61,6 +61,10 @@
     "recent": {
       "file": "app/src/main/res/drawable/ic_navigation_bookmark.xml",
       "sha256": "2a02f294d61cebbd3a8ba3147d7efcd90ead812c5a47124853a6c1550cf63011"
+    },
+    "circle-plus": {
+      "sha256": "f86c870bf33c5e1620f964058559b47ad7f568d007bc2cf11106549dd3bcffbe",
+      "file": "app/src/main/res/drawable/ic_navigation_reference_circle_plus.xml"
     }
   }
 }

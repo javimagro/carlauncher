@@ -7,10 +7,11 @@ const assert = require('node:assert/strict');
 const { Recorder, play } = require('../emulator/split/software-renderer');
 const { Canvas } = require('../native/javi-carlab/vendor/kit_canvas');
 const { drawHome } = require('../native/javi-carlab/drivehub-view');
+const { energyBar, height, viewport, width } = require('../native/javi-carlab/drivehub-state');
 const { loadArtwork } = require('../native/javi-carlab/drivehub-data');
 const { createNavigationUI } = require('../native/javi-carlab/navigation-ui');
 const { vehicleReadings } = require('../native/javi-carlab/vehicle-readings');
-const output = path.resolve('dist/navigation-preview');
+const output = path.resolve(height === 572 ? 'dist/navigation-preview-tall' : 'dist/navigation-preview');
 if (process.argv.includes('--online')) throw new Error('Navegación BMW no usa mapas online');
 fs.mkdirSync(output, { recursive: true });
 const point = { latitude: 40.4168, longitude: -3.7038 };
@@ -39,11 +40,12 @@ async function main() {
         await new Promise((resolve) => require('../native/javi-carlab/navigation-icons').preload(resolve));
         ui.update(nav, vehicle, true);
         let reference;
+        const energyReferences = new Map();
         const scenarios = ['mapa', 'teclado', 'resultados', 'cargadores-esperando', 'cargadores-error', 'cargadores-vacio', 'cargadores', 'cargadores-noche', 'detalle', 'ruta', 'ruta-paradas', 'ruta-bateria', 'ajustes', 'guardados', 'noche', 'guiado', 'ensayo-marcadores', 'ensayo-ruta',
-            'hud-cuadro', 'hud-cuadro-noche', 'hud-cuadro-sin-datos', 'hud-cuadro-error', 'voz-activa', 'voz-silenciada'];
+            'hud-cuadro', 'hud-cuadro-noche', 'hud-cuadro-sin-datos', 'hud-cuadro-error', 'voz-activa', 'voz-silenciada', 'guiado-noche', 'guiado-sin-bateria'];
         const realStatus = ui.tiles.status, realDraw = ui.tiles.draw;
         for (const scenario of scenarios) {
-            Object.assign(nav, { state: 'inactive', points: [], route: null, instruction: null, destinations: [], segments: [], presentation: undefined });
+            Object.assign(nav, { state: 'inactive', points: [], route: null, instruction: null, destinations: [], segments: [], presentation: undefined, energy: undefined });
             ui.tiles.status = realStatus; ui.tiles.draw = realDraw;
             ui.state.offset = 0; ui.state.routePage = 'summary'; ui.state.camera = null; ui.state.follow = true; data.toast = undefined;
             ui.state.panel = ({ teclado: 'search', resultados: 'search', detalle: 'detail', ruta: 'route', ajustes: 'settings', guardados: 'recent' })[scenario] || 'none';
@@ -74,10 +76,12 @@ async function main() {
                 };
             }
             if (scenario.indexOf('voz-') === 0) nav.presentation = { options: { voiceGuidanceEnabled: scenario === 'voz-activa' } };
-            if (scenario === 'guiado') {
+            if (scenario.startsWith('guiado')) {
                 nav.state = 'active'; nav.points = [point, { latitude: point.latitude + .001, longitude: point.longitude + .001 }];
                 nav.instruction = { kind: 'intersection', direction: 'RIGHT', road: 'Vía de prueba', metres: 200, exit: null };
-                nav.destinations = [{ final: true, metres: 50400, seconds: 2399 }]; nav.segments = [{ name: 'Destino de prueba' }];
+                nav.destinations = [{ final: true, metres: 92000, seconds: 3960 }]; nav.segments = [{ name: 'Destino de prueba' }];
+                nav.at = new Date(2026, 0, 1, 21, 36).getTime();
+                if (scenario !== 'guiado-sin-bateria') nav.energy = { source: 'bmw', destinationSoc: 17 };
             }
             if (scenario === 'ensayo-ruta') {
                 ui.state.panel = 'route'; ui.state.routePage = 'stops'; nav.state = 'active'; nav.route = { key: '80:3' };
@@ -89,17 +93,23 @@ async function main() {
                 ui.tiles.draw = (cv) => cv.text('ENSAYO GEOMÉTRICO · SIN CARTOGRAFÍA', 525, 90, 17, '#506278');
             }
             ui.state.nav = nav; ui.syncCamera(true);
-            const cv = new Recorder(1960, 520), surface = new Canvas(1960, 520);
+            const cv = new Recorder(width, height), surface = new Canvas(width, height);
             drawHome(cv, { selected: 0, article: 0 }, 0, data, art, 1000); play(cv.words(), surface);
             if (!reference) reference = new Uint8Array(surface.d);
-            else for (let y = 0; y < 520; y++) {
-                assert.deepEqual(surface.d.subarray((y * 1960 + 1050) * 4, (y + 1) * 1960 * 4), reference.subarray((y * 1960 + 1050) * 4, (y + 1) * 1960 * 4), 'DriveHub cambia al abrir ' + scenario);
-                if (y >= 480) assert.deepEqual(surface.d.subarray(y * 1960 * 4, (y * 1960 + 1042) * 4), reference.subarray(y * 1960 * 4, (y * 1960 + 1042) * 4), 'La barra cambia al abrir ' + scenario);
+            const energyState = JSON.stringify([nav.state === 'active', nav.energy]);
+            if (!energyReferences.has(energyState)) energyReferences.set(energyState, new Uint8Array(surface.d.subarray(energyBar.y * width * 4)));
+            for (let y = 0; y < height; y++) {
+                const row = y * width * 4;
+                assert.deepEqual(surface.d.subarray(row + viewport.x * 4, row + width * 4), reference.subarray(row + viewport.x * 4, row + width * 4), 'DriveHub cambia al abrir ' + scenario);
+                if (y >= energyBar.y) {
+                    const start = row - energyBar.y * width * 4, end = (energyBar.x + energyBar.w) * 4;
+                    assert.deepEqual(surface.d.subarray(row, row + end), energyReferences.get(energyState).subarray(start, start + end), 'La barra cambia con la misma previsión al abrir ' + scenario);
+                }
             }
             fs.writeFileSync(path.join(output, scenario + '.png'), surface.png(6));
         }
         ui.tiles.status = realStatus; ui.tiles.draw = realDraw;
-        console.log(scenarios.length + ' capturas; DriveHub y barra inferior idénticos píxel a píxel. Mapa: ' + JSON.stringify(ui.tiles.status()));
+        console.log(scenarios.length + ' capturas a ' + width + '×' + height + '; DriveHub y barra inferior sin cambios de píxeles para el mismo estado de energía. Mapa: ' + JSON.stringify(ui.tiles.status()));
     } finally { ui.close(); }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

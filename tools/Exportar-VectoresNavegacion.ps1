@@ -7,7 +7,7 @@ $files = @{
     settings='ic_navigation_settings'; audio='ic_navigation_volume_on'; chargers='ic_navigation_charger'
     recent='ic_navigation_bookmark'; assistant='ic_navigation_assistant'; back='ic_navigation_reference_arrow_left'
     close='ic_navigation_reference_x'; next='ic_navigation_reference_chevron_right'; search='ic_navigation_reference_search'
-    info='ic_navigation_reference_info'; check='ic_navigation_reference_check'; clock='ic_navigation_reference_clock_3'
+    info='ic_navigation_reference_info'; 'circle-plus'='ic_navigation_reference_circle_plus'; check='ic_navigation_reference_check'; clock='ic_navigation_reference_clock_3'
     alert='ic_navigation_reference_triangle_alert'; 'zoom-in'='ic_navigation_reference_plus'; 'route-panel'='ic_navigation_reference_navigation'
 }
 New-Item -ItemType Directory -Path $Output -Force | Out-Null
