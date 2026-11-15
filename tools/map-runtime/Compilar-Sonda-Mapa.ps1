@@ -15,7 +15,7 @@ $mapObject = Join-Path $Output 'map-own-instance.o'
 $mapBinary = Join-Path $Output 'map-own-instance'
 & "$LlvmRoot/bin/clang.exe" --target=x86_64-linux-gnu "--sysroot=$Sysroot" -std=c++14 -Wall -Wextra -Werror -nostdinc++ `
     -isystem "$Sysroot/usr/include/c++/7" -isystem "$Sysroot/usr/include/x86_64-linux-gnu/c++/7" `
-    -fsyntax-only (Join-Path $PSScriptRoot 'map-base-content.test.cpp')
+    -fsyntax-only (Join-Path $PSScriptRoot 'map-base-content.test.cpp') (Join-Path $PSScriptRoot 'map-rendering-settings.test.cpp')
 if ($LASTEXITCODE -ne 0) { throw 'Falló la regresión de serialización de cartografía' }
 & "$LlvmRoot/bin/clang.exe" --target=x86_64-linux-gnu "--sysroot=$Sysroot" -std=c++14 -O2 -fPIE -Wall -Wextra -Werror -nostdinc++ `
     -isystem "$Sysroot/usr/include/c++/7" -isystem "$Sysroot/usr/include/x86_64-linux-gnu/c++/7" -isystem $VsomeipHeaders `
@@ -38,6 +38,7 @@ foreach ($mapScript in @('Ensayar-Mapa-Propio.js', 'Diagnosticar-Escena-Mapa.js'
 @{
     sourceSha256 = (Get-FileHash -LiteralPath $mapSource -Algorithm SHA256).Hash.ToLowerInvariant()
     contentHeaderSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'map-base-content.h') -Algorithm SHA256).Hash.ToLowerInvariant()
+    renderingHeaderSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'map-rendering-settings.h') -Algorithm SHA256).Hash.ToLowerInvariant()
     binarySha256 = (Get-FileHash -LiteralPath $mapBinary -Algorithm SHA256).Hash.ToLowerInvariant()
     compiler = (& "$LlvmRoot/bin/clang.exe" --version | Select-Object -First 1)
     flags = '-std=c++14 -O2 -fPIE -Wall -Wextra -Werror; Ubuntu 18.04/glibc 2.27 sysroot'

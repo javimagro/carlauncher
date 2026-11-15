@@ -3,7 +3,7 @@
 // Commands use private search/routing sessions. Opening a panel never changes guidance.
 const ns = 'de.bmw.infotainment.navigation.';
 const contracts = {
-    search: { name: ns + 'freetextsearch.FreeTextSearch', methods: ['createSession', 'deleteSession', 'setCCPLocation', 'startSearch', 'cancelSearch', 'getValidatedLocation', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus', 'changedViewInfo'] },
+    search: { name: ns + 'freetextsearch.FreeTextSearch', methods: ['createSession', 'deleteSession', 'setCCPLocation', 'setConfiguration', 'startSearch', 'cancelSearch', 'getValidatedLocation', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus', 'changedViewInfo'] },
     poi: { name: ns + 'poisearch.POISearch', methods: ['createPOISearchSession', 'deletePOISearchSession', 'setCCPLocation', 'setCategories', 'setSearchConfiguration', 'startPOISearch', 'cancelPOISearch', 'getPOIDetail', 'createViewByIndex', 'destroyView'], broadcasts: ['resultList', 'searchStatus', 'changedViewInfo'] },
     categories: { name: ns + 'poicategorytree.POICategoryTree', attributes: { specialCategoryList: 'r' } },
     routing: { name: ns + 'routing.Routing', methods: ['createRoutingSession', 'deleteSession', 'calculateRoute', 'getTripDefinition', 'requestRouteInfoUpdate', 'stopRouteInfoUpdate'], attributes: { userCommonOptions: 'r', routeSummary: 'r' }, broadcasts: ['routeInfoUpdate'] },
@@ -90,18 +90,23 @@ function createActions(builders, options) {
         if (!proxies[key]) proxies[key] = builders.buildAndInitTypedProxy(contracts[key].name, 'Main_Instance', { timeoutMs: 10000 })
             .catch((error) => { delete proxies[key]; throw error; });
         const p = await proxies[key];
-        if (closed) { if (p.dispose) ignore(() => p.dispose()); throw new Error('CLOSED'); }
+        // finishClose owns shutdown, including a proxy resolving after stop().
+        if (closed) throw new Error('CLOSED');
         return p;
     }
     function alive(token) { if (closed || token !== generation) throw new Error('CANCELLED'); }
-    async function call(p, method, args) { return checked(await p[method](args || {})); }
+    async function call(p, method, args) {
+        // SDK methods with no inputs accept ONLY an optional timeoutMs. Passing
+        // {} there makes it the timeout, not an empty parameter object.
+        return checked(await (args === undefined ? p[method]() : p[method](args)));
+    }
     async function clearSearch() {
         const old = search; search = null; rows = [];
         if (!old) return;
         if (old.view) await ignore(() => old.p.destroyView({ view: old.view }));
         await ignore(() => old.p[old.poi ? 'cancelPOISearch' : 'cancelSearch']({ sessionID: old.id }));
         await ignore(() => old.p[old.poi ? 'deletePOISearchSession' : 'deleteSession']({ sessionID: old.id }));
-        subscriptions.splice(0).forEach(([event, id]) => ignore(() => event.unsubscribe(id)));
+        await Promise.all(subscriptions.splice(0).map(([event, id]) => ignore(() => event.unsubscribe(id))));
     }
     async function clearPlan() {
         const old = routeSession; routeSession = null; plan = null;
@@ -115,7 +120,10 @@ function createActions(builders, options) {
     function finishClose() {
         if (closing) return closing;
         closing = Promise.resolve().then(clearSearch).then(clearPlan).then(() => Promise.all(Object.keys(proxies).map((key) =>
-            proxies[key].then((p) => p.dispose && ignore(() => p.dispose()), () => {}))));
+            proxies[key].then((p) => {
+                const shutdown = p.shutdown || p.dispose;
+                return typeof shutdown === 'function' ? ignore(() => shutdown.call(p)) : undefined;
+            }, () => {}))));
         return closing;
     }
     function detail(owner, row) {
@@ -236,6 +244,14 @@ function createActions(builders, options) {
             update({ searchPhase: 'search' });
             await call(p, 'startPOISearch', { sessionID: owner.id, inputString: '' });
         } else {
+            // Hmi8's confirmed-speller/full-results flow, including the usecase
+            // inserted by sendConfiguration. See NAVEGACION-MGU21.md.
+            // Configure only this new session, not shared/global search filters.
+            update({ searchPhase: 'configuration' });
+            await call(p, 'setConfiguration', { sessionID: owner.id, searchConfigurations: {
+                INPUTMETHOD: { stringParam: 'HAPTIC' }, FEATURE: { stringParam: 'FTS' },
+                USECASE: { stringParam: 'HMI-FTS' }
+            } }); alive(token);
             update({ searchPhase: 'search' });
             await call(p, 'startSearch', { sessionID: owner.id, inputString: command.query, nvc: false,
                 filterAddressLevel: [], filterDataType: ['ADDRESS', 'POI'], filterDataSource: [] });

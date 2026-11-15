@@ -242,3 +242,46 @@ Próxima sesión ENET, con autorización vigente y ambas vistas abiertas:
 4. Exigir cartografía reconocible en la captura y confirmar que el mapa del cockpit sigue igual antes de preparar una presentación visible. Si continúa negro, comprobar las funciones 0/41, proveedores y actualización RAMSES; no acumular reintentos del setter pendiente.
 
 La reversión del experimento es `--run-baseline`; ambos modos liberan solo su handle y retiran únicamente sus objetos. Ninguna instalación, reinicio, conexión al coche ni publicación durante este trabajo local.
+
+### 15-11-2026 · Fase INITIALIZATION y confirmación de modo por instancia
+
+Continuación **local**, después de recuperar los controles de AA original. Se conserva el código de AA y no se conecta con la MGU. La corrección candidata de objeto 15 anterior sigue sin ensayo en el coche. Hay una segunda diferencia concreta frente al controlador BMW: el flujo de arranque pide `INITIALIZATION` antes de considerar preparada la vista. Esto no demuestra que omitirla explique por sí solo la imagen negra.
+
+Evidencia del firmware 21.47, con Ghidra 12.1.4 en modo de solo lectura y contraste de los argumentos en LLVM:
+
+| Punto | Comportamiento contrastado |
+| --- | --- |
+| NavController `0x2039140`, llamada `0x2039397` | `MapController::start` llama a `MapInstance::ensureMapReadyToRender` en su flujo normal. |
+| `0x23e7c50`, llamada `0x23e8279` | Usa el handle propio, modo interno 2 y vector UInt64 vacío. La ranura secundaria `0xc0` lleva al thunk `0x257deb0` y al setter `0x257d6e0`. |
+| `0x25ce9b0` | Convierte modo interno 2 a `0x42` INITIALIZATION, enviado mediante **FA94:3B**. VISIBLE es `0x43`. |
+| `0x23ede50` | El callback de preparación exige tanto el handle solicitado como modo confirmado 2. |
+| `0x25ab6f0 → 0x25aaf90` | Un error RPC produce resultado vacío. Con éxito, consulta la caché por handle (`adapter+0x3d0`); si aún no coincide el modo, guarda la continuación (`+0x540`). Un ACK aislado no satisface el contrato. |
+| `0x25abfd0 → 0x25ab700` | El evento convierte el modo, actualiza la caché y atiende las continuaciones pendientes. |
+
+El evento de `MapViewerControlExt` es **FA94:8002, grupo 2, `is_field=false`**. Cuerpo de **8 bytes**, handle UInt32 seguido de enum Int32, ambos big-endian. Constructor del proxy `0x29f2e3`, registro `0x29f760/0x29f77f/0x29f78c/0x29f81e`; lector `0x3041f0`, UInt32 en `0x3042a9` y enum en `0x304326`. Despliegue de enum nulo y `littleEndian=false`; `0x7d790` usa la lectura Int32 predeterminada. Se corroboró esa lectura en CommonAPI-SomeIP `0x57ac0`, hash **`c62a881c017784579d217cd36c6c9bd6992921878849c896157a3a3d3664e878`**. NavController y proxy conservan los hashes documentados arriba.
+
+En GeniviAdapter, tabla `0x11c4a40` y conversor `0x828e46`: INITIALIZATION llega a `0x828e68` (frecuencia 0,2; modo interno 2), mientras VISIBLE llega a `0x828e70` (frecuencia -1; modo 2). Esto distingue la preparación de la visibilidad; no implica mostrar la capa IVI. `MapStyles::initialize` aplica un tema, como ya hacía la sonda; no se ha demostrado otra orden de estilo ausente. Tampoco se ha demostrado una transición inmediata INITIALIZATION→VISIBLE dentro de `start`: la visibilidad tiene su propio flujo.
+
+Cambios de la herramienta manual:
+
+- **`--initialize-only`** conserva creación propia, composición transparente, nivel, tema, objeto 15 y seguimiento; envía una sola orden `0x42`. No envía VISIBLE después de un ACK ni de un evento. `--run` mantiene `0x43` para comparación en otra instancia nueva; `--run-baseline` conserva la variante sin objeto 15.
+- Se suscribe antes de pedir el modo y empieza a aceptar observaciones al enviar esa orden. Solo admite FA94/instancia 1/versión 30/evento 8002, notificación sin error, longitud exacta, handle propio y modo `0x42..0x4a`. Descarta eventos de otras vistas antes de registrarlos; limita los cambios registrados a 12. Al cerrar libera su suscripción.
+- `rendering_requested` registra la petición; `rendering` registra el ACK; `own_rendering_mode` registra el evento; `rendering_observation` resume el último modo admitido. `observedMode=0` significa **sin observación válida**, no un modo BMW. `modeConfirmed=true` solo significa que el último evento coincide: **no acredita el ACK ni píxeles de mapa**. `imageValidated` permanece falso. Sin evento no se distingue todavía entre suscripción sin entrega y motor sin confirmación.
+- Si no se confirma la respuesta RPC del setter, conserva la ventana de observación sin más órdenes y sale con código **8** después de liberar su handle. Antes podía terminar con 0 solo porque la retirada había funcionado. La ausencia del evento queda explícita en el informe, aunque sí llegue el ACK.
+- Se elimina la inferencia `frames=0 → NO_FRAMES` del diagnóstico IVI. Las muestras originales visibles también tenían ese contador a cero. Ahora conserva el número y exige comprobar la imagen, tanto si el contador es cero como si aumenta.
+
+Preparación comprobada en este PC:
+
+```powershell
+& tools/map-runtime/Compilar-Sonda-Mapa.ps1 `
+  -MguFiles 'D:/Usuarios/javie/BMW/MGU21-20261113-mapas-video/files' `
+  -VsomeipHeaders 'D:/Usuarios/javie/CodexProjects/BMW_iDRIVE/idrive7-apps/kit/renderd/inputgate/vsomeip-include/interface/compat' `
+  -Output 'dist/map-manual-initialization'
+node --test emulator/split/map-probe-plan.test.js emulator/split/map-manual-runner.test.js
+```
+
+Pasan 12 pruebas de diagnóstico, aislamiento, selección de modo y propiedad. Las regresiones C++ comprueban los bytes de ambos setters y rechazan eventos truncados, con bytes extra, enum inválido, orden de bytes erróneo o handle ajeno. Compilación C++14 con `-Wall -Wextra -Werror`; ELF x86-64, intérprete `/lib/ld-linux-x86-64.so.2`, GLIBC máximo 2.14 y GLIBCXX 3.4.22. SHA-256 del ELF **`79891c7fc83e532ed8261daf447dd9e421f324c7b8faf22b523262b779335d8e`**. Fuentes, cabeceras y compilador quedan identificados en `build.json`. Herramientas JS verificadas con Node 8.16.2. No se ha ejecutado este ELF en Linux ni MGU.
+
+La siguiente prueba conectada debe comparar **objeto 15 + VISIBLE** con **objeto 15 + INITIALIZATION**, siempre con nuevos IDs y opacidad cero. Recoger por separado respuesta, evento, estado DLS/proveedores y captura de su superficie. Si falta respuesta/evento, investigar esa etapa; si llegan ambos pero la imagen continúa negra, seguir carga/proveedores/RAMSES. No revelar la capa por ninguno de esos indicadores. El cockpit y el guiado original no forman parte de la instancia de prueba.
+
+Reversión local: seleccionar `--run` para volver al modo VISIBLE anterior, o `--run-baseline` para la secuencia sin objeto 15. La app instalada no cambia y estas herramientas no se incluyen en Store. No hay una nueva versión publicada.

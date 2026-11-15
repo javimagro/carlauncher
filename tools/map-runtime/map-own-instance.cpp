@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <vector>
 #include "map-base-content.h"
+#include "map-rendering-settings.h"
 
 namespace {
 using Bytes = std::vector<vsomeip::byte_t>;
@@ -83,6 +84,9 @@ class Connection {
     vsomeip::client_t client_ = 0;
     vsomeip::session_t session_ = 0;
     Reply reply_;
+    bool renderingSubscribed_ = false, renderingArmed_ = false;
+    uint32_t ownRenderingHandle_ = 0, requestedRenderingMode_ = 0, observedRenderingMode_ = 0;
+    unsigned renderingLogs_ = 0;
     // Manual probe only: bound waits with CLOCK_MONOTONIC. The target's
     // condition-variable timed wait did not expire during the read-only trial.
     template <typename Predicate>
@@ -107,6 +111,22 @@ public:
         app_->register_message_handler(vsomeip::ANY_SERVICE, 1, vsomeip::ANY_METHOD,
             [this](const std::shared_ptr<vsomeip::message>& message) {
                 std::lock_guard<std::mutex> lock(mutex_);
+                if (message->get_message_type() == vsomeip::message_type_e::MT_NOTIFICATION) {
+                    if (!renderingArmed_ || message->get_service() != 0xfa94 || message->get_method() != 0x8002 ||
+                        message->get_interface_version() != 30 || unsigned(message->get_return_code()) != 0) return;
+                    auto payload = message->get_payload();
+                    if (!payload) return;
+                    const auto mode = map_probe::renderingEventMode(payload->get_data(), payload->get_length(), ownRenderingHandle_);
+                    if (!mode || mode == observedRenderingMode_) return;
+                    observedRenderingMode_ = mode;
+                    // Filter foreign handles before logging. Never expose other
+                    // map sessions; cap output even if mode changes repeatedly.
+                    if (renderingLogs_ < 12) {
+                        ++renderingLogs_;
+                        printf("{\"event\":\"own_rendering_mode\",\"handle\":%u,\"mode\":%u}\n", ownRenderingHandle_, mode);
+                    }
+                    return;
+                }
                 if (!waiting_ || message->get_service() != service_ || message->get_method() != method_ ||
                     message->get_client() != client_ || message->get_session() != session_ ||
                     (message->get_message_type() != vsomeip::message_type_e::MT_RESPONSE &&
@@ -130,6 +150,28 @@ public:
         std::unique_lock<std::mutex> lock(mutex_);
         return waitUntil(lock, 8000, [this, requireExt]() { return base_ && (!requireExt || ext_); });
     }
+    void watchRendering(uint32_t handle) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ownRenderingHandle_ = handle; renderingArmed_ = false;
+        }
+        app_->request_event(0xfa94, 1, 0x8002, {2}, false);
+        app_->subscribe(0xfa94, 1, 2, 30);
+        renderingSubscribed_ = true;
+    }
+    void prepareRendering(map_probe::RenderingMode mode) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        requestedRenderingMode_ = uint32_t(mode); observedRenderingMode_ = 0;
+        renderingLogs_ = 0; renderingArmed_ = true;
+    }
+    void finishRendering() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!renderingArmed_) return;
+        renderingArmed_ = false;
+        // A mode event is still not evidence of cartography pixels/readiness.
+        printf("{\"event\":\"rendering_observation\",\"requestedMode\":%u,\"observedMode\":%u,\"modeConfirmed\":%s,\"imageValidated\":false}\n",
+            requestedRenderingMode_, observedRenderingMode_, observedRenderingMode_ == requestedRenderingMode_ ? "true" : "false");
+    }
     Reply call(uint16_t service, uint16_t method, const Bytes& data, unsigned timeoutMs = 4000) {
         std::unique_lock<std::mutex> lock(mutex_);
         reply_ = Reply{}; service_ = service; method_ = method; waiting_ = true;
@@ -150,6 +192,9 @@ public:
     ~Connection() {
         if (!loop_.joinable()) return;
         fputs("map-probe: stop loop\n", stderr);
+        if (renderingSubscribed_) {
+            app_->unsubscribe(0xfa94, 1, 2); app_->release_event(0xfa94, 1, 0x8002);
+        }
         app_->release_service(0xfa94, 1); app_->release_service(0xfa95, 1);
         app_->clear_all_handler(); app_->stop(); loop_.join();
     }
@@ -220,8 +265,9 @@ int main(int argc, char** argv) {
             size_t newline;
             while ((newline = input.find('\n')) != std::string::npos) {
                 const std::string command = input.substr(0, newline); input.erase(0, newline + 1);
-                if ((command == "SHOW" || command == "SHOW_BASELINE") && !shown) {
+                if ((command == "SHOW" || command == "SHOW_BASELINE" || command == "INITIALIZE") && !shown) {
                     shown = true;
+                    connection.watchRendering(handle);
                     // MapInstance initializes per-view performance after creation.
                     // NavController level 4 -> GENIVI Level 0x53; own handle only.
                     Bytes performance = own(handle); u32(performance, 0x53);
@@ -232,7 +278,7 @@ int main(int argc, char** argv) {
                     // Creating a canvas only enables engine objects 20000/2010.
                     // Enable the base cartography explicitly, on our NEW handle.
                     // SHOW_BASELINE retains the previous sequence for a controlled comparison.
-                    if (command == "SHOW") {
+                    if (command != "SHOW_BASELINE") {
                         const auto request = map_probe::baseContentRequest(handle);
                         const Bytes content(request.bytes, request.bytes + sizeof(request.bytes));
                         const bool accepted = ok(connection.call(0xfa95, 0x20, content), 0);
@@ -242,14 +288,26 @@ int main(int argc, char** argv) {
                     if (!ok(connection.call(0xfa95, 8, follow), 0)) { trialFailure = 7; interrupted = 1; break; }
                     // MapViewerControlExt.setMapViewRenderingSettings, as used by
                     // NavController. Empty UInt64 list: no foreign scene IDs.
-                    Bytes rendering = own(handle); u32(rendering, 0x43); u32(rendering, 0);
+                    // Isolated comparison of the initialization phase used by
+                    // MapController::start -> ensureMapReadyToRender. Do not chain
+                    // VISIBLE after ACK: BMW also waits for the matching mode event.
+                    const auto mode = command == "INITIALIZE" ? map_probe::RenderingMode::Initialization :
+                        map_probe::RenderingMode::Visible;
+                    const auto request = map_probe::renderingRequest(handle, mode);
+                    const Bytes rendering(request.bytes, request.bytes + sizeof(request.bytes));
+                    connection.prepareRendering(mode);
+                    printf("{\"event\":\"rendering_requested\",\"mode\":%u,\"handle\":%u}\n", unsigned(mode), handle);
                     const auto reply = connection.call(0xfa94, 0x3b, rendering, 5000);
-                    printf("{\"event\":\"rendering\",\"acknowledged\":%s}\n", ok(reply, 0) ? "true" : "false");
+                    const bool acknowledged = ok(reply, 0);
+                    printf("{\"event\":\"rendering\",\"mode\":%u,\"acknowledged\":%s}\n",
+                        unsigned(mode), acknowledged ? "true" : "false");
+                    if (!acknowledged) trialFailure = 8;
                     // No retry or additional setter if rendering stays pending. Observe, then release.
                 } else if (command == "STOP") interrupted = 1;
                 else { interrupted = 1; break; }
             }
         }
+        connection.finishRendering();
     } else handle = loadRecord(record);
     if (!handle) return 5;
     const bool released = ok(connection.call(0xfa95, 3, own(handle)), 0);

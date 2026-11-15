@@ -209,7 +209,11 @@ test('voice is push-to-talk, stops on hiding, and an unavailable MGU microphone 
     let receives, audioEvents, peers = 0, audioClosed = 0; const sent = [];
     const options = { config, assistantConnect(c, cb) { receives = cb; peers++; return { send(m) { sent.push(m); return true; }, close() {} }; } };
     const unavailable = createAssistant(options, async () => ({})); await unavailable.ready; unavailable.setVisible(true);
-    assert.equal(unavailable.listen(), false); assert.equal(peers, 0); unavailable.close();
+    assert.equal(unavailable.listen(), false); assert.equal(peers, 0);
+    assert.match(unavailable.state.message, /micrófono.*BMWLauncher/i);
+    assert.match(unavailable.state.message, /Escribir/);
+    assert(!unavailable.state.message.startsWith('OpenAI'));
+    assert.equal(unavailable.toggleVoice(), false); assert.equal(peers, 0); unavailable.close();
     const a = createAssistant(Object.assign({}, options, { assistantAudio: { capture: { command: 'fixture' }, playback: {} },
         assistantAudioFactory(o, cb) { audioEvents = cb; return { listen() {}, pcm() {}, finish() {}, close() { audioClosed++; } }; } }), async () => ({}));
     await a.ready; a.setVisible(true); assert(a.listen()); receives({ type: 'ready' }); assert.equal(a.state.status, 'listening');
@@ -265,4 +269,30 @@ test('closing audio reaps a converter and microphone that ignore graceful termin
     await until(() => peers.every((p) => p.exitCode !== null));
     assert.equal(peers.length, 2); assert(peers.every((p) => p.signals.includes('SIGKILL')));
     assert(!events.some((e) => e.type === 'capture-end'));
+});
+
+test('assistant waits for BMW media focus before opening PCM and releases it when stopped', async () => {
+    const { EventEmitter } = require('node:events'), { PassThrough } = require('node:stream');
+    const { createAudio } = require('../../native/javi-carlab/assistant-audio');
+    const peers = [], events = []; let allowFocus, released = 0;
+    function spawn(command) {
+        const peer = new EventEmitter(); peer.command = command; peer.exitCode = null;
+        peer.stdin = new PassThrough(); peer.stdout = new PassThrough(); peer.stderr = new PassThrough();
+        peer.kill = () => { peer.exitCode = 0; peer.emit('close', 0); };
+        peers.push(peer); return peer;
+    }
+    const audio = createAudio({ ffmpeg: 'converter', playback: { command: 'output', args: [], handshake: true, bmwFocus: true,
+        createFocus: () => ({ start: () => new Promise((resolve) => { allowFocus = resolve; }), close: () => { released++; } }) } },
+        (event) => events.push(event), { spawn });
+    try {
+        audio.pcm(Buffer.alloc(4800).toString('base64'));
+        peers[0].stdout.write(Buffer.alloc(3840));
+        assert.deepEqual(peers.map((p) => p.command), ['converter']);
+        assert.equal(events.some((e) => e.failed), false);
+        allowFocus(); await settle();
+        assert.deepEqual(peers.map((p) => p.command), ['converter', 'output']);
+        peers[1].stdout.write('ready\n');
+        assert.equal(events.some((e) => e.failed), false);
+        audio.close(); assert.equal(released, 1);
+    } finally { audio.close(); }
 });

@@ -52,6 +52,86 @@ function fixture() {
 }
 async function select(f) { await f.engine.command({ request: 1, action: 'search', query: 'Museo' }); f.results(); await f.engine.command({ request: 2, action: 'select', id: '11:3' }); }
 
+test('SDK methods without inputs receive no parameter object as their timeout', async () => {
+    for (const poi of [false, true]) {
+        const f = fixture(), p = f.proxies[poi ? 'poi' : 'search'];
+        let received;
+        p[poi ? 'createPOISearchSession' : 'createSession'] = async function (timeoutMs) {
+            received = Array.from(arguments);
+            if (timeoutMs !== undefined && typeof timeoutMs !== 'number') throw new Error('INVALID_TIMEOUT');
+            return { sessionID: 11, NoMoreHandlesError: 0 };
+        };
+        await f.engine.command({ request: 1, action: poi ? 'chargers' : 'search', query: 'Calle Mayor' });
+        assert.deepEqual(received, []);
+        assert.equal(f.engine.snapshot().error, '');
+        f.results(poi, 11);
+        assert.equal(f.engine.snapshot().results.length, 1);
+        await f.engine.stop();
+    }
+});
+
+test('search cleanup uses the SDK shutdown after deleting owned views and sessions', async () => {
+    const f = fixture();
+    delete f.proxies.search.dispose;
+    f.proxies.search.shutdown = async () => f.calls.push(['shutdown', 'search']);
+    await f.engine.command({ request: 1, action: 'search', query: 'Museo' });
+    await f.engine.stop(); await f.engine.stop();
+    const shut = f.calls.findIndex(([method]) => method === 'shutdown');
+    assert(shut > f.calls.findIndex(([method]) => method === 'destroyView'));
+    assert(shut > f.calls.findIndex(([method]) => method === 'deleteSession'));
+    assert(shut > f.calls.findIndex(([method]) => method === 'unsubscribe'));
+    assert.equal(f.calls.filter(([method]) => method === 'shutdown').length, 1);
+});
+
+test('a late SDK proxy is shut down once when closing before session creation', async () => {
+    let resolveProxy, shutdowns = 0, creations = 0;
+    const engine = createActions({ buildAndInitTypedProxy: () => new Promise((resolve) => { resolveProxy = resolve; }) });
+    const pending = engine.command({ request: 1, action: 'search', query: 'Museo' });
+    await flush(); engine.stop();
+    resolveProxy({ shutdown: async () => { shutdowns++; }, createSession: async () => { creations++; return { sessionID: 11 }; } });
+    await pending; await engine.stop();
+    assert.equal(creations, 0); assert.equal(shutdowns, 1);
+});
+
+test('SDK shutdown waits for pending list unsubscriptions to complete', async () => {
+    const f = fixture(); let finishUnsubscribe, shutdowns = 0;
+    f.proxies.search.shutdown = async () => { shutdowns++; };
+    f.proxies.search.resultList.unsubscribe = () => new Promise((resolve) => { finishUnsubscribe = resolve; });
+    await f.engine.command({ request: 1, action: 'search', query: 'Museo' });
+    const stopped = f.engine.stop(); await flush();
+    assert.equal(typeof finishUnsubscribe, 'function'); assert.equal(shutdowns, 0);
+    finishUnsubscribe(); await stopped;
+    assert.equal(shutdowns, 1);
+});
+
+test('confirming a written destination waits for BMW HAPTIC/FTS session configuration', async () => {
+    const f = fixture(); let finishConfiguration, configuration;
+    f.proxies.search.setConfiguration = (args) => {
+        configuration = args;
+        return new Promise((resolve) => { finishConfiguration = resolve; });
+    };
+    const pending = f.engine.command({ request: 1, action: 'search', query: 'Calle Mayor' });
+    await flush();
+    assert.deepEqual(configuration, { sessionID: 11, searchConfigurations: {
+        INPUTMETHOD: { stringParam: 'HAPTIC' }, FEATURE: { stringParam: 'FTS' }, USECASE: { stringParam: 'HMI-FTS' }
+    } });
+    assert.equal(f.calls.some(([method]) => method === 'startSearch'), false);
+    finishConfiguration({ SetLocationError: 0 }); await pending;
+    assert.equal(f.calls.find(([method]) => method === 'startSearch')[1].inputString, 'Calle Mayor');
+    assert.equal(f.engine.snapshot().error, ''); await f.engine.stop();
+});
+
+test('rejected BMW text-search configuration releases its session without starting a search', async () => {
+    const f = fixture();
+    f.proxies.search.setConfiguration = async () => ({ SetLocationError: 'HANDLE_NOT_AVAILABLE' });
+    await f.engine.command({ request: 1, action: 'search', query: 'Calle Mayor' });
+    assert.equal(f.engine.snapshot().error, 'SetLocationError:HANDLE_NOT_AVAILABLE');
+    assert.equal(f.calls.some(([method]) => method === 'startSearch'), false);
+    assert.equal(f.calls.some(([method]) => method === 'createViewByIndex'), false);
+    assert.equal(f.calls.some(([method, args]) => method === 'deleteSession' && args.sessionID === 11), true);
+    await f.engine.stop();
+});
+
 test('BMW search owns its decimal session list, filters foreign results and preserves the validated location', async () => {
     const f = fixture();
     assert.equal(f.calls.length, 0);
@@ -228,6 +308,10 @@ test('preview waits for BMW calculation, starts only on command, and hiding pres
 
 test('explicit stop releases our started route after stopping BMW guidance', async () => {
     const f = fixture(); await select(f); await f.engine.command({ request: 3, action: 'route' });
+    f.proxies.guidance.stopGuidance = async function () {
+        assert.equal(arguments.length, 0, 'stopGuidance also uses the SDK timeout-only signature');
+        f.calls.push(['stopGuidance']); return { GenericError: 0 };
+    };
     await f.engine.command({ request: 4, action: 'start' }); await f.engine.command({ request: 5, action: 'stop' });
     assert.equal(f.engine.snapshot().status, 'idle');
     assert.equal(f.calls.filter((c) => c[0] === 'stopGuidance').length, 1);

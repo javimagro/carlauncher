@@ -8,6 +8,13 @@ const diagnostic = require('./Diagnosticar-Escena-Mapa');
 const OWNER = 0x424d5702; // Local record revision; GENIVI wire session is zero.
 const IVI = '/usr/bin/ivi-control';
 
+function trialCommand(options) {
+  const modes = [options.createOnly, options.composeOnly, options.baseline, options.initializationOnly];
+  if (modes.filter(Boolean).length > 1) throw new Error('Los modos de ensayo son excluyentes');
+  if (options.createOnly || options.composeOnly) return null;
+  return options.initializationOnly ? 'INITIALIZE' : options.baseline ? 'SHOW_BASELINE' : 'SHOW';
+}
+
 function rectangle(value) {
   if (!/^\d+,\d+,\d+,\d+$/.test(String(value))) throw new Error('Rectángulo requerido: x,y,ancho,alto');
   const r = String(value).split(',').map(Number);
@@ -165,15 +172,17 @@ async function run(options) {
     throw new Error('Se necesita un sceneId nuevo de 64 bits en el espacio propio 424d574cXXXXXXXX');
   }
   const commands = composeCommands(options.surface, options.rect);
+  const command = trialCommand(options);
   const native = fs.realpathSync(options.native);
   const baselineText = await exec(IVI, ['scene']);
   const before = diagnostic.parseScene(baselineText);
-  diagnostic.buildPlan(before, options.surface, OWNER);
+  diagnostic.buildPlan(before, options.surface, OWNER, { initializationOnly: !!options.initializationOnly });
   if (!before.screens.some(function (screen) { return screen.id === 4; })) throw new Error('No está la pantalla central esperada');
   const directory = fs.mkdtempSync('/tmp/bmwlauncher-map-trial-'); fs.chmodSync(directory, 0o700);
   const stateFile = path.join(directory, 'state.json');
   const state = { native: native, surface: options.surface, before: before, createOnly: !!options.createOnly, composeOnly: !!options.composeOnly,
     baseContent: !options.baseline && !options.createOnly && !options.composeOnly, nativeExitCode: null,
+    renderingMode: !command ? null : options.initializationOnly ? 0x42 : 0x43,
     created: false, done: false, startedAt: Date.now() };
   save(stateFile, state);
   fs.writeFileSync(path.join(directory, 'before.txt'), baselineText, { mode: 0o600 });
@@ -224,7 +233,7 @@ async function run(options) {
     if (!ready || closed) throw new Error('Objetos nativos propios no disponibles');
     if (!options.createOnly) {
       for (let i = 0; i < commands.length; ++i) await exec(IVI, commands[i]);
-      if (!options.composeOnly) session.stdin.write(options.baseline ? 'SHOW_BASELINE\n' : 'SHOW\n');
+      if (command) session.stdin.write(command + '\n');
     }
     for (let i = 0; i < 20 && !closed; ++i) {
       await wait(1000);
@@ -254,14 +263,15 @@ async function main(args) {
     if (args[0] === '--watchdog') await wait(55000);
     await cleanup(args[1]); return;
   }
-  if (['--run', '--run-baseline', '--create-only', '--compose-only'].indexOf(args[0]) === -1 || args.length !== 5) {
-    throw new Error('Uso manual en MGU: node Ensayar-Mapa-Propio.js --run|--run-baseline|--create-only|--compose-only RUTA_SONDA SUPERFICIE SCENE_HEX x,y,ancho,alto');
+  if (['--run', '--run-baseline', '--initialize-only', '--create-only', '--compose-only'].indexOf(args[0]) === -1 || args.length !== 5) {
+    throw new Error('Uso manual en MGU: node Ensayar-Mapa-Propio.js --run|--run-baseline|--initialize-only|--create-only|--compose-only RUTA_SONDA SUPERFICIE SCENE_HEX x,y,ancho,alto');
   }
   await run({ native: args[1], surface: Number(args[2]), scene: args[3], rect: rectangle(args[4]),
-    baseline: args[0] === '--run-baseline', createOnly: args[0] === '--create-only', composeOnly: args[0] === '--compose-only' });
+    baseline: args[0] === '--run-baseline', initializationOnly: args[0] === '--initialize-only',
+    createOnly: args[0] === '--create-only', composeOnly: args[0] === '--compose-only' });
 }
 if (require.main === module) main(process.argv.slice(2)).catch(function (error) {
   process.stderr.write(error.message + '\n'); process.exitCode = 1;
 });
 module.exports = { rectangle: rectangle, composeCommands: composeCommands, validateNewObjects: validateNewObjects,
-  removalCommands: removalCommands };
+  removalCommands: removalCommands, trialCommand: trialCommand };

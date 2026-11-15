@@ -70,10 +70,13 @@ function diagnose(scene, surfaceId) {
     nativeLayerOnScreens: scene.screens.filter(function (entry) {
       return (entry.layers || []).indexOf(surfaceId) !== -1;
     }).map(function (entry) { return entry.id; }),
-    hasProducedFrames: !!(surface && surface.frames > 0),
+    // Visible original maps also reported frames=0 on MGU21. This counter
+    // cannot establish whether pixels were produced, nor validate cartography.
+    imageValidated: false,
+    frameCounter: surface && surface.frames !== undefined ? surface.frames : null,
     status: !surface ? 'SURFACE_MISSING' :
       surface.frames === undefined ? 'FRAME_COUNT_UNKNOWN' :
-      surface.frames === 0 ? 'NO_FRAMES' : 'FRAMES_REQUIRE_VISUAL_CONFIRMATION',
+      'SURFACE_REQUIRES_IMAGE_CHECK',
     warnings: [
       !nativeLayer ? 'Falta la capa nativa de esta superficie.' : null,
       nativeLayer && nativeLayer.visibility !== 1 ? 'La capa nativa no está visible.' : null,
@@ -84,7 +87,8 @@ function diagnose(scene, surfaceId) {
   };
 }
 
-function buildPlan(scene, surfaceId, ownerId) {
+function buildPlan(scene, surfaceId, ownerId, options) {
+  options = options || {};
   readUint(surfaceId, 'Nuevo ID de superficie/capa');
   readUint(ownerId, 'Propietario del ensayo');
   if (scene.layers.concat(scene.surfaces).some(function (entry) { return entry.id === surfaceId; }) ||
@@ -110,8 +114,10 @@ function buildPlan(scene, surfaceId, ownerId) {
         args: [0, 'NEW_HANDLE', [[15, true]]],
         detail: 'Tras el tema, habilitar cartografía base solo en la vista propia. Un ACK no prueba dibujo. --run-baseline omite esta orden para comparar.' },
       { action: 'set-own-rendering', service: 'FA94', instance: 1, version: '30.11', method: 0x3b,
-        args: [0, 'NEW_HANDLE', VISIBLE, []],
-        detail: 'Correlacionar client/session/request y capturar respuesta o error; no acumular órdenes si expira.' },
+        args: [0, 'NEW_HANDLE', options.initializationOnly ? 0x42 : VISIBLE, []],
+        detail: options.initializationOnly ?
+          'Ensayo aislado INITIALIZATION: no encadena VISIBLE, ni siquiera con ACK. BMW espera además el modo confirmado por handle.' :
+          'Correlacionar client/session/request y capturar respuesta o error; no acumular órdenes si expira.' },
       { action: 'observe', detail: 'Mantener opacidad cero durante la sonda. Comparar contadores, respuesta de transacción y captura directa de la superficie propia. Ni los contadores ni un ACK validan el contenido de la imagen.' },
       { action: 'release-own-instance', service: 'FA95', instance: 1, version: '5.2', method: 3,
         args: [0, 'NEW_HANDLE'] },

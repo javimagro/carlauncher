@@ -13,17 +13,20 @@ echo '6e374ed621e48faa40639307dff48ba6fe574a509977956d2cce9669b7cc27e9  ffmpeg.t
 tar -xf ffmpeg.tar.gz
 cd FFmpeg-n9.0.2
 
-./configure --arch=x86_64 --cpu=generic --pkg-config-flags=--static --extra-ldflags=-static \
+# musl defaults to 128 KiB per pthread. The AA 1080p decode trial exhausted
+# that stack on MGU21; GNU_STACK raises the default without executable stacks.
+./configure --arch=x86_64 --cpu=generic --pkg-config-flags=--static \
+    --extra-ldflags='-static -Wl,-z,stack-size=8388608' \
     --disable-everything --disable-autodetect --disable-doc --disable-debug \
     --disable-ffplay --disable-ffprobe --disable-avdevice \
     --enable-version3 --enable-openssl --enable-libxml2 --enable-zlib \
     --enable-protocol=file,pipe,http,https,tcp,tls,httpproxy,crypto \
-    --enable-demuxer=hls,dash,mpegts,mov,aac,mp3,matroska,flv,webvtt \
+    --enable-demuxer=hls,dash,mpegts,mov,aac,mp3,matroska,flv,webvtt,h264 \
     --enable-decoder=h264,hevc,mpeg2video,aac,aac_latm,mp3,mp2,ac3,eac3,opus,vorbis,vp8,vp9,av1,rawvideo,pcm_s16le,webvtt \
     --enable-parser=h264,hevc,mpegvideo,aac,aac_latm,mpegaudio,ac3,opus,vorbis,vp8,vp9,av1 \
     --enable-muxer=rawvideo,pcm_s16le \
     --enable-encoder=rawvideo,pcm_s16le \
-    --enable-filter=fps,scale,pad,format,aformat,aresample,anull,null,trim,atrim,setpts,asetpts
+    --enable-filter=fps,scale,crop,pad,format,aformat,aresample,anull,null,trim,atrim,setpts,asetpts
 make -j "$(nproc)" ffmpeg
 install -m755 ffmpeg "$out/ffmpeg"
 install -m644 /etc/ssl/certs/ca-certificates.crt "$out/ca-certificates.crt"

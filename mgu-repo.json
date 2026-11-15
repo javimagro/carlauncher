@@ -10,8 +10,9 @@
         "ID8"
       ],
       "requires": {
-        "javi-carlab": "0.2.20",
-        "javi-ccu-gate": "1.0.0"
+        "javi-carlab": "0.2.21",
+        "javi-ccu-gate": "1.1.0",
+        "javi-aa-format": "1.0.0"
       }
     },
     {
@@ -23,9 +24,9 @@
       "id": "javi-ccu-gate",
       "kind": "tool",
       "path": "native/javi-ccu-gate",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "title": "Captura del mando de BMWLauncher",
-      "description": "Entrega el mando a BMWLauncher mientras está visible en iDrive 8.",
+      "description": "Entrega el mando a BMWLauncher y permite giro y pulsación en Android Auto cuando tiene el foco.",
       "mguHmi": [
         "ID8"
       ],
@@ -36,8 +37,28 @@
       },
       "preload": {
         "library": "javi-ccu-gate.so",
-        "unit": "hmi.service",
+        "unit": "hmi8.service",
         "process": "Hmi8",
+        "strikes": 2,
+        "checkAfterSeconds": 120,
+        "healthySeconds": 60
+      }
+    },
+    {
+      "id": "javi-aa-format",
+      "kind": "tool",
+      "path": "native/javi-aa-format",
+      "version": "1.0.0",
+      "title": "Formato de Android Auto para BMWLauncher",
+      "description": "Adapta Android Auto al panel izquierdo. Se activa al reiniciar iDrive después de instalarlo.",
+      "mguHmi": ["ID8"],
+      "optional": true,
+      "uninstallable": true,
+      "requires": { "mgu-deploy": "0.7.0" },
+      "preload": {
+        "library": "javi-aa-format.so",
+        "unit": "aapd.service",
+        "process": "aapd",
         "strikes": 2,
         "checkAfterSeconds": 120,
         "healthySeconds": 60

@@ -8,19 +8,32 @@ const snapshot = 'screen 4\n mode: 2880x960@60.0\n layers: 100 123\n' +
   'layer 456\n visibility: 1\n size: 1038x468\n surfaces: 123\n' +
   'surface 123\n visibility: 1\n size: 1038x468\n frames: 0\n';
 
-test('el diagnóstico detecta cero cuadros y la capa nativa oculta, incluso con una copia visible', function () {
+test('el diagnóstico informa del contador cero sin concluir que falte imagen', function () {
   const result = probe.diagnose(probe.parseScene(snapshot), 123);
-  assert.equal(result.status, 'NO_FRAMES');
-  assert.equal(result.hasProducedFrames, false);
+  assert.equal(result.status, 'SURFACE_REQUIRES_IMAGE_CHECK');
+  assert.equal(result.imageValidated, false);
+  assert.equal(result.frameCounter, 0);
   assert.deepEqual(result.containingLayers, [123, 456]);
   assert.equal(result.warnings.length, 3);
 });
 
 test('un contador ausente o positivo no se convierte en mapa BMW visualmente validado', function () {
   assert.equal(probe.diagnose(probe.parseScene(snapshot.replace('frames: 0', 'frames: 7')), 123).status,
-    'FRAMES_REQUIRE_VISUAL_CONFIRMATION');
+    'SURFACE_REQUIRES_IMAGE_CHECK');
   assert.equal(probe.diagnose(probe.parseScene(snapshot.replace('frames: 0', '')), 123).status,
     'FRAME_COUNT_UNKNOWN');
+});
+
+test('ni un contador positivo ni una superficie inexistente validan cartografía', function () {
+  const positive = probe.diagnose(probe.parseScene(snapshot.replace('frames: 0', 'frames: 7')), 123);
+  assert.equal(positive.frameCounter, 7);
+  assert.equal(positive.imageValidated, false);
+  const missing = probe.diagnose(probe.parseScene(snapshot), 789);
+  assert.equal(missing.status, 'SURFACE_MISSING');
+  assert.equal(missing.frameCounter, null);
+  assert.equal(missing.imageValidated, false);
+  const unknown = probe.diagnose(probe.parseScene(snapshot.replace('frames: 0', '')), 123);
+  assert.equal(unknown.frameCounter, null);
 });
 
 test('el plan no escribe en una superficie o capa existente', function () {
@@ -54,6 +67,15 @@ test('la cartografía se habilita antes del dibujo y solo para el handle nuevo',
   plan.steps.filter(function (s) { return s.args; }).forEach(function (s) {
     assert.equal(s.args[1], 'NEW_HANDLE');
   });
+});
+
+test('el plan de inicialización usa una sola orden 0x42 y no añade VISIBLE ni escenas ajenas', () => {
+  const plan = probe.buildPlan(probe.parseScene(snapshot), 789, 0x424d5702, { initializationOnly: true });
+  const rendering = plan.steps.filter((s) => s.action === 'set-own-rendering');
+  assert.equal(rendering.length, 1);
+  assert.deepEqual(rendering[0].args, [0, 'NEW_HANDLE', 0x42, []]);
+  assert.equal(rendering[0].service, 'FA94');
+  assert.equal(rendering[0].method, 0x3b);
 });
 
 test('el diagnóstico rechaza capturas concatenadas, IDs reservados y tamaños excesivos', function () {

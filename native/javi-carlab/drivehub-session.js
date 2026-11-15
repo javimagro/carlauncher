@@ -16,6 +16,7 @@ const { vehicleReadings } = require('./vehicle-readings');
 const { createPreconditioningUI } = require('./preconditioning-ui');
 const { createAssistant } = require('./assistant');
 const { createCommands } = require('./assistant-drivehub');
+const { createAAUI } = require('./aa-ui');
 
 module.exports = function createSession(gpu, options) {
     const photos = createPhotoLoader();
@@ -31,9 +32,16 @@ module.exports = function createSession(gpu, options) {
     let confirmedOnScreen = false;
     let homeGesture;
     let mapGesture;
+    let closing;
     const navigation = createNavigation();
     const navigationUi = createNavigationUI(options, () => { dirty = true; });
     const preconditioning = createPreconditioningUI(options.preconditioningCommand, () => { dirty = true; }, notify);
+    const aa = options.aa && createAAUI(options.aa, () => { dirty = true; }, notify, action => {
+        if (action === 'diagnostics') data.diagnostics = true;
+        else if (action === 'precondition') preconditioning.toggle(Date.now());
+        else if (action === 'home' && options.onExit) options.onExit();
+        dirty = true;
+    });
     let lastFrame = 0;
     let lastArticle;
     let cockpit;
@@ -56,6 +64,7 @@ module.exports = function createSession(gpu, options) {
     data.altitudeHistory = { values: [] };
     data.navigationUi = navigationUi;
     data.preconditioning = preconditioning;
+    data.aaUi = aa;
     const currentVehicle = () => vehicleReadings(data.telemetry && new Map(data.telemetry.map((r) => [r.signal, r])), Date.now());
     const assistant = createAssistant(options, createCommands({ panel, radio, tdt, navigation: navigationUi, data,
         vehicle: currentVehicle, weather: () => provider.weatherSnapshot(Date.now()) }), () => { dirty = true; });
@@ -91,7 +100,9 @@ module.exports = function createSession(gpu, options) {
         const vehicle = vehicleReadings(records, now);
         provider.refresh(now, vehicle.location, shown && onScreen);
         assistant.setVisible(shown && onScreen);
-        navigationUi.update(data.navigation, vehicle, shown && onScreen && !data.diagnostics);
+        if (aa) aa.update(shown && onScreen && confirmedOnScreen && touchAvailable && !!area,
+            data.diagnostics, navigationUi.state.panel === 'none');
+        navigationUi.update(data.navigation, vehicle, shown && onScreen && !data.diagnostics && (!aa || aa.state.source === 'bmw'));
         if (options.loadCockpit) data.cockpitStatus = cockpit ? cockpit.status(now) : 'Falta Cluster renderer';
         if (player && player.stats) data.playbackStats = player.stats();
         const readings = drawHome(cv, panel.state, panel.position(), data, art, now);
@@ -110,6 +121,7 @@ module.exports = function createSession(gpu, options) {
         touchAvailable = !!info.touch;
         reportScreen();
         if (player) player.ready(info);
+        if (aa) aa.ready(info);
         canGrab = !!info.controller && !options.useOap;
         cv.textScale = area.scale;
         gpu.place(area);
@@ -118,8 +130,9 @@ module.exports = function createSession(gpu, options) {
     });
     gpu.on('touch', (phase, x, y) => {
         if (!shown || !onScreen) return;
-        const rawAction = actionAt(x, y, data.diagnostics, data.navigation);
-        const action = contains(preconditioningButton, x, y) ? 'precondition' : rawAction === 'toggle' ? rawAction : null;
+        const bmwControls = data.diagnostics || !aa || aa.state.source === 'bmw';
+        const rawAction = bmwControls && actionAt(x, y, data.diagnostics, data.navigation);
+        const action = bmwControls && contains(preconditioningButton, x, y) ? 'precondition' : rawAction === 'toggle' ? rawAction : null;
         if (phase === 'down') mapGesture = action ? { action, valid: true } : null;
         if (mapGesture) {
             if (action !== mapGesture.action) mapGesture.valid = false;
@@ -132,8 +145,9 @@ module.exports = function createSession(gpu, options) {
             }
             return;
         }
-        if (!data.diagnostics && navigationUi.touch(phase, x, y)) return;
-        if (phase === 'down') homeGesture = options.onExit && contains(home, x, y) ? { valid: true } : undefined;
+        if (!data.diagnostics && aa && aa.touch(phase, x, y)) return;
+        if (!data.diagnostics && (!aa || aa.state.source === 'bmw') && navigationUi.touch(phase, x, y)) return;
+        if (phase === 'down') homeGesture = bmwControls && options.onExit && contains(home, x, y) ? { valid: true } : undefined;
         if (!homeGesture) { panel.touch(phase, x, y); return; }
         if (phase === 'move' && !contains(home, x, y)) homeGesture.valid = false;
         if (phase === 'up' || phase === 'cancel') {
@@ -143,7 +157,10 @@ module.exports = function createSession(gpu, options) {
         }
     });
     function controller(event) {
-        const navigationOwnsInput = !data.diagnostics && navigationUi.state.panel !== 'none';
+        if (!data.diagnostics && aa && aa.controller(event)) {
+            panel.trackInput(event); navigationUi.trackInput(event); return;
+        }
+        const navigationOwnsInput = !data.diagnostics && (!aa || aa.state.source === 'bmw') && navigationUi.state.panel !== 'none';
         if (event.skip) {
             if (!navigationOwnsInput) panel.skip(event.skip);
         } else if (navigationOwnsInput) {
@@ -163,6 +180,7 @@ module.exports = function createSession(gpu, options) {
         confirmedOnScreen = false;
         homeGesture = undefined;
         mapGesture = null;
+        if (aa) aa.update(false, data.diagnostics, false);
         navigationUi.reset();
         preconditioning.reset();
         reportScreen();
@@ -213,7 +231,7 @@ module.exports = function createSession(gpu, options) {
         },
         controller(event) { if (shown && onScreen && !canGrab) controller(event); },
         show(on) {
-            if (shown === on) return;
+            if (closing || shown === on) return;
             shown = on;
             if (!on) {
                 data.toast = undefined;
@@ -222,6 +240,7 @@ module.exports = function createSession(gpu, options) {
                 confirmedOnScreen = false;
                 homeGesture = undefined;
                 mapGesture = null;
+                if (aa) aa.update(false, data.diagnostics, false);
                 navigation.receive(null, Date.now());
                 navigationUi.reset();
                 preconditioning.reset();
@@ -237,6 +256,7 @@ module.exports = function createSession(gpu, options) {
             present();
         },
         close() {
+            if (closing) return closing;
             hidden();
             clearInterval(timer);
             provider.close();
@@ -245,7 +265,9 @@ module.exports = function createSession(gpu, options) {
             assistant.close();
             radio.close();
             tdt.close();
+            closing = aa ? aa.close() : Promise.resolve();
             gpu.close();
+            return closing;
         }
     };
 };

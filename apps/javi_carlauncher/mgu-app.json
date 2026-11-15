@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "javi_carlauncher",
   "title": "BMWLauncher",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "tree": "package",
   "internet": true,
   "mguHmi": [
@@ -11,6 +11,7 @@
   "modules": [
     "app.js",
     "oap.js",
+    "visibility-lease.js",
     "controller.js",
     "telemetria-mgu.js",
     "preconditioning-bmw.js",

@@ -101,6 +101,26 @@ La lista distingue búsqueda inicial vacía, final sin coincidencias, error, vis
 
 **Pendiente para cerrar el fallo real:** capturar la misma búsqueda en BMWLauncher y BMW con ENET, observar categorías, aceptación de órdenes, nombre/ID/tamaño de vista, estados y entrega de filas; elegir un resultado, calcular y comprobar el guiado solo tras pulsar Iniciar. Las pruebas locales y el contraste estático no acreditan todavía búsqueda/ruta real ni imagen de mapa propia.
 
+## Búsquedas que nunca arrancaban · 15-11-2026
+
+El nuevo informe del usuario afecta a cargadores y direcciones. Se ha encontrado un fallo común **anterior a la consulta BMW**: `navegacion-acciones.call` enviaba `args || {}` incluso a métodos que no tienen entradas. En el SDK real esos métodos tienen firma `method(timeoutMs)`, por lo que el objeto vacío era un tiempo límite inválido.
+
+Evidencia local, sin SSH ni ejecución del binding de la MGU:
+
+- SDK `someipBuilders`, SHA-256 **`6a6c30718da0a1b4423db22d1860ebcd986e830dca9852c5d86f815e1bfe8340`**: wrapper sin entradas en byte 9702. Una ejecución aislada del cuerpo real, con transporte simulado y `require` restringido, confirmó `createSession({}) → timeoutMs={}` frente a `createSession() → timeoutMs=undefined`.
+- `someip.node`, SHA-256 **`3212657087899e6b7f4fcd23e21f61d1a3ed4801f656bbb1c17ba7e96e26d03b`**: `Proxy::getTimeout` (`0x3f660`) exige `v8::Value::IsUint32` en `0x3f6b3` cuando recibe un valor. En `Proxy::callMethod`, la rama inválida construye **`Invalid timeout`** y rechaza en `0x42835`, antes de `methodInvocation` (`0x427ed`). `undefined` selecciona el límite predeterminado de 10.000 ms. Contraste con símbolos y desensamblado local; no pseudocódigo ni prueba del proceso en el coche.
+- Afectaba a `createSession`, `createPOISearchSession` y también a la orden explícita `stopGuidance`. Los métodos con parámetros conservan su objeto de entrada.
+- El SDK ofrece **`shutdown()`**, no `dispose()`. La retirada ahora espera las desuscripciones, elimina primero las vistas/sesiones propias y cierra cada proxy una vez, incluso si terminó de crearse después de cerrar la app. Se mantiene `dispose` como compatibilidad con los dobles de prueba.
+- `subscribe(callback)`, `unsubscribe(id)` y la forma de `ViewId` sí coinciden con el SDK. No se altera la suscripción selectiva, el nombre decimal de la lista ni el orden inicio→vista por conjeturas. El catálogo generado debe aplanar los miembros heredados.
+
+Las regresiones de firma, cierre y desuscripción pendiente fallaron antes de corregirlas. La comprobación con transporte simulado no demuestra cobertura de direcciones/POI ni resultados en la MGU. Una vez instalada la corrección, falta repetir una dirección conocida y cargadores, observar aceptación/resultados y seleccionar un destino. Buscar o seleccionar no autoriza iniciar guiado automáticamente. El dibujo del mapa BMW tiene una investigación independiente.
+
+Se corrigió además la configuración que faltaba en las búsquedas escritas. Hmi8 `spellerOkPressed` (`0x5c19810`) pasa a `openFullResultListAndSaveInHistory` (`0x5c18910`) y a `openFTSFullResult` (`0x5973900`); las constantes 1/4 de `0x5974013/0x597401f` seleccionan **HAPTIC/FTS**. Los mapas de cadenas se inicializan en `0x3e5e250`. El `performSearchInternal` de resultados completos (`0x5bf0c60`) configura antes de iniciar. No confundirlo con el autocompletado del teclado, que usa `SUGGESTIONS`.
+
+`CDevNaviFTSBackend::setConfiguration` (`0x5b981f0`) crea `INPUTMETHOD` y `FEATURE`; `sendConfiguration` (`0x5b97c40`) añade **`USECASE="HMI-FTS"`** antes de llamar al proxy. Los tres valores son la opción `stringParam` del union `SearchParameter`. Se contrastó el tag string en `0x5b97d0a` con el setter tipado `0x5ba3558`. Misma copia de Hmi8, hash `7aa4f8d007ce505fada5572a9643f542e8f8056e7d0ac3d25acc524607d30e20`.
+
+La app envía estas tres entradas a **su sesión nueva** mediante `FreeTextSearch.setConfiguration` (método 56), espera la respuesta y solo entonces ejecuta `startSearch`. El manifiesto concede ese método concreto y el verificador contrasta sus campos con el catálogo. Se mantienen `setCCPLocation`, filtros de tipo y recepción de listas; no se cambian preferencias globales ni se usan proveedores externos. Las pruebas de configuración pendiente/rechazada también fallaron antes del cambio. La falta de configuración era una omisión respecto al flujo original; todavía no se ha observado su error específico en la MGU, porque el argumento de tiempo ya impedía crear la sesión.
+
 ## Qué falta para usar el mapa original
 
 BMW publica su cartografía mediante escenas RAMSES. `MapCoreContent` expone contenidos especializados, no un servidor general de teselas; `MapApiLinksSD` expone topología, no el mapa completo con geometría y etiquetas. Una escena RAMSES tampoco equivale a teselas que podamos recolorear: el cliente propietario construye la escena. [Modelo de RAMSES](https://ramses-sdk.readthedocs.io/en/latest/core.html).
@@ -175,6 +195,10 @@ La última orden no accede a red ni cachés externas. Genera nueve PNG de UI con
 Faltan las pruebas offline solicitadas: zona nueva cubierta, versión/procedencia del mapa, búsqueda de dirección/POI/cargador, ruta/recálculo y ambas pantallas coexistentes. No se pueden ejecutar sin acceso y sin integrar la salida del motor. La aprobación de lectura no autoriza instalación, reinicio ni publicación.
 
 La instalación de prueba debe comprobar: búsqueda con tildes, cero resultados, cargadores, detalle, guardar/reabrir favorito, calcular sin iniciar, recargas de una ruta larga, Iniciar, maniobras, vuelta a BMW Maps, ocultación de BMWLauncher y Finalizar. Repetir toque y mando con la captura de Hmi8 activa. Comprobar aparte conectividad online BMW y Uplink: que la Store tenga internet no garantiza ConnectedDrive.
+
+## Estado del ensayo de cartografía local
+
+Investigación local del 15-11-2026: el arranque original pasa por `INITIALIZATION` y espera el modo confirmado de su propia vista, además del ACK. Se ha preparado un ensayo aislado con lectura del evento, conservando opacidad cero y sin encadenar VISIBLE automáticamente. La cartografía aún no está validada: ni un ACK, ni el evento de modo, ni el contador IVI acreditan imagen. Contrato, hashes, pruebas y siguiente ensayo en [MAPA-ENSAYO-LOCAL.md](MAPA-ENSAYO-LOCAL.md#15-11-2026--fase-initialization-y-confirmación-de-modo-por-instancia).
 
 ## Reversión
 

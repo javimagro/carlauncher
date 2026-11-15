@@ -2,19 +2,27 @@
 
 const net = require('net');
 const { StringDecoder } = require('string_decoder');
-const { services, lists, station, sources, picture, clean, seconds } = require('./radio-datos.js');
+const { services, lists, station, sources, picture, pictureDetails, clean, seconds } = require('./radio-datos.js');
 const { createLists } = require('./radio-listas.js');
 const safe = (fn) => Promise.resolve().then(fn).catch(() => undefined);
 
 function createRadio(builders, options) {
     options = options || {};
     const now = options.now || Date.now, every = options.every || setInterval, cancel = options.cancel || clearInterval;
-    const proxies = {}, subscriptions = [], timers = [], records = {};
+    const proxies = {}, subscriptions = [], pendingSubscriptions = new Set(), timers = [], records = {};
+    const closedProxies = new WeakSet();
+    let closing;
     const stationLists = createLists(now);
     let stopped = false, loading = false, wanted = true, lastLoad = -Infinity, busy = false, result = null;
     let current = null, currentAt = 0, logo = null, logoKey = '', logoSerial = 0;
     let listError = '', incomplete = false;
     let artwork = null, artworkBusy = false, artworkSerial = 0;
+    function closeProxy(proxy) {
+        if (closedProxies.has(proxy)) return Promise.resolve();
+        closedProxies.add(proxy);
+        const shutdown = proxy.shutdown || proxy.dispose;
+        return safe(() => typeof shutdown === 'function' && shutdown.call(proxy));
+    }
     function changed(name, value) {
         if (stopped) return;
         records[name] = { value, at: now() };
@@ -27,11 +35,14 @@ function createRadio(builders, options) {
     }
     function subscribe(attr, fn) {
         if (!attr || typeof attr.subscribe !== 'function') return;
-        return safe(async () => {
+        const pending = safe(async () => {
             const id = await attr.subscribe(fn);
             if (stopped) return safe(() => attr.unsubscribe(id));
             subscriptions.push([attr, id]);
         });
+        pendingSubscriptions.add(pending);
+        pending.then(() => pendingSubscriptions.delete(pending));
+        return pending;
     }
     function watch(proxy, name) {
         const attr = proxy[name]; if (!attr) return;
@@ -58,16 +69,17 @@ function createRadio(builders, options) {
                 await safe(() => !stopped && proxies.tuner.triggerStationListBroadcast({ listType: list }));
                 try {
                     let found = [], full = false;
-                    for (let start = 0; start < 500 && !stopped; start += 32) {
-                        const args = { listType: list, pictures: 0, epgDataScope: 1, startPosition: start, length: Math.min(32, 500 - start) };
+                    // BMW's metadata list is one-based; its Hmi8 cache rejects row zero.
+                    for (let start = 1; start <= 500 && !stopped; start += 32) {
+                        const args = { listType: list, pictures: 0, epgDataScope: 1, startPosition: start, length: Math.min(32, 501 - start) };
                         let response;
                         try { response = await proxies.tuner.getStationListMetaData(args); }
                         catch (error) { if (stopped || !proxies.metadata) throw error; response = await proxies.metadata.getStationListMetaData(args); }
                         if (stopped) return;
                         const rows = response && response.stationList;
-                        if (!Array.isArray(rows) || rows.length > 32) throw new Error('LIST_FORMAT');
+                        if (!Array.isArray(rows) || rows.length > args.length) throw new Error('LIST_FORMAT');
                         found = found.concat(rows);
-                        if (rows.length < 32) { full = true; break; }
+                        if (rows.length < args.length) { full = true; break; }
                         if (revision !== stationLists.revision(list)) break;
                     }
                     if (stopped) return;
@@ -81,13 +93,18 @@ function createRadio(builders, options) {
         finally { loading = false; }
     }
     const connecting = {};
-    async function connect(key) {
+    function connect(key) {
         if (stopped || proxies[key] || connecting[key]) return;
-        connecting[key] = true;
+        const pending = connectProxy(key);
+        connecting[key] = pending;
+        pending.then(() => { delete connecting[key]; });
+        return pending;
+    }
+    async function connectProxy(key) {
         const d = services[key];
         try {
             const proxy = await builders.buildAndInitTypedProxy(d.name, '1', { timeoutMs: 8000 });
-            if (stopped) { safe(() => proxy.dispose()); return; }
+            if (stopped) { await closeProxy(proxy); return; }
             proxies[key] = proxy;
             d.attributes.forEach((name) => watch(proxy, name));
             if (key === 'tuner') {
@@ -98,7 +115,6 @@ function createRadio(builders, options) {
                 refresh(); timers.push(every(refresh, 2000));
             }
         } catch (_) { if (!stopped && key === 'tuner') listError = 'Radio BMW no disponible'; }
-        finally { connecting[key] = false; }
     }
     const ready = Promise.all(Object.keys(services).map(connect));
     timers.push(every(() => Object.keys(services).forEach(connect), 10000));
@@ -112,17 +128,21 @@ function createRadio(builders, options) {
             if (!item) return false;
             artworkBusy = true;
             try {
-                let bytes = null;
-                for (const proxy of [proxies.metadata, proxies.tuner].filter(Boolean)) {
+                let bytes = null; const attempts = [];
+                for (const source of ['metadata', 'tuner']) {
+                    const proxy = proxies[source]; if (!proxy) continue;
                     const live = stationLists.find(c.key, c.list);
                     if (stopped || !live) return false;
                     const r = await safe(() => proxy.getStationListMetaData({ listType: live.list, pictures: 1, epgDataScope: 0, startPosition: live.position, length: 1 }));
                     if (stopped) return false;
                     const row = r && Array.isArray(r.stationList) && r.stationList.find((v) => v.dataBaseIdentifier === item.id);
-                    bytes = picture(row && row.stationIconPicture);
+                    const info = row ? pictureDetails(row.stationIconPicture) : { bytes: null, status: r && Array.isArray(r.stationList) ? 'missing-row' : 'query-failed', size: 0, format: null };
+                    attempts.push({ source, status: info.status, size: info.size, format: info.format });
+                    bytes = info.bytes;
                     if (bytes) break;
                 }
-                artwork = { key: item.key, serial: ++artworkSerial, bytes };
+                // Two bounded diagnostic entries, no URL, raw SDK error or extra image copies.
+                artwork = { key: item.key, serial: ++artworkSerial, bytes, attempts };
                 return true;
             } catch (_) { if (!stopped) artwork = { key: item.key, serial: ++artworkSerial, bytes: null }; return false; }
             finally { artworkBusy = false; }
@@ -139,20 +159,31 @@ function createRadio(builders, options) {
             available.find((v) => v.type === 4 && v.selectable) || available.find((v) => v.type === 1 && v.selectable);
         if (!source) { result = { id: c.id, ok: false, message: 'BMW no ofrece una fuente FM/DAB disponible' }; return false; }
         busy = true; result = { id: c.id, ok: null, message: 'Sintonizando…' };
+        let stage = 'fuente', nativeCode;
         try {
-            if (source.id !== activeId) {
-                const selected = await proxies.media.selectSource({ sourceId: source.id });
-                if (!selected || ![0, 2, 'NO_ERROR', 'SOURCE_ALREADY_SELECTED'].includes(selected.result)) throw new Error('SOURCE');
-            }
+            // Hmi8 requests audio on every explicit station selection. An active
+            // source ID alone does not establish an audible connection after an interruption.
+            const selected = await proxies.media.selectSource({ sourceId: source.id });
+            nativeCode = selected && selected.result;
+            if (![0, 2, 'NO_ERROR', 'SOURCE_ALREADY_SELECTED'].includes(nativeCode)) throw new Error('SOURCE');
             if (stopped) return false;
             // Resolve the index again after source activation; never tune a different row after a list update.
             const live = stationLists.find(s.key, s.list);
             if (!live) throw new Error('STATION');
+            stage = 'emisora'; nativeCode = undefined;
             const tuned = await proxies.tuner.selectStation({ listType: live.list, dataBaseIdentifier: live.id, positionIndex: live.position });
-            if (!tuned || ![0, 'EC_NO_ERROR'].includes(tuned.errorCode)) throw new Error('TUNE');
+            nativeCode = tuned && tuned.errorCode;
+            if (![0, 'EC_NO_ERROR'].includes(nativeCode)) throw new Error('TUNE');
             if (!stopped) result = { id: c.id, ok: true, message: 'Emisora solicitada a BMW' };
             return !stopped;
-        } catch (_) { if (!stopped) result = { id: c.id, ok: false, message: 'BMW no ha aceptado la sintonización' }; return false; }
+        } catch (error) {
+            // Only expose the bounded enum/code, never arbitrary SDK error text or source IDs.
+            const code = Number.isInteger(nativeCode) || typeof nativeCode === 'string' && /^[A-Z0-9_]{1,48}$/.test(nativeCode)
+                ? String(nativeCode) : 'sin confirmación';
+            if (!stopped) result = { id: c.id, ok: false, message: error && error.message === 'STATION'
+                ? 'La lista ha cambiado; vuelve a seleccionar la emisora' : 'BMW no ha activado la ' + stage + ' (' + code + ')' };
+            return false;
+        }
         finally { busy = false; }
     }
     return { ready, command, refresh,
@@ -167,10 +198,14 @@ function createRadio(builders, options) {
                 logo: live && logo ? { key: logoKey, serial: logoSerial, bytes: logo } : null };
         },
         stop() {
-            if (stopped) return; stopped = true; timers.forEach(cancel);
-            subscriptions.forEach(([attr, id]) => safe(() => attr.unsubscribe(id)));
-            Object.keys(proxies).forEach((key) => safe(() => proxies[key].dispose()));
+            if (closing) return closing;
+            stopped = true; timers.forEach(cancel);
+            closing = Promise.all(Object.keys(connecting).map((key) => connecting[key]))
+                .then(() => Promise.all(Array.from(pendingSubscriptions)))
+                .then(() => Promise.all(subscriptions.splice(0).map(([attr, id]) => safe(() => attr.unsubscribe(id)))))
+                .then(() => Promise.all(Object.keys(proxies).map((key) => closeProxy(proxies[key]))));
             // Do not stop/mute the original radio when our card or app is hidden.
+            return closing;
         }
     };
 }
