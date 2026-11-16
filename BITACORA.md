@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-16 · Tamaño del icono de BMWLauncher
+
+- A petición del usuario, la flecha de navegación se reduce un 10 % dentro del PNG transparente de 140 × 140 px. El escalado de alta calidad se centra con un margen adicional de 7 px por lado.
+- Revisada la comparación con el original a 140 y 40 px y comprobado el recurso indicado por el manifiesto en el paquete fuente. Pasaron 456 pruebas con `node --test --test-concurrency=4 emulator/split/*.test.js`. Queda comprobar el tamaño en el menú físico de iDrive.
+
 ## 2026-11-15 · Icono de BMWLauncher en iDrive
 
 - La entrada de BMWLauncher en el menú de aplicaciones de iDrive 8 usaba un cuadrado azul. `carlab.png` pasa a mostrar una flecha blanca de navegación inclinada hacia la derecha, con relieve gris y fondo transparente. El recurso conserva sus 140 × 140 px y la referencia del manifiesto.
