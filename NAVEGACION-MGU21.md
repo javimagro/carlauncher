@@ -1,5 +1,9 @@
 # Navegación de BMWLauncher · MGU21
 
+## Continuidad de la ruta en segundo plano
+
+Carlinkit separa la navegación restante de `TrayectoCompleto`, que conserva el origen, los tramos y las paradas ya completadas en `NavigationJourneyContext` y `SensorApiJourneyMapper` (`427786f4`). En MGU21 el guiado BMW conserva la autoridad. El observador de BMWLauncher sigue recibiendo destino, tiempo y distancia restantes, maniobras y previsión de batería tras cerrar la pantalla central. El detalle de la ruta usa esos datos y conserva las paradas que BMW identifica como `PASSED` dentro de la misma ruta. Si cambia la identidad de ruta, se usa su nuevo itinerario. Falta una fuente BMW validada para reconstruir el origen anterior, las fracciones de parada y el porcentaje total que publica Carlinkit. La continuidad real y los estados de parada se comprobarán en el i4.
+
 ## Previsión de batería BMW · 15-11-2026
 
 La 0.2.17 incorpora la lectura del cálculo BMW. `Routing2.requestRouteInfoUpdate` solicita `ALL_SEGMENTS`, `CHARGING_INFO`, sin puntos de interpolación. El evento selectivo `routeInfoUpdate` identifica ruta y segmentos. `ChargeStatus.estimatedStateOfEnergy` da la llegada al destino ordinario; `ChargingStationInfo.arrivalStateOfEnergy` y `targetStateOfEnergy`, llegada/salida de carga. Se asocian por `tripSegmentID` a `currentTrips`, descartando segmentos pasados/desactivados, rutas ajenas y datos vencidos. No se modifica el guiado ni se recalcula al observar.

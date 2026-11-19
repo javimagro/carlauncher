@@ -75,6 +75,27 @@ test('ETA shows CarLauncher actions and reads arrival time and zero battery from
     assert.equal(r.sent[1].action, 'itinerary');
 });
 
+test('reopening the active route shows remaining distance, arrival battery and completed stops', t => {
+    const r = rig();
+    t.after(() => r.ui.close());
+    Object.assign(r.nav, { state: 'active', destinations: [{ final: true, metres: 38000, seconds: 1800 }],
+        segments: [{ name: 'Área de recarga', charging: true, completed: true }, { name: 'Destino BMW', charging: false }],
+        energy: { source: 'bmw', destinationSoc: 42 } });
+    r.receive({});
+    r.tap('route-panel');
+    const labels = [];
+    const cv = new Recorder(1960, 520);
+    const text = cv.text.bind(cv);
+    cv.text = (label, ...args) => { labels.push(label); return text(label, ...args); };
+    controls(cv, r.ui, r.nav);
+    assert(labels.includes('30 min · 38,0 km'));
+    assert(labels.includes('Batería al llegar: 42 %'));
+    r.tap('route-page:stops');
+    labels.length = 0;
+    controls(cv, r.ui, r.nav);
+    for (const label of ['Área de recarga', 'Parada completada', 'Destino BMW', 'Llegada 42 %']) assert(labels.includes(label), label);
+});
+
 test('route settings save during loading even if the first replacement is temporarily blocked', async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmw-nav-prefs-'));
     const navigationFile = path.join(root, 'navigation.json');

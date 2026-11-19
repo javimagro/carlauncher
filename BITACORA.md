@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Trayecto completo al volver a BMWLauncher
+
+- Contrastados `VehicleTripSessionRepository` y `SensorApiJourneyMapper` de BMWLauncher Carlinkit (`427786f4`) y `SensorSnapshotMapper` de DriveHub (`2a7755a`). El resumen BMWLauncher conservaba solo la gráfica de altura en su registro y el detalle de navegación consultaba métricas de previsualización durante el guiado activo. El motor registra ahora el resumen completo del viaje y el detalle enlaza distancia, tiempo, batería de llegada y paradas completadas con la ruta BMW vigente.
+- El ensayo del cuadro cambia posición, pronóstico, consumo y potencia con la pantalla central cerrada. `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 508 pruebas. Las regresiones cubren las seis métricas, su caducidad, la escritura del resumen, las paradas completadas y el cambio de ruta. Sintaxis y carga comprobadas con Node 8.16.2. Se revisó el detalle de ruta en las paletas diurna y nocturna del simulador. Sigue pendiente la comprobación en el i4.
+
 ## 2026-11-19 · Cuadro y trayecto en segundo plano
 
 - Al salir al menú de iDrive, el ciclo de la pantalla central cerraba Cluster renderer, detenía los observadores OAP y borraba la altura acumulada. La nueva prueba de sesión reproducía la falta de lecturas al arrancar con la pantalla central cerrada.

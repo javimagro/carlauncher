@@ -44,9 +44,11 @@ function tripSummary(trips, route) {
     const found = Array.isArray(trips) && trips.find((t) => t.active === true && routeKey(t.routeIdentifer) === routeKey(route));
     const segments = found && found.tripDefinition && found.tripDefinition.tripSegment;
     if (!Array.isArray(segments)) return [];
-    return segments.slice(0, 24).map((s) => {
+    return segments.slice(0, 24).filter(Boolean).map((s) => {
         const preferences = s.routeOptions && s.routeOptions.eRoutePreference;
         return { name: locationName(s.destination), charging: s.isERouteTripSegment === true,
+            id: Number.isSafeInteger(s.tripSegmentID) && s.tripSegmentID >= 0 ? s.tripSegmentID : undefined,
+            completed: s.destinationStatus === 'PASSED',
             destinationType: s.destinationType, preferences: preferences ? {
                 enabled: preferences.eRoutesOn === true,
                 arrivalMinimum: Number.isInteger(preferences.minSoCAtFinalDestination) && preferences.minSoCAtFinalDestination <= 100
@@ -192,6 +194,7 @@ function createProbe(builders, options) {
                 (state === 1 || state === 'CALCULATING_ROUTE' ? 'calculating' : 'inactive'),
                 routeStatus: line ? 'ready' : routeStatus === 'ready' ? 'expired' : routeStatus,
                 route: line ? { encoded: line.encoded, key: line.key, at: line.at } : null,
+                routeKey: live || undefined,
                 destinations: Array.isArray(destinations) ? destinations.slice(0, 24).map(destination) : [],
                 destinationsKnown: Array.isArray(destinations),
                 energy: energy.snapshot(fresh('currentRoute'), fresh('currentTrips'), !!live),

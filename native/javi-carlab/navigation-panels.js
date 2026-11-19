@@ -159,7 +159,13 @@ function controls(cv, ui, nav, now = Date.now()) {
         if (charger) { text('Recarga', actionX, y + 300, 22, p.text, 214, true); text('Potencia: — kW', actionX, y + 332, 19, p.secondary); text('Disponibilidad: —', actionX, y + 362, 19, p.secondary); }
     }
     function route() {
-        const stops = data.plan ? data.stops || [] : scene.stops(s), plan = data.plan || {}, last = stops[stops.length - 1];
+        const active = !data.plan && nav.state === 'active';
+        const final = active && (nav.destinations || []).find(d => d.final);
+        const segments = nav.segments || [];
+        const stops = data.plan ? data.stops || [] : active && segments.length ? segments : scene.stops(s);
+        const plan = data.plan || final || {};
+        const arrival = active && nav.energy && nav.energy.source === 'bmw' ? nav.energy.destinationSoc : null;
+        const last = stops[stops.length - 1];
         if (s.routePage === 'battery') {
             text('Batería mínima al llegar', x + 20, y + 102, 22, p.text, w - 40);
             cv.text(s.preferences.arrival + '%', x + w / 2, y + 190, 54, p.text, { align: 'center' });
@@ -167,7 +173,8 @@ function controls(cv, ui, nav, now = Date.now()) {
             wrap('Objetivo para el cálculo de BMW. La previsión de llegada aún no está disponible.', x + 22, y + 307, w - 44, 18, p.secondary);
             button('recalculate', 'Aplicar', x + 20, y + h - 64, w - 40, 50, { primary: true, disabled: busy || !stops.length });
         } else if (s.routePage === 'stops') {
-            const itinerary = [{ name: 'Ubicación actual', kind: 'origin' }].concat(stops.map((a, i) => Object.assign({}, a, { kind: i === stops.length - 1 ? 'destination' : a.charging ? 'charge' : 'number' })));
+            const origin = active ? [] : [{ name: 'Ubicación actual', kind: 'origin' }];
+            const itinerary = origin.concat(stops.map((a, i) => Object.assign({}, a, { kind: i === stops.length - 1 ? 'destination' : a.charging ? 'charge' : 'number' })));
             paging(itinerary.length, 4);
             itinerary.slice(s.offset, s.offset + 4).forEach((a, i) => {
                 const yy = y + 94 + i * 68;
@@ -175,7 +182,10 @@ function controls(cv, ui, nav, now = Date.now()) {
                 if (a.kind === 'origin') { cv.circle(x + 32, yy, 8, p.accent); cv.circle(x + 32, yy, 4, p.surface); }
                 else icon(cv, a.kind === 'charge' ? 'chargers' : 'destination', x + 32, yy, a.kind === 'destination' ? p.danger : p.text, p.surface, .75);
                 text(a.name || 'Destino BMW', x + 56, yy + 5, 20, p.text, w - 82);
-                text(a.kind === 'charge' ? 'Parada de carga · llegada — %' : a.kind === 'origin' ? 'Origen' : 'Llegada — %', x + 56, yy + 28, 16, p.secondary, w - 82);
+                const detail = a.kind === 'origin' ? 'Origen' : a.completed ? 'Parada completada' :
+                    a.kind === 'charge' ? 'Parada de carga' : a.kind === 'destination' && Number.isFinite(arrival) ?
+                        'Llegada ' + arrival + ' %' : 'Llegada — %';
+                text(detail, x + 56, yy + 28, 16, p.secondary, w - 82);
             });
         } else {
             button('route-page:stops', '', x + 12, y + 72, w - 24, 80, { card: true });
@@ -183,7 +193,8 @@ function controls(cv, ui, nav, now = Date.now()) {
             text(duration(plan.seconds) + ' · ' + distance(plan.metres), x + 24, y + 135, 21, p.eta, w - 62);
             icon(cv, 'next', x + w - 28, y + 112, p.secondary, p.surface, .8);
             row('route-page:stops', 'Información detallada', y + 162, 'info');
-            row('route-page:battery', 'Batería al llegar: — %', y + 220, 'battery', 'Mínimo: ' + s.preferences.arrival + '%');
+            row('route-page:battery', 'Batería al llegar: ' + (Number.isFinite(arrival) ? arrival : '—') + ' %',
+                y + 220, 'battery', 'Mínimo: ' + s.preferences.arrival + '%');
             const charges = stops.filter((a) => a.charging).length;
             row('route-page:stops', charges + (charges === 1 ? ' parada de carga' : ' paradas de carga'), y + 278, 'chargers');
             button('add-stop-search', 'Añadir parada', x + 14, y + h - 64, 160, 52, { disabled: busy || !stops.length });

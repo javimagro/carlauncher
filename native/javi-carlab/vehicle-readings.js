@@ -62,6 +62,7 @@ function vehicleReadings(records, now) {
     const lat = position['position.latitude'];
     const lon = position['position.longitude'];
     const journey = field('bcDataAll');
+    const journeyRecord = records && records.get('bcDataAll');
     const energy = field('batteryEnergyHv');
     return {
         soc: valid(battery, 200) ? battery / 2 : undefined,
@@ -77,9 +78,22 @@ function vehicleReadings(records, now) {
         batteryEnergy: energy.capacityWh > 0 && valid(energy.capacityWh, 200000) && valid(energy.availableWh, energy.capacityWh)
             ? { availableWh: energy.availableWh, capacityWh: energy.capacityWh } : undefined,
         currentConsumption: currentConsumption(journey),
+        journeySampledAt: journeyRecord && journeyRecord.sampledAt,
         trip: journeyReading(journey, 'trip'),
         factory: journeyReading(journey, 'factory')
     };
 }
 
-module.exports = { vehicleReadings, journeyReading, staleSample, thermalStatus };
+function tripSummary(vehicle) {
+    const { trip, factory } = vehicle;
+    const compatible = (trip.distanceUnit === 'km' && trip.averageUnit === 'kWh/100 km') ||
+        (trip.distanceUnit === 'mi' && trip.averageUnit === 'kWh/100 mi');
+    return { distance: trip.distance, distanceUnit: trip.distanceUnit, duration: trip.duration,
+        speed: trip.speed, average: trip.average, averageUnit: trip.averageUnit,
+        historicalAverage: factory && factory.average, historicalUnit: factory && factory.averageUnit,
+        altitude: vehicle.altitude, outside: vehicle.outside, batteryTemperature: vehicle.batteryTemperature,
+        energy: compatible && Number.isFinite(trip.distance) && Number.isFinite(trip.average) ?
+            Math.max(0, trip.average * trip.distance / 100) : undefined };
+}
+
+module.exports = { vehicleReadings, journeyReading, staleSample, thermalStatus, tripSummary };

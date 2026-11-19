@@ -246,38 +246,57 @@ test('wheel skip notifications are edge-triggered and independent of the rotary 
     assert.deepEqual(events, [{ skip: -1 }, { skip: 1 }]);
 });
 
-test('the cockpit starts without a centre display and follows live trip readings after exit', async (t) => {
-    t.mock.timers.enable({ apis: ['setInterval'] });
+test('the cockpit starts without a centre display and refreshes weather, power and consumption after exit', async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
     const gpu = new EventEmitter();
     let centralFrames = 0, closed = 0;
     const updates = [];
     Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() { centralFrames++; } });
-    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] },
+    const session = createSession(gpu, { area: () => ({ scale: 1 }),
+        async get(url) {
+            if (!url.includes('open-meteo')) return Buffer.from('<rss><channel><item><title>Prueba</title><link>https://example.com/item</link></item></channel></rss>');
+            const time = '2026-11-19T12:00';
+            const temperature_2m = new URL(url).searchParams.get('latitude') === '40.45' ? 21 : 19;
+            return Buffer.from(JSON.stringify({ current: { time, temperature_2m, weather_code: 1, is_day: 1 },
+                hourly: { time: [time], precipitation: [0], precipitation_probability: [10] },
+                daily: { time: [], temperature_2m_max: [24], temperature_2m_min: [18], sunrise: [], sunset: [] } }));
+        },
         loadCockpit: async () => ({
             visible: () => true, status: () => 'Widget visible',
-            update(readings) { updates.push(readings); }, close() { closed++; }
+            update(readings, now, weather) { updates.push({ ...readings, weather }); }, close() { closed++; }
         }) });
     t.after(() => session.close());
-    function samples(distance, minute) {
+    function samples(distance, minute, latitude, kw) {
         return [{ signal: 'bcDataAll', status: 'sample', fields: {
             'bcUnits.tachoDigital': 1, 'trip.counterDistance': distance,
-            'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 0, 'trip.dateTimeTrip.minute': minute, 'trip.dateTimeTrip.second': 0
+            'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 0, 'trip.dateTimeTrip.minute': minute, 'trip.dateTimeTrip.second': 0,
+            'bcUnits.averageConsumptionElectric': 1, 'trip.consumptionElectricAverageDigit': 65535 + minute * 40
+        } }, { signal: 'batteryPowerHv', status: 'sample', fields: { kw } },
+        { signal: 'rawPositionData', status: 'sample', fields: {
+            'position.coordinatesValid': true, 'position.latitude': latitude, 'position.longitude': -3.7
         } }];
     }
-    session.telemetry(samples(25, 4));
+    session.telemetry(samples(25, 4, 40.4, 20));
     await Promise.resolve();
+    await new Promise(setImmediate);
     t.mock.timers.tick(1000);
     assert.equal(updates.at(-1)?.trip.duration, 240, 'the first readings reach the widget at startup');
+    assert.equal(updates.at(-1)?.weather.temp, 19);
     assert.equal(centralFrames, 0);
     gpu.emit('ready', {}, { touch: true });
     session.show(true);
     gpu.emit('state', { onScreen: false });
     session.show(false);
     const before = centralFrames;
-    session.telemetry(samples(39, 6));
+    session.telemetry(samples(39, 6, 40.45, -4));
+    t.mock.timers.tick(60000);
+    await new Promise(setImmediate);
     t.mock.timers.tick(1000);
     assert.equal(updates.at(-1)?.trip.duration, 360);
     assert.equal(updates.at(-1)?.trip.distance, 3.9);
+    assert.equal(updates.at(-1)?.trip.average, 24);
+    assert.equal(updates.at(-1)?.power, -4);
+    assert.equal(updates.at(-1)?.weather.temp, 21);
     assert.equal(centralFrames, before);
     assert.equal(closed, 0);
     await session.close();

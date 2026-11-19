@@ -82,6 +82,8 @@ function validate(frame) {
         !Array.isArray(frame.segments) || frame.segments.length > 24 ||
         ![true, false, null].includes(frame.electricRouting) || typeof frame.destinationsKnown !== 'boolean') return false;
     if (frame.currentRoad !== undefined && (typeof frame.currentRoad !== 'string' || frame.currentRoad.length > 140)) return false;
+    if (frame.routeKey !== undefined && (frame.state !== 'active' || typeof frame.routeKey !== 'string' ||
+        frame.routeKey.length > 32 || !/^\d+:\d+$/.test(frame.routeKey))) return false;
     if (frame.energy != null && (frame.energy.source !== 'bmw' ||
         ['destinationSoc', 'stopSoc', 'chargedSoc'].some((k) => frame.energy[k] !== null &&
             (!Number.isInteger(frame.energy[k]) || frame.energy[k] < 0 || frame.energy[k] > 100)))) return false;
@@ -94,6 +96,8 @@ function validate(frame) {
         (d.seconds !== null && (!Number.isFinite(d.seconds) || d.seconds < 0 || d.seconds > 604800)) ||
         (d.metres !== null && (!Number.isFinite(d.metres) || d.metres < 0 || d.metres > 50000000)))) return false;
     if (frame.segments.some((s) => !s || typeof s.name !== 'string' || s.name.length > 100 || typeof s.charging !== 'boolean' ||
+        (s.id !== undefined && (!Number.isSafeInteger(s.id) || s.id < 0)) ||
+        (s.completed !== undefined && typeof s.completed !== 'boolean') ||
         (s.preferences !== null && (!s.preferences || typeof s.preferences.enabled !== 'boolean' ||
         (s.preferences.arrivalMinimum !== null && (!Number.isInteger(s.preferences.arrivalMinimum) || s.preferences.arrivalMinimum < 0 || s.preferences.arrivalMinimum > 100)))))) return false;
     return frame.route === null || (frame.state === 'active' && frame.route &&
@@ -119,9 +123,20 @@ function consume(receive) {
 }
 function createNavigation() {
     let data, receivedAt, geometry = [], encoded, endpointKey, geometryError;
+    let itinerary, itineraryKey, itineraryAt;
     return {
         receive(frame, now) {
             data = frame; receivedAt = now;
+            if (frame && frame.state === 'inactive') { itinerary = undefined; itineraryKey = undefined; }
+            if (frame && frame.state === 'active' && frame.routeKey) {
+                if (itineraryKey !== frame.routeKey) { itinerary = undefined; itineraryKey = frame.routeKey; }
+                if (frame.segments.length) {
+                    const ids = new Set(frame.segments.map(stop => stop.id));
+                    const visited = itinerary ? itinerary.filter(stop => stop.completed && stop.id !== undefined && !ids.has(stop.id)) : [];
+                    itinerary = visited.slice(0, 24 - frame.segments.length).concat(frame.segments);
+                    itineraryAt = now;
+                }
+            }
             if (!frame || !frame.route) { geometry = []; encoded = null; endpointKey = null; geometryError = null; return; }
             const final = frame.destinations.find((d) => d.final);
             const point = final && final.position;
@@ -134,7 +149,9 @@ function createNavigation() {
         snapshot(now) {
             if (!data || now < receivedAt || now - receivedAt > 5000 || now < data.at || now - data.at > 5000) return { state: 'unavailable', points: [], destinations: [], segments: [], theme: 'auto' };
             const current = data.route && now >= data.route.at && now - data.route.at < 60000;
-            return Object.assign({}, data, { points: current ? geometry : [], geometryError });
+            const stops = itinerary && data.state === 'active' && itineraryKey === data.routeKey &&
+                now >= itineraryAt && now - itineraryAt < 15000 ? itinerary : data.segments;
+            return Object.assign({}, data, { points: current ? geometry : [], geometryError, segments: stops });
         }
     };
 }

@@ -36,9 +36,14 @@ test('height history resumes after a service restart only for the same boot and 
     const original = createTripHistory(file, boot);
     await original.ready;
     sample(original, 1000, 300, 440);
-    sample(original, 61000, 360, 460);
+    original.sample({ trip: { duration: 360, distance: 6, speed: 60, average: 20, distanceUnit: 'km', averageUnit: 'kWh/100 km' },
+        factory: { average: 18, averageUnit: 'kWh/100 km' }, altitude: 460 }, 61000);
     await original.close();
-    assert.deepEqual(JSON.parse(await fs.readFile(file)).values, [440, 460], 'flush persists the latest snapshot');
+    const stored = JSON.parse(await fs.readFile(file));
+    assert.deepEqual(stored.values, [440, 460]);
+    assert.equal(stored.latest.summary.energy, 1.2);
+    assert.equal(stored.latest.summary.historicalAverage, 18);
+    assert.equal(stored.latest.summary.speed, 60);
 
     const afterRestart = createTripHistory(file, boot);
     await afterRestart.ready;
@@ -65,4 +70,28 @@ test('height history resumes after a service restart only for the same boot and 
     sample(reboot, 122000, 421, undefined);
     assert.deepEqual(reboot.values, []);
     await reboot.close();
+});
+
+test('all six trip readings continue as one snapshot with bounded last-reading fallback', () => {
+    const history = createTripHistory();
+    const previous = { journeySampledAt: 1000, trip: { duration: 240, distance: 5, speed: 75, average: 20,
+        distanceUnit: 'km', averageUnit: 'kWh/100 km' }, factory: { average: 18, averageUnit: 'kWh/100 km' },
+        altitude: 450, outside: 12, batteryTemperature: 25 };
+    history.sample(previous, 1000);
+    const later = { ...previous, journeySampledAt: 61000, trip: { ...previous.trip, duration: 300, distance: 7, speed: 84, average: 22 },
+        altitude: 470, outside: 13, batteryTemperature: 26 };
+    history.sample(later, 61000);
+    const summary = history.snapshot(later, 61000);
+    assert.deepEqual([summary.duration, summary.distance, summary.speed, summary.average, summary.historicalAverage, summary.energy],
+        [300, 7, 84, 22, 18, 1.54]);
+    assert.deepEqual([summary.altitude, summary.outside, summary.batteryTemperature], [470, 13, 26]);
+    assert.deepEqual(history.values, [450, 470]);
+    history.sample(later, 90000);
+    const last = history.snapshot({ trip: {} }, 90999);
+    assert.equal(last.stale, true);
+    assert.equal(last.energy, 1.54);
+    assert.equal(last.batteryTemperature, undefined);
+    assert.equal(history.snapshot({ trip: {} }, 91000).energy, undefined);
+    history.sample({ ...later, trip: { ...later.trip, distance: 0 } }, 92000);
+    assert.deepEqual(history.values, [470], 'a reset of BMW distance replaces the previous elevation series');
 });

@@ -2,7 +2,7 @@
 
 const { cards, map, home, energyBar, viewport, dailyChart } = require('./drivehub-state.js');
 const { layout: tdtLayout, playerOverlay, visibleChannels } = require('./tdtworld.js');
-const { vehicleReadings, journeyReading, staleSample, thermalStatus } = require('./vehicle-readings.js');
+const { vehicleReadings, journeyReading, staleSample, thermalStatus, tripSummary } = require('./vehicle-readings.js');
 const { drawNavigation, drawToggle } = require('./navigation-view.js');
 const { drawPreconditioning } = require('./preconditioning-ui');
 const { drawRadio } = require('./radio-view.js');
@@ -219,17 +219,13 @@ function tripDuration(seconds) {
     return hours ? hours + ' h ' + String(minutes).padStart(2, '0') + ' m' : minutes + ' m';
 }
 
-function trip(cv, x, y, w, h, vehicle, heights) {
-    const { trip: current, factory } = vehicle;
-    const compatible = (current.distanceUnit === 'km' && current.averageUnit === 'kWh/100 km') ||
-        (current.distanceUnit === 'mi' && current.averageUnit === 'kWh/100 mi');
-    const energy = compatible ? Math.max(0, current.average * current.distance / 100) : undefined;
+function trip(cv, x, y, w, h, current, heights) {
     const metrics = [
         ['Consumo medio', liveValue(current.average, current.averageUnit, 1)],
-        ['Consumo medio total', liveValue(factory.average, factory.averageUnit, 1)],
+        ['Consumo medio total', liveValue(current.historicalAverage, current.historicalUnit, 1)],
         ['Distancia recorrida', liveValue(current.distance, current.distanceUnit, 1)],
         ['Velocidad media', liveValue(current.speed, current.distanceUnit + '/h')],
-        ['Energía consumida', Number.isFinite(energy) ? liveValue(energy, 'kWh', 1) + ' aprox.' : '–'],
+        ['Energía consumida', Number.isFinite(current.energy) ? liveValue(current.energy, 'kWh', 1) + ' aprox.' : '–'],
         ['Duración', tripDuration(current.duration)]
     ];
     const left = x + 29;
@@ -249,7 +245,7 @@ function trip(cv, x, y, w, h, vehicle, heights) {
     const graphBottom = y + h - 91;
     box(left, y + 277, w - 60, h - 363, [21, 38, 52, 142]);
     cv.text('Altura', x + w / 2, y + 299, 16, secondary, centered);
-    cv.text(liveValue(vehicle.altitude, 'm'), x + w - 39, y + 299, 21, primary, right);
+    cv.text(liveValue(current.altitude, 'm'), x + w - 39, y + 299, 21, primary, right);
     if (heights.length > 1) {
         const low = Math.min(...heights);
         const high = Math.max(...heights);
@@ -259,7 +255,7 @@ function trip(cv, x, y, w, h, vehicle, heights) {
         cv.fillUnder(points, graphBottom, [61, 196, 232, 58]);
         cv.polyline(points, 2, '#52d9f8');
     }
-    for (const [index, label, value, max] of [[0, 'Exterior', vehicle.outside, 50], [1, 'Batería HV', vehicle.batteryTemperature, 70]]) {
+    for (const [index, label, value, max] of [[0, 'Exterior', current.outside, 50], [1, 'Batería HV', current.batteryTemperature, 70]]) {
         const center = left + col * (index + 0.5) + index * 5;
         const barY = y + h - 26;
         cv.text(label, center, y + h - 60, 13, secondary, centered);
@@ -629,11 +625,13 @@ function drawCard(cv, card, x, selected, data, state, art, now, vehicle) {
     cv.gradientRect(x + 1, y + 12, 2, h - 24, [[0, [122, 169, 203, 36]], [0.56, '#cfe9fa'], [1, [122, 169, 203, 10]]]);
     cv.gradientRect(x + w - 3, y + 12, 2, h - 24, [[0, [122, 169, 203, 36]], [0.56, '#cfe9fa'], [1, [122, 169, 203, 10]]]);
     let title = card.title;
+    const journey = card.id === 'trip' && (data.tripSummary || tripSummary(vehicle));
+    if (journey && journey.stale) title += ' · Última lectura';
     if (card.id === 'weather') title += ' - ' + (data.weather ? data.weather.name : data.city);
     fit(cv, title, x + w / 2, y + 25, 19, w - 35, primary, { align: 'center', spacing: 2 });
     cv.rampRect(x + 8, y + 35, w - 16, 2, 0, ['#17383e', '#239696', '#17383e']);
 
-    if (card.id === 'trip') trip(cv, x, y, w, h, vehicle, data.altitudeHistory ? data.altitudeHistory.values : []);
+    if (journey) trip(cv, x, y, w, h, journey, data.altitudeHistory ? data.altitudeHistory.values : []);
     if (card.id === 'radio') drawRadio(cv, x, y, w, h, data.radio, now);
     if (card.id === 'weather') {
         if (!data.weather) empty(cv, x, y, w, h, data.weatherStatus,

@@ -102,6 +102,7 @@ module.exports = function createSession(gpu, options) {
         cv.reset();
         data.navigation = navigation.snapshot(now);
         const vehicle = currentVehicle(now);
+        data.tripSummary = tripHistory.snapshot(vehicle, now);
         if (shown && onScreen) provider.refresh(now, vehicle.location);
         assistant.setVisible(shown && onScreen);
         if (aa) aa.update(shown && onScreen && confirmedOnScreen && touchAvailable && !!area,
@@ -229,7 +230,6 @@ module.exports = function createSession(gpu, options) {
             }, () => {}).then(() => { cockpitPending = false; });
         }
         const vehicle = currentVehicle(now);
-        tripHistory.sample(vehicle, now);
         if (!shown || !onScreen || !area) provider.refresh(now, vehicle.location, false, !!(cockpit && cockpit.visible()));
         if (cockpit) cockpit.update(vehicle, now, provider.weatherSnapshot(now));
         if (options.onCockpitVisible) options.onCockpitVisible(!!(cockpit && cockpit.visible()));
@@ -252,7 +252,9 @@ module.exports = function createSession(gpu, options) {
         telemetry(records, thermal) {
             data.telemetry = records;
             telemetryRecords = records && new Map(records.map(row => [row.signal, row]));
-            if (shown && onScreen) preconditioning.receive(thermal, Date.now());
+            const now = Date.now();
+            tripHistory.sample(currentVehicle(now), now);
+            if (shown && onScreen) preconditioning.receive(thermal, now);
             dirty = true;
         },
         controller(event) { if (shown && onScreen && !canGrab) controller(event); },

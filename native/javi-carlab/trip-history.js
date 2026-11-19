@@ -1,9 +1,11 @@
 'use strict';
 
 const fs = require('fs');
+const { tripSummary } = require('./vehicle-readings');
 
 const sampleInterval = 60000;
 const maxSamples = 360;
+const lastReadingMs = 30000;
 const bootFile = '/proc/sys/kernel/random/boot_id';
 
 function read(file) {
@@ -12,7 +14,7 @@ function read(file) {
 
 function createTripHistory(file, boot = () => read(bootFile)) {
     const values = [];
-    let bootId, duration, lastAt, saved;
+    let bootId, duration, lastAt, saved, latest, lastWriteAt;
     let pending = false, writing, closed = false, restoring = !!file;
     const ready = file ? Promise.all([boot(), read(file)]).then(([id, raw]) => {
         bootId = id.trim();
@@ -25,12 +27,14 @@ function createTripHistory(file, boot = () => read(bootFile)) {
 
     function persist(now) {
         if (!bootId || !Number.isFinite(duration)) return;
+        lastWriteAt = now;
         pending = true;
         if (writing) return;
         const tmp = file + '.tmp';
         function write() {
             pending = false;
-            const bytes = JSON.stringify({ boot: bootId, duration, at: lastAt === undefined ? now : lastAt, values });
+            const bytes = JSON.stringify({ boot: bootId, duration, at: lastAt === undefined ? lastWriteAt : lastAt, values,
+                latest });
             return new Promise(resolve => {
                 fs.writeFile(tmp, bytes, { mode: 0o600 }, error => {
                     if (error) resolve();
@@ -44,14 +48,23 @@ function createTripHistory(file, boot = () => read(bootFile)) {
     return {
         ready,
         values,
+        snapshot(vehicle, now) {
+            const live = tripSummary(vehicle);
+            if (Number.isFinite(live.duration) || Number.isFinite(live.distance) ||
+                !latest || now < latest.at || now - latest.at >= lastReadingMs) return live;
+            return Object.assign({}, latest.summary, {
+                altitude: live.altitude, outside: live.outside, batteryTemperature: live.batteryTemperature, stale: true
+            });
+        },
         sample(vehicle, now) {
             if (closed || restoring) return;
-            const current = vehicle.trip.duration;
+            const summary = tripSummary(vehicle);
+            const current = summary.duration;
             if (saved && !Number.isFinite(current)) return;
             let changed = false;
             if (Number.isFinite(current)) {
                 if (saved) {
-                    if (now >= saved.at && current >= saved.duration) {
+                    if (now >= saved.at && current >= saved.duration && !distanceReset(saved.latest && saved.latest.summary, summary)) {
                         values.splice(0, values.length, ...saved.values);
                         lastAt = saved.at;
                         changed = true;
@@ -59,12 +72,15 @@ function createTripHistory(file, boot = () => read(bootFile)) {
                     saved = undefined;
                 }
                 if (duration === undefined) changed = true;
-                else if (current < duration) {
+                else if (current < duration || distanceReset(latest && latest.summary, summary)) {
                     values.length = 0;
                     lastAt = undefined;
                     changed = true;
                 }
                 duration = current;
+                const at = Number.isFinite(vehicle.journeySampledAt) ? Math.min(now, vehicle.journeySampledAt) : now;
+                latest = { at, summary };
+                if (lastWriteAt === undefined || now < lastWriteAt || now - lastWriteAt >= sampleInterval) changed = true;
             }
             const altitude = vehicle.altitude;
             if (Number.isFinite(altitude) && (!values.length || now < lastAt || now - lastAt >= sampleInterval)) {
@@ -75,8 +91,17 @@ function createTripHistory(file, boot = () => read(bootFile)) {
             }
             if (changed) persist(now);
         },
-        close() { closed = true; return writing || Promise.resolve(); }
+        close() {
+            closed = true;
+            if (latest) persist(Math.max(lastWriteAt || 0, latest.at));
+            return writing || Promise.resolve();
+        }
     };
+}
+
+function distanceReset(previous, current) {
+    return previous && previous.distanceUnit === current.distanceUnit &&
+        Number.isFinite(previous.distance) && Number.isFinite(current.distance) && current.distance < previous.distance;
 }
 
 module.exports = { createTripHistory };

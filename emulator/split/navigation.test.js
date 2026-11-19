@@ -51,6 +51,20 @@ test('navigation removes stale data and never presents endpoint-mismatched or in
     assert.equal(model.snapshot(2000).points.length, 0);
     model.receive(null, 3000); assert.equal(model.snapshot(3000).state, 'unavailable');
 });
+test('the active itinerary retains completed stops while BMW updates the remaining guidance', () => {
+    const model = createNavigation();
+    const a = { ...frame(), route: null, routeKey: '1:2' };
+    const visited = { id: 1, name: 'Recarga visitada', charging: true, completed: true, preferences: null };
+    const pending = { id: 2, name: 'Destino', charging: false, completed: false, preferences: null };
+    model.receive({ ...a, segments: [visited, pending] }, 1000);
+    model.receive({ ...a, at: 2000, segments: [], destinations: [{ ...a.destinations[0], metres: 8700 }] }, 2000);
+    assert.deepEqual(model.snapshot(2000).segments, [visited, pending]);
+    assert.equal(model.snapshot(2000).destinations[0].metres, 8700);
+    model.receive({ ...a, at: 3000, segments: [pending] }, 3000);
+    assert.deepEqual(model.snapshot(3000).segments, [visited, pending]);
+    model.receive({ ...a, at: 4000, routeKey: '1:3', segments: [pending] }, 4000);
+    assert.deepEqual(model.snapshot(4000).segments, [pending]);
+});
 function rig(state, create = true) {
     const callbacks = {}, timers = [], calls = [], disposed = [], removed = [];
     const values = { guidanceState: state, currentRoute: { sessionID: 1, routeHandle: 2 },
@@ -163,12 +177,15 @@ test('navigation retries unavailable services after startup, without duplicate p
 test('electrical route preferences are read from the matching BMW route without guessing stop charge values', () => {
     const route = { sessionID: 1, routeHandle: 2 };
     const trips = [{ active: true, routeIdentifer: route, tripDefinition: { tripSegment: [
-        { destinationType: 'DESTINATION', isERouteTripSegment: false, destination: { optionPOILocation: { name: 'Área de recarga' } },
+        { tripSegmentID: 7, destinationStatus: 'PASSED', destinationType: 'DESTINATION', isERouteTripSegment: false,
+            destination: { optionPOILocation: { name: 'Área de recarga' } },
             routeOptions: { eRoutePreference: { eRoutesOn: true, minSoCAtFinalDestination: 10 } } }
     ] } }];
     assert.deepEqual(tripSummary(trips, route)[0].preferences, { enabled: true, arrivalMinimum: 10 });
     assert.deepEqual(tripSummary(trips, { sessionID: 2, routeHandle: 2 }), []);
     assert.equal(tripSummary(trips, route)[0].name, 'Área de recarga');
+    assert.equal(tripSummary(trips, route)[0].id, 7);
+    assert.equal(tripSummary(trips, route)[0].completed, true);
 });
 
 test('automatic map theme uses the vehicle day/night signal and expires invalid values', async () => {
