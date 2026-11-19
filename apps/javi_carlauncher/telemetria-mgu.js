@@ -104,7 +104,7 @@ function sampleJourney(value, paths) {
 function start(builders, schedule = setTimeout, cancel = clearTimeout, options = {}) {
     const samples = new Map(), sessions = new Set();
     const timeoutMs = options.timeoutMs || 8000, retryMs = options.retryMs || 2000;
-    let stopped = false;
+    let stopped = false, stopping, unsafe = false;
     function later(session, work, delay, custom) {
         const run = () => { session.timers.delete(id); if (session.active && !stopped) work(); };
         const id = (custom ? schedule : setTimeout)(run, delay);
@@ -154,7 +154,9 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout, options =
                 if (results.some(ok => !ok)) session.cleanupFailed = true;
                 return session.proxy ? dispose(session.proxy) : true;
             })
-            .then(ok => { if (!ok) session.cleanupFailed = true; sessions.delete(session); });
+            .then(ok => { if (!ok) session.cleanupFailed = true;
+                if (session.cleanupFailed) unsafe = true;
+                sessions.delete(session); });
         return session.closing;
     }
     function reconnect(session, phase) {
@@ -234,9 +236,10 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout, options =
     return {
         snapshot: () => Array.from(samples, ([signal, result]) => ({ signal, ...result })),
         stop() {
-            if (stopped) return;
+            if (stopped) return stopping;
             stopped = true;
-            sessions.forEach(close);
+            stopping = Promise.all(Array.from(sessions, close)).then(() => !unsafe);
+            return stopping;
         }
     };
 }
@@ -247,6 +250,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
     let preconditioning;
     let socket;
     let timer;
+    let requested = false, closing = Promise.resolve(true);
 
     function send() {
         if (!probe) return;
@@ -271,16 +275,21 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
 
     return {
         show(on) {
-            if (on && !probe) {
-                probe = start(builders);
-                preconditioning = createPreconditioning(builders);
-                power.show(true);
-                timer = setInterval(send, 1000);
-                send();
-            } else if (!on && probe) {
+            if (requested === !!on) return;
+            requested = !!on;
+            if (on) {
+                closing.then(safe => {
+                    if (!safe || !requested || probe) return;
+                    probe = start(builders);
+                    preconditioning = createPreconditioning(builders);
+                    power.show(true);
+                    timer = setInterval(send, 1000);
+                    send();
+                });
+            } else if (probe) {
                 clearInterval(timer);
                 power.show(false);
-                probe.stop();
+                closing = probe.stop();
                 preconditioning.stop(); preconditioning = undefined;
                 probe = undefined;
                 if (socket) { socket.destroy(); socket = undefined; }

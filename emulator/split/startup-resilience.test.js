@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { PassThrough } = require('node:stream');
 const { EventEmitter } = require('node:events');
-const { start } = require('../../apps/javi_carlauncher/telemetria-mgu');
+const { start, report } = require('../../apps/javi_carlauncher/telemetria-mgu');
 const { createIntegration } = require('../../native/javi-carlab/aa-integration');
 const playAudio = require('../../native/javi-carlab/tdt-audio');
 const turn = () => new Promise(resolve => setImmediate(resolve));
@@ -98,6 +98,20 @@ test('a telemetry proxy built after its deadline is closed and cannot publish', 
     await until(() => f.speed().status === 'sample');
     late(vehicle({ shutdown() { disposed++; }, init() { assert.fail('expired proxy initialized'); } }));
     await turn(); assert.equal(disposed, 1); assert.equal(opens, 2);
+});
+
+test('hiding and immediately reopening telemetry waits for the previous SDK shutdown', async t => {
+    let opens = 0, finish;
+    const client = report({ buildTypedProxy(service) {
+        if (!service.endsWith('.Vehicle2')) throw Error('unavailable');
+        opens++;
+        return vehicle({ shutdown: () => new Promise(resolve => { finish = resolve; }) });
+    } }, { host: '127.0.0.1', port: 1 });
+    t.after(() => { client.show(false); if (finish) finish(); });
+    client.show(true); await until(() => opens === 1);
+    client.show(false); client.show(true); await until(() => !!finish);
+    await delay(20); assert.equal(opens, 1);
+    finish(); await until(() => opens === 2);
 });
 
 function aa(t, extra) {
