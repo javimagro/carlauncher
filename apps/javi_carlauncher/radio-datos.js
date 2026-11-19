@@ -52,6 +52,7 @@ function station(s, list, nowNext) {
         key: String(s.dataBaseIdentifier), memoryKey: band + ':' + (uint(s.id, 0xffffffff) && s.id ? 's' + s.id : frequency ? 'f' + frequency : 'n' + clean(s.stationLongName || s.stationShortName)),
         band: band === 3 ? 'DAB' : band === 4 ? 'FM/DAB' : 'FM', frequency,
         name: clean(s.stationLongName) || clean(s.stationShortName) || (frequency ? frequency.toFixed(1) + ' MHz' : 'Emisora'),
+        shortName: clean(s.stationShortName),
         title: clean(s.titleName), artist: clean(s.artistName), programme: nowNext ? programme(s.epgDayViewsList) : null, favorite: on(s.isFavorite),
         category: european && pty === 4 ? 'sports' : european && ([10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28].includes(pty)) ? 'music' : '',
         receptionLost: [2, 3, 'DIGITAL_INTERRUPTED', 'DIGITAL_SIGNAL_LOST'].includes(s.receptionMode) };

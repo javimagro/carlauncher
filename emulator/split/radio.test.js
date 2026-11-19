@@ -8,7 +8,7 @@ const { EventEmitter } = require('node:events');
 const { createRadio } = require('../../apps/javi_carlauncher/radio-bmw');
 const { services, station, sources, picture, pictureDetails, seconds } = require('../../apps/javi_carlauncher/radio-datos');
 const { valid, consume } = require('../../native/javi-carlab/radio-model');
-const { createRadioUI } = require('../../native/javi-carlab/radio-ui');
+const { createRadioUI, controls, listLayout } = require('../../native/javi-carlab/radio-ui');
 const { createDriveHub, cards, viewport } = require('../../native/javi-carlab/drivehub-state');
 const createSession = require('../../native/javi-carlab/drivehub-session');
 const settle = async () => { for (let i = 0; i < 30; i++) await new Promise(setImmediate); };
@@ -59,6 +59,19 @@ test('logos use the BMW metadata cache and fall back to the tuner independently 
     assert.equal(f.radio.snapshot().artwork.bytes, jpeg.toString('base64')); assert.equal(metadataRequests, 1);
     f.callbacks.currentStationFmDab({ stationListEntry: raw(12, { stationIconPicture: { format: 2, data: jpeg } }) });
     assert.equal(f.radio.snapshot().logo.bytes, jpeg.toString('base64')); f.radio.stop();
+});
+
+test('a logo request resolves the active station through another BMW list with the same identity', async () => {
+    const png = Buffer.from([137,80,78,71,13,10,26,10]);
+    const f = fixture({ getStationListMetaData: async () => ({ stationList: [
+        raw(12, { stationIconPicture: { format: 4, data: png } })
+    ] }), shutdown: async () => {} });
+    await f.radio.ready; await settle();
+    const current = sample();
+    assert.equal(await f.radio.command({ id: 'img', op: 'artwork', key: '63', list: 2, memoryKey: current.memoryKey }), true);
+    assert.equal(f.radio.snapshot().artwork.key, '63');
+    assert.equal(f.radio.snapshot().artwork.bytes, png.toString('base64'));
+    await f.radio.stop();
 });
 
 test('radio logo diagnostics distinguish absent bytes, unsupported format, size and failed requests', async () => {
@@ -163,6 +176,35 @@ test('opening reads the tuner without starting audio; selection uses native sour
     assert.deepEqual(f.calls.slice(-2), [['source', { sourceId: 'native-fm' }], ['tune', { listType: 2, dataBaseIdentifier: 12, positionIndex: 1 }]]);
     f.radio.stop(); await settle(); assert.equal(f.disposed.length, 2); assert.equal(f.removed.length, 4);
     assert(f.timers.every((t) => t.cancelled)); assert(!f.calls.some((c) => c[0] === 'mute'));
+});
+
+test('startup activation requests the native FM/DAB source and preserves the current station', async () => {
+    const f = fixture();
+    await f.radio.ready; await settle();
+    assert.equal(f.radio.snapshot().canActivate, true);
+    assert.equal(await f.radio.command({ id: 'startup', op: 'activate' }), true);
+    assert.deepEqual(f.calls.filter(([name]) => name === 'source' || name === 'tune'), [['source', { sourceId: 'native-fm' }]]);
+    assert.equal(f.radio.snapshot().result.ok, true);
+    f.callbacks.sources([{ sourceId: 'usb', playerType: 8, selectable: true }]);
+    assert.equal(f.radio.snapshot().canActivate, false);
+    assert.equal(await f.radio.command({ id: 'unavailable', op: 'activate' }), false);
+    await f.radio.stop();
+});
+
+test('a station command survives a BMW list refresh and uses the new ID and position', async () => {
+    const f = fixture();
+    await f.radio.ready; await settle();
+    let activate;
+    f.media.selectSource = () => new Promise((resolve) => { activate = resolve; });
+    const original = sample();
+    const selected = f.radio.command({ id: 'list', op: 'tune', key: original.key, list: original.list, memoryKey: original.memoryKey });
+    f.callbacks.dataStationList({ listType: 2, isIncrementalUpdate: 0, stationList: [
+        raw(12, { id: 8000 }), raw(19, { id: 4012, positionNumber: 6 })
+    ] });
+    activate({ result: 0 });
+    assert.equal(await selected, true);
+    assert.deepEqual(f.calls.find(([name]) => name === 'tune'), ['tune', { listType: 2, dataBaseIdentifier: 19, positionIndex: 6 }]);
+    await f.radio.stop();
 });
 
 test('radio closes SDK proxies once after all pending subscriptions have been removed', async () => {
@@ -275,11 +317,97 @@ test('native favorites, popular and PTY filters use BMW metadata and local overr
         const ui = createRadioUI({ radioFile: file });
         const f = frame({ stations: [sample(), sample(13, { category: 'sports' }), sample(12, { list: 7 }), sample(13, { list: 10 })] });
         ui.receive(f, Date.now()); ui.filter(0); assert.deepEqual(ui.rows().map((s) => s.key), ['12']);
-        ui.toggleFavorite(ui.rows()[0]); assert.equal(ui.rows().length, 0); await until(() => fs.existsSync(file));
+        ui.toggleFavorite(ui.rows()[0]); assert.equal(ui.rows().length, 0);
+        await until(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).favorites.length === 1);
         const saved = JSON.parse(fs.readFileSync(file, 'utf8')); assert.equal(saved.favorites[0][1], false); ui.close();
-        const restored = createRadioUI({ radioFile: file }); restored.receive(f, Date.now()); restored.filter(0); await until(() => restored.rows().length === 0);
+        const restored = createRadioUI({ radioFile: file }); restored.receive(f, Date.now()); await until(() => restored.rows().length === 0);
+        assert.deepEqual(restored.state.filters, ['favorites']);
         restored.filter(0); restored.filter(1); assert.deepEqual(restored.rows().map((s) => s.key), ['13']); restored.close();
     } finally { fs.rmSync(dir, { recursive: true }); }
+});
+
+test('touch transport buttons and list rows tune the expected native station and keep favorites separate', () => {
+    const commands = [], ui = createRadioUI({ radioCommand: (command) => { commands.push(command); return true; } });
+    const stations = [sample(), sample(13), sample(14, { category: 'sports' })];
+    ui.receive(frame({ current: stations[1], stations }), 1000); ui.update(1000, true);
+    let clock = 0;
+    const hub = createDriveHub(() => {}, () => clock, null, ui);
+    hub.selectCard(1); clock = 800;
+    const w = cards[1].w, h = viewport.h;
+    const button = controls(w, h), layout = listLayout(w, h);
+    function tap(x, y) {
+        const physicalX = viewport.x + cards[1].x - hub.position() + x;
+        hub.touch('down', physicalX, viewport.y + y); hub.touch('up', physicalX, viewport.y + y);
+    }
+    const click = (b) => tap(b.x + b.w / 2, b.y + b.h / 2);
+    const result = (current) => ui.receive(frame({ current, stations,
+        result: { id: commands.at(-1).id, ok: true, message: 'Sintonizada' } }), 1100);
+    click(button.previous);
+    assert.equal(commands.at(-1).key, '12');
+    result(stations[0]);
+    click(button.next);
+    assert.equal(commands.at(-1).key, '13');
+    result(stations[1]);
+    click(button.list);
+    tap(100, layout.rowTop + 3 * layout.rowStep + 13);
+    assert.equal(commands.filter(c => c.op === 'tune').length, 2, 'a blank row cannot tune the last station');
+    tap(w - 45, layout.rowTop + 34);
+    assert(ui.favorite(stations[0]));
+    ui.filter(3);
+    assert.deepEqual(ui.rows().map(s => s.key), ['14']);
+    tap(25, 68);
+    assert.deepEqual(ui.rows().map(s => s.key), ['12']);
+    tap(100, layout.rowTop + 34);
+    assert.equal(commands.at(-1).key, '12');
+    assert.equal(commands.at(-1).memoryKey, stations[0].memoryKey);
+    result(stations[0]);
+    assert.equal(ui.state.mode, 'playing');
+    ui.close();
+});
+
+test('the visible session requests startup radio once, only after leaving TDTWorld', (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    class GPU extends EventEmitter { frame() {} show() {} place() {} claim() {} close() {} }
+    const gpu = new GPU(), commands = [];
+    const session = createSession(gpu, { fixture: {}, autoStartRadio: true, radioCommand: (c) => { commands.push(c); return true; },
+        area: () => ({ x: 0, y: 0, w: 1960, h: 520, scale: 1 }) });
+    const input = (knob) => session.controller({ knob, press: 0, tilt: 0 });
+    try {
+        session.show(true); gpu.emit('ready', {}, { touch: true });
+        session.radio(frame({ canActivate: true }));
+        t.mock.timers.tick(40);
+        assert.equal(commands.filter(c => c.op === 'activate').length, 0);
+        input(0); input(1); input(2); input(3); input(4);
+        gpu.emit('state', { onScreen: true });
+        t.mock.timers.tick(140);
+        assert.equal(commands.filter(c => c.op === 'activate').length, 0);
+        session.controller({ knob: 4, press: 0, tilt: 10 });
+        t.mock.timers.tick(1000);
+        const activation = commands.find(c => c.op === 'activate');
+        assert(activation);
+        session.radio(frame({ canActivate: true, result: { id: activation.id, ok: true, message: 'Activada' } }));
+        t.mock.timers.tick(1000);
+        assert.equal(commands.filter(c => c.op === 'activate').length, 1);
+    } finally { session.close(); }
+});
+
+test('a DriveHub brand logo fills the BMW placeholder and yields to the native image', async () => {
+    const { createPhotoLoader } = require('../../native/javi-carlab/photo-loader');
+    const photo = createPhotoLoader(), ui = createRadioUI({ photo: photo.load });
+    const station = sample(12, { name: 'Estación sin identificar', shortName: 'ONDA CERO' });
+    const native = sample(14, { name: 'Desconocida' });
+    try {
+        ui.receive(frame({ current: station, stations: [station, native] }), 1000);
+        await until(() => { ui.update(1100, true); return ui.stationImage(station); });
+        const local = ui.stationImage(station);
+        assert.equal(ui.stationImage(native), undefined);
+        const cv = new (require('../../native/javi-carlab/vendor/kit_canvas').Canvas)(16, 16);
+        cv.fillRect(0, 0, 16, 16, '#3297ab');
+        ui.receive(frame({ current: station, stations: [station, native],
+            logo: { key: station.key, serial: 1, bytes: cv.png().toString('base64') } }), 1100);
+        await until(() => ui.stationImage(station) !== local);
+        assert.equal(ui.stationImage(station), ui.images.get(station.key));
+    } finally { ui.close(); photo.close(); }
 });
 test('rotation crosses Radio in the carousel and selects stations only while their list is open', () => {
     const commands = [], ui = createRadioUI({ radioCommand: (c) => { commands.push(c); return true; } });

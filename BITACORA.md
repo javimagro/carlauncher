@@ -1,5 +1,12 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Radio FM/DAB al abrir, controles y favoritos de DriveHub
+
+- Se comparó DriveHub Carlinkit (`2a7755a`): tocar una fila sintoniza, el corazón modifica el favorito y el filtro presenta solo las favoritas. En BMWLauncher, anterior y siguiente también sintonizan desde la tarjeta. Se corrigió un toque en una fila vacía que antes podía seleccionar la última emisora. La sintonía vuelve a resolver el ID y la posición BMW si se refresca la lista. Se guardan los favoritos y el filtro en las preferencias existentes.
+- La apertura de BMWLauncher activaba las lecturas y no solicitaba la fuente. Ahora solicita una vez la fuente FM/DAB anunciada por BMW tras confirmar la capa y fuera de TDTWorld. Mantiene la última emisora y no abre una salida de audio. Falta confirmar sonido, volumen y reanudación después de TDT en el i4.
+- El logo nativo se resuelve también entre listas con distintos identificadores. Se añaden 32 logos de respaldo de DriveHub, 59 nombres de cadena/RDS y preferencia por imagen BMW. Identificación y hashes originales en `radio-logos.json`. Si el catálogo no reconoce la emisora se conserva el icono de radio.
+- `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 478/478. Radio 38/38 en perfiles 520 y 572, doce capturas verificadas y 32 logos decodificados con el auxiliar real en Node 8.16.2. `Verificar-Radio-MGU.js` comprobó tres servicios y permisos contra el catálogo MGU21. La reproducción y los logos devueltos por BMW quedan pendientes de comprobación física.
+
 ## 2026-11-19 · Unificación y robustez de datos, AA y audio · 0.2.22
 
 - **Síntomas del usuario.** A veces todas las lecturas permanecen esperando hasta reiniciar; AA solo conectó una vez; TDT alterna sonido limpio y chasquidos. No se ha capturado este fallo en la MGU durante el cambio y no se atribuye una causa física única.
