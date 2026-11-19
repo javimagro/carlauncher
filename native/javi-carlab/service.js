@@ -108,6 +108,7 @@ const session = createSession(gpu, {
     aa: androidAuto,
     diagnostics: false,
     useOap: true,
+    autoStartRadio: true,
     preconditioningCommand(command) { return telemetry.send(JSON.stringify(command) + '\n'); },
     radioCommand(command) { return radio.send(JSON.stringify(command) + '\n'); },
     radioFile: path.join(dataDirectory, 'radio.json'),

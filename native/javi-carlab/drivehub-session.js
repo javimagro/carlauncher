@@ -205,8 +205,10 @@ module.exports = function createSession(gpu, options) {
         const now = Date.now();
         if (data.toast && now >= data.toast.until) { data.toast = undefined; dirty = true; }
         const radioCard = cards[1], radioX = viewport.x + radioCard.x - panel.position();
-        radio.update(now, onScreen && radioX < viewport.x + viewport.w && radioX + radioCard.w > viewport.x);
-        tdt.update(now, onScreen && cards[panel.state.selected].id === 'tdtworld');
+        const tdtSelected = cards[panel.state.selected].id === 'tdtworld';
+        tdt.update(now, onScreen && tdtSelected);
+        radio.update(now, onScreen && radioX < viewport.x + viewport.w && radioX + radioCard.w > viewport.x,
+            onScreen && confirmedOnScreen && !tdtSelected);
         const newsLoading = onScreen && cards[panel.state.selected].id === 'news' && data.photoStatus === 'loading';
         const voiceIndicator = onScreen && !data.diagnostics && navigationUi.state.panel === 'none' && assistant.state.indicator;
         if (dirty || panel.animating() || now - lastFrame >= (voiceIndicator ? 50 : newsLoading ? 240 : 900)) frame(now);
@@ -250,7 +252,10 @@ module.exports = function createSession(gpu, options) {
                 radio.update(Date.now(), false);
                 radio.receive(null, Date.now());
                 if (cockpit) cockpit.close();
-            } else if (options.loadCockpit && !cockpit) cockpit = options.loadCockpit();
+            } else {
+                radio.beginVisibility();
+                if (options.loadCockpit && !cockpit) cockpit = options.loadCockpit();
+            }
             panel.resetInput();
             reportScreen();
             present();

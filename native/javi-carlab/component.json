@@ -421,6 +421,11 @@
       "mode": "0644"
     },
     {
+      "path": "radio-logos.json",
+      "from": "radio-logos.json",
+      "mode": "0644"
+    },
+    {
       "path": "weather-location.js",
       "from": "weather-location.js",
       "mode": "0644"
