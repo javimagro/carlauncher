@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Integración de BMWLauncher 0.2.23
+
+- Reúne PR19 (AA y TDTWorld), PR20 (energía del i4 y ensayo eléctrico local de AA) y PR21 (Radio FM/DAB). Se conservan las entradas de las tres tareas al resolver los conflictos de bitácora.
+- App y motor pasan a 0.2.23. Captura del mando y formato AA mantienen versiones, IDs, dependencias y binarios de la versión anterior. El checkout antiguo permanece intacto. Sus cambios ya integrados o superados y los ensayos de mapa/audio se conservan allí.
+
 ## 2026-11-19 · Auditoría de la comunicación de Android Auto
 
 - Revisadas la adquisición y devolución de contexto MAIN por `hmictl`, el intercambio del protocolo 3 con el puente Cinemo, las fronteras de sesión y formato de la captura AAF1, la decodificación y la entrega de entrada por InputRelay y Hmi8. El emparejamiento inalámbrico es responsabilidad de la sesión original de iDrive. La muestra de captura disponible tenía un solo IDR en 342 cuadros. Si no llega un IDR válido tras el inicio del ajuste de formato, el diagnóstico es `video-keyframe-timeout`.

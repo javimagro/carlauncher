@@ -1,6 +1,12 @@
 # Estado de BMWLauncher · 19-11-2026
 
-## Prueba del i4 y corrección candidata
+## Versión 0.2.23
+
+- App y motor **0.2.23**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. La integración reúne las PR de arranque y cierre de AA/TDTWorld, energía útil del i4 y radio FM/DAB.
+- Radio solicita la fuente al abrir fuera de TDTWorld y permite cambiar, guardar favoritos y filtrar desde el panel. BMW tiene prioridad en los logos. TDTWorld recupera Cuatro y otras señales y usa el orden de Carlinkit.
+- La lectura de energía útil y los mensajes eléctricos de AA se verifican en local. Queda probar en el i4 el envío al teléfono, el cálculo de paradas, la conexión de AA y el sonido de radio y TDT. [Bitácora técnica](BITACORA.md).
+
+## Prueba del i4 con 0.2.22
 
 El usuario confirma que los sensores de 0.2.22 ya funcionan. AA original abre a pantalla completa y el integrado daba error. La corrección espera el arranque de la sesión si el puente aún anuncia `off` y muestra el código del fallo. TDTWorld adopta la prioridad de Carlinkit, resuelve siete canales de Mediaset, recupera cuatro señales locales mediante HLS y separa las emisiones que comparten guía. Los ensayos locales cubren ambas correcciones. Queda comprobar AA integrado y la reproducción de los canales recuperados en el i4. Consulte [la bitácora](BITACORA.md) para las causas y las pruebas.
 
