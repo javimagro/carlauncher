@@ -4,6 +4,8 @@
 
 - Reúne PR19 (AA y TDTWorld), PR20 (energía del i4 y ensayo eléctrico local de AA) y PR21 (Radio FM/DAB). Se conservan las entradas de las tres tareas al resolver los conflictos de bitácora.
 - App y motor pasan a 0.2.23. Captura del mando y formato AA mantienen versiones, IDs, dependencias y binarios de la versión anterior. El checkout antiguo permanece intacto. Sus cambios ya integrados o superados y los ensayos de mapa/audio se conservan allí.
+- GitHub confirma las PR19–22 integradas. Desde el commit limpio `e21081e` se repitieron 499 pruebas y se verificaron 124 JS instalados con Node 8.16.2. El lector MGU Store validó los cuatro componentes y el enlace OAP sintético. La prueba de reproducción HLS entregó 250 cuadros y PCM al receptor de prueba, con cero reconexiones. Pendiente el contraste de sonido y AA en el i4.
+- La etiqueta remota `v0.2.23` apunta al commit probado. El ZIP público de 23.734.734 bytes y la suma descargada coinciden con los archivos verificados. [Release de GitHub](https://github.com/javimagro/carlauncher/releases/tag/v0.2.23).
 
 ## 2026-11-19 · Auditoría de la comunicación de Android Auto
 

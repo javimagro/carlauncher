@@ -2,6 +2,7 @@
 
 ## Versión 0.2.23
 
+- **Publicada y verificada en GitHub.** `v0.2.23` apunta al commit `e21081e21a97cb58764646b50621ac11dbf142e1`. Se descargaron de nuevo el ZIP de 168 archivos y `SHA256SUMS.txt`. La descarga dio SHA-256 `919be8aca035accdcd6c147184d69b88236bde031b4465669d5af2d9dca95d70`. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.23).
 - App y motor **0.2.23**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. La integración reúne las PR de arranque y cierre de AA/TDTWorld, energía útil del i4 y radio FM/DAB.
 - Radio solicita la fuente al abrir fuera de TDTWorld y permite cambiar, guardar favoritos y filtrar desde el panel. BMW tiene prioridad en los logos. TDTWorld recupera Cuatro y otras señales y usa el orden de Carlinkit.
 - La lectura de energía útil y los mensajes eléctricos de AA se verifican en local. Queda probar en el i4 el envío al teléfono, el cálculo de paradas, la conexión de AA y el sonido de radio y TDT. [Bitácora técnica](BITACORA.md).
