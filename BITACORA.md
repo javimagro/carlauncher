@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Prueba local de mensajes eléctricos de Android Auto
+
+- Ante la falta de ENET, `tools/Probar-AA-Energia.js` usa el modelo de lecturas de BMWLauncher y una plantilla tomada directamente del checkout Android de Carlinkit. La plantilla permanece fuera del paquete. Los cuerpos 6 y 23 coinciden con la generación JVM del código Java de Carlinkit para los mismos valores. El sensor 23 completo ocupa 9.538 bytes.
+- Se rechazan energía incoherente o caducada y plantillas truncadas. Se conserva el cero válido y se omiten autonomía y temperaturas ausentes. La prueba funciona con Node 8.16.2. `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 480/480. Pendientes el anuncio del modelo energético, la suscripción y envío por la sesión BMW, y la previsión de Google Maps en el i4.
+
 ## 2026-11-19 · Capacidad útil del i4 y planificación eléctrica de Carlinkit
 
 - Comparados el receptor AAP y el planificador Google Navigation del BMWLauncher Android de Carlinkit, base `427786f4`. Comparten telemetría, pero las paradas las calcula Maps en AA y el optimizador propio en navegación Android. El receptor BMW de la copia MGU21 rechaza por rango los tipos de sensor 23 y 26 en su registro Cinemo. La ruta `ReportFuel` localizada deja ausentes nivel y autonomía. eRoute de BMW sigue sin devolver paradas en la prueba histórica documentada.
