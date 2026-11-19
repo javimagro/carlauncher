@@ -115,7 +115,10 @@ const session = createSession(gpu, {
     loadCockpit,
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
-        if (!confirmed) { underlay.abandon(); releaseController(); }
+        if (!confirmed) {
+            if (!stopping) underlay.abandon();
+            releaseController();
+        }
     },
     onExit() {
         if (!launcherVisible || !returnContext || homeDeadline) return;
@@ -239,13 +242,17 @@ const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl'
 });
 
 async function poll() {
-    if (stopping) return;
+    if (stopping && !underlay.holding()) return;
     try {
         const installed = await installation();
         const id = installed.applet;
         const context = parseContext(await request('ctx'));
-        if (stopping) return;
         if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
+        if (stopping) {
+            // The normal UI is closed, but returning MAIN still needs live context.
+            await underlay.poll(context, id, true);
+            return;
+        }
         contextAt = Date.now();
         androidAuto.context(context, id);
         await underlay.poll(context, id);
@@ -295,7 +302,7 @@ async function poll() {
         releaseController();
         session.show(false);
     } finally {
-        if (!stopping) setTimeout(poll, 400);
+        if (!stopping || underlay.holding()) setTimeout(poll, 400);
     }
 }
 

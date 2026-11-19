@@ -77,15 +77,16 @@ function createIntegration(gpu, options) {
             if (old.cancelGeometry) old.cancelGeometry();
             if (old.cancelContext) old.cancelContext();
         }
-        if (options.input) options.input.setVisible(false);
+        const input = options.input ? safely(() => options.input.setVisible(false)).catch(() =>
+            releaseFailure('input-stop-unconfirmed')) : Promise.resolve();
         // Cancel the format owner now, even if capture is still withdrawing.
         // Otherwise a pending acquisition could SET while shutdown is waiting.
-        // Keep MAIN underlay until both have finished, including restoration.
+        // Keep MAIN underlay until capture, format and input have withdrawn.
         const video = safely(() => player.stop({ preserveFrame: preserveFrame === true }))
             .catch(() => releaseFailure('capture-stop-unconfirmed'));
         const format = old && old.format ? safely(() => old.format.close()).catch(() =>
             releaseFailure('format-restoration-unconfirmed')) : Promise.resolve();
-        const finished = Promise.all([video, format]).then(() => old && old.focus ? old.focus.stop() : undefined)
+        const finished = Promise.all([video, format, input]).then(() => old && old.focus ? old.focus.stop() : undefined)
             .catch(() => releaseFailure('focus-restoration-unconfirmed'));
         serial = Promise.all([serial, finished]).then(() => {});
         return serial;

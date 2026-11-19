@@ -81,8 +81,8 @@ function releaseOnce(options) {
             socket = (options.createSocket || (() => require('dgram').createSocket('udp4')))();
             socket.on('error', () => finish(false));
             socket.send(bytes, 30567, '127.0.0.1', error => {
-                if (error || !proc.connected) return finish(!error);
-                try { proc.send({ op: 'released' }, () => finish(true)); } catch (_) { finish(true); }
+                if (error || !proc.connected) return finish(false);
+                try { proc.send({ op: 'released' }, err => finish(!err)); } catch (_) { finish(false); }
             });
         } catch (_) { finish(false); }
     });

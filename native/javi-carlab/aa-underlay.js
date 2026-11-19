@@ -43,10 +43,11 @@ function createUnderlay(options) {
             return finished;
         } };
     }
-    async function poll(value, applet) {
+    async function poll(value, applet, closingOnly) {
         context = value; contextAt = now(); lastApplet = applet;
         if (busy || !job) return;
         const current = job;
+        if (closingOnly && !current.leaving) return;
         if (!value) { abandon(); return; }
         if (current.leaving) {
             // The open ACK can precede Hmi8's context change. Seeing the old
