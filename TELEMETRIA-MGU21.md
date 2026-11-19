@@ -1,5 +1,11 @@
 # Telemetría del BMW i4 en MGU21
 
+## Energía disponible y capacidad útil para rutas · 19-11-2026
+
+El perfil Gen5 de Carlinkit, base `427786f4`, lee el DID `E5C7` del SME. Tras `62 E5 C7` llegan dos enteros sin signo de 16 bits big-endian. El primero es energía disponible y el segundo capacidad útil. Cada uno se convierte mediante `valor × 10 − 50.000` Wh. La muestra de prueba de Carlinkit `2B 2A 33 0E` produce 60,50 y 80,70 kWh. La capacidad útil se lee del vehículo y puede variar. El porcentaje mostrado por el cuadro y el cociente energía/capacidad son señales distintas.
+
+BMWLauncher usa el proxy TASU y la suscripción ya empleados para tensión y corriente. Consulta la pareja de energía cada 30 s mientras están activas las lecturas y caduca las muestras a los 60 s. Ejecuta primero el par de potencia, serializa las consultas y retira el proxy si una petición de energía puede haber quedado pendiente. Rechaza respuestas cortas, energía fuera de capacidad y capacidades inválidas. `vehicle-readings.js` expone `batteryEnergy` en Wh y **Lecturas del coche** muestra la pareja en kWh. Queda pendiente confirmar la respuesta por TASU en el i4 y contrastarla con OBD a la vez. [Comparación de los dos planificadores](NAVEGACION-INTERFAZ.md).
+
 ## Corrección de recepción HV · 0.2.14
 
 La respuesta SME estaba llegando, pero el Buffer nativo atravesaba una frontera VM del runner OAP y no cumplía `instanceof Uint8Array` dentro de la app. Ahora se reconoce con `Buffer.isBuffer`. La regresión ejecuta el módulo en `vm.runInNewContext` y demuestra fallo antes/corrección después. El proxy se cierra mediante `shutdown()`, tal como declara el SDK instalado.

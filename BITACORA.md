@@ -24,6 +24,16 @@
 - **Orden.** Se aplica la lista por defecto de `CountryCatalogConfig.java` de TDTWorld a los seis países, tanto al catálogo nuevo como a la caché. Los canales sin rango conservan el orden del proveedor y se mantiene el último canal por ID. En el catálogo español en vivo se obtuvieron los 14 prioritarios en el orden de referencia, con Cuatro cuarto. Las preferencias personales solo existen en el dispositivo de origen.
 - **Verificación.** `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 476/476. La nueva regresión de AA falla con el módulo de `HEAD` anterior y pasa con la corrección. Node 8.16.2 pasa sintaxis de los siete JS instalados modificados y carga de los seis módulos sin arrancar el servicio. No se ha conectado ni instalado nada en la MGU.
 
+## 2026-11-19 · Prueba local de mensajes eléctricos de Android Auto
+
+- Ante la falta de ENET, `tools/Probar-AA-Energia.js` usa el modelo de lecturas de BMWLauncher y una plantilla tomada directamente del checkout Android de Carlinkit. La plantilla permanece fuera del paquete. Los cuerpos 6 y 23 coinciden con la generación JVM del código Java de Carlinkit para los mismos valores. El sensor 23 completo ocupa 9.538 bytes.
+- Se rechazan energía incoherente o caducada y plantillas truncadas. Se conserva el cero válido y se omiten autonomía y temperaturas ausentes. La prueba funciona con Node 8.16.2. `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 480/480. Pendientes el anuncio del modelo energético, la suscripción y envío por la sesión BMW, y la previsión de Google Maps en el i4.
+
+## 2026-11-19 · Capacidad útil del i4 y planificación eléctrica de Carlinkit
+
+- Comparados el receptor AAP y el planificador Google Navigation del BMWLauncher Android de Carlinkit, base `427786f4`. Comparten telemetría, pero las paradas las calcula Maps en AA y el optimizador propio en navegación Android. El receptor BMW de la copia MGU21 rechaza por rango los tipos de sensor 23 y 26 en su registro Cinemo. La ruta `ReportFuel` localizada deja ausentes nivel y autonomía. eRoute de BMW sigue sin devolver paradas en la prueba histórica documentada.
+- Portada la lectura de `E5C7` del SME por el proxy TASU existente. Convierte energía disponible y capacidad útil a Wh, mantiene el ciclo de potencia y añade la pareja al diagnóstico en kWh. Refresco de 30 s con vista activa y caducidad de 60 s. La trama de referencia entrega 60,5 y 80,7 kWh. Respuestas truncadas o incoherentes y datos de una sesión retirada se descartan.
+- `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 477/477. Sintaxis y carga de los módulos modificados con Node 8.16.2. Falta contrastar la lectura TASU con OBD en el i4 y confirmar la negociación EV con el teléfono y el cálculo de una ruta que precise recarga. [Comparación y estado](NAVEGACION-INTERFAZ.md#planificación-eléctrica-de-carlinkit-y-adaptación-al-i4--19-11-2026).
 
 ## 2026-11-19 · Unificación y robustez de datos, AA y audio · 0.2.22
 

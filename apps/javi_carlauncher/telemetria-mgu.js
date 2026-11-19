@@ -245,7 +245,7 @@ function start(builders, schedule = setTimeout, cancel = clearTimeout, options =
 }
 
 function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
-    const power = createPowerProbe(builders);
+    const power = createPowerProbe(builders, { energyPeriodMs: 30000 });
     let probe;
     let preconditioning;
     let socket;
@@ -268,7 +268,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
             return;
         }
         if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
-            socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot()),
+            socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot(), power.energySnapshot()),
                 preconditioning: preconditioning.snapshot() }) + '\n');
         }
     }

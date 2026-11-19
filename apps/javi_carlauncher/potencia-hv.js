@@ -5,6 +5,8 @@ const instance = 'SystemFunctionsInternalTasuInst1';
 const batteryEcu = 0x07;
 const voltageDid = 0xe54d;
 const currentDid = 0xe561;
+const energyDid = 0xe5c7;
+const energySignal = 'batteryEnergyHv';
 const methodExpired = Symbol('TASU method timeout');
 const tasuErrors = [
     'NO_ERROR', 'REQUEST_PENDING', 'TAS_CONNECTION_ERROR', 'TIMEOUT_ERROR', 'DEACTIVATED',
@@ -36,15 +38,26 @@ function readReply(event, did) {
         return frame[11] === 0x78 ? { pending: true } : { failure: 'uds', code: frame[11] };
     }
     if (frame[9] !== 0x62 || frame.readUInt16BE(10) !== did) return;
+    if (did === energyDid) {
+        if (frame.length < 16) return { failure: 'format' };
+        // Gen5 i4, same E5C7 encoding as the Carlinkit OBD reader.
+        const availableWh = frame.readUInt16BE(12) * 10 - 50000;
+        const capacityWh = frame.readUInt16BE(14) * 10 - 50000;
+        if (capacityWh <= 0 || capacityWh > 200000 || availableWh < 0 || availableWh > capacityWh) {
+            return { failure: 'invalid-value' };
+        }
+        return { fields: { availableWh, capacityWh }, at: Date.now() };
+    }
     const valueOffset = did === voltageDid ? 12 : 14;
     if (frame.length < valueOffset + 2) return { failure: 'format' };
     const raw = did === voltageDid ? frame.readUInt16BE(valueOffset) : -frame.readInt16BE(valueOffset);
     return { value: raw / 100, at: Date.now() };
 }
 
-function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 4000, requestMs = 8000 } = {}) {
+function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs = 4000, requestMs = 8000, energyPeriodMs = 0 } = {}) {
     const signal = 'batteryPowerHv';
     let record = { signal, status: 'no-sample' };
+    let energy = { signal: energySignal, status: 'no-sample' };
     let current;
     let closing = Promise.resolve();
 
@@ -158,6 +171,21 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                     failedReading('current', amps.failure ? amps : { failure: 'late' });
                     if (amps.failure === 'request-timeout') break;
                 }
+                if (paired && energyPeriodMs > 0 && start >= job.nextEnergyAt) {
+                    await pause(job, 25);
+                    if (job !== current) break;
+                    job.nextEnergyAt = Date.now() + energyPeriodMs;
+                    const reading = await read(job, proxy, energyDid);
+                    if (job !== current) break;
+                    energy = reading.failure
+                        ? { signal: energySignal, status: 'error', phase: 'getter',
+                            fields: { stage: 'energy', failure: reading.failure, code: reading.code } }
+                        : { signal: energySignal, status: 'sample', fields: reading.fields, sampledAt: reading.at,
+                            freshForMs: 2 * energyPeriodMs };
+                    // A late negative UDS response has no DID. Retire the pending
+                    // proxy before starting the next voltage/current pair.
+                    if (['request', 'request-timeout', 'timeout', 'unmatched', 'pending-timeout'].includes(reading.failure)) break;
+                }
                 const delay = paired ? Math.max(0, periodMs - (Date.now() - start)) : retryMs;
                 await pause(job, delay);
             }
@@ -187,8 +215,9 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
         show(on) {
             if (on === Boolean(current)) return;
             record = { signal, status: 'no-sample' };
+            energy = { signal: energySignal, status: 'no-sample' };
             if (on) {
-                const job = {};
+                const job = { nextEnergyAt: 0 };
                 current = job;
                 job.done = closing.then(() => run(job));
             } else {
@@ -198,7 +227,8 @@ function createPowerProbe(builders, { periodMs = 1000, retryMs = 5000, replyMs =
                 closing = job.done;
             }
         },
-        snapshot: () => record
+        snapshot: () => record,
+        energySnapshot: () => energy
     };
 }
 

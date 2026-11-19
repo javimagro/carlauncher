@@ -7,6 +7,7 @@ const { start, report } = require('../../apps/javi_carlauncher/telemetria-mgu.js
 const { createPowerProbe, service: tasu, instance: tasuInstance } = require('../../apps/javi_carlauncher/potencia-hv.js');
 const { consume } = require('../../native/javi-carlab/telemetry-input.js');
 const { drawHome } = require('../../native/javi-carlab/drivehub-view.js');
+const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 
 test('the probe reads named fields only and unsubscribes when closed', async () => {
@@ -419,6 +420,78 @@ function tasuReply(did, payload, ecu = 7) {
         0, 0, 0, 0, 0, 0, ecu, 0, 0, 0x62, did >> 8, did & 0xff, ...payload
     ]) };
 }
+
+test('the Carlinkit battery energy pair is read through the existing SME subscription', async (t) => {
+    const requests = [];
+    let notify, requestEnergy, responseEnergy;
+    const pendingEnergy = new Promise(resolve => { requestEnergy = resolve; });
+    const probe = createPowerProbe({ buildAndInitTypedProxy: () => ({
+        sendTasuResponse: { subscribe(fn) { notify = fn; } },
+        sendTasuRequest(request) {
+            const did = request.udsData.readUInt16BE();
+            requests.push(did);
+            if (did === 0xe5c7) {
+                responseEnergy = notify;
+                requestEnergy();
+            } else notify(tasuReply(did, did === 0xe54d ? [0x9c, 0x40] : [0, 0, 0xec, 0x78]));
+        }
+    }) }, { energyPeriodMs: 30000 });
+    t.after(() => probe.show(false));
+    probe.show(true);
+    await pendingEnergy;
+    assert.deepEqual(requests, [0xe54d, 0xe561, 0xe5c7]);
+    assert.deepEqual(probe.snapshot().fields, { kw: 20, volts: 400, amps: 50 });
+    responseEnergy(tasuReply(0xe5c7, [0x2b, 0x2a, 0x33, 0x0e], 0x12));
+    responseEnergy(tasuReply(0xe54d, [0x9c, 0x40]));
+    assert.equal(probe.energySnapshot().status, 'no-sample');
+    responseEnergy(tasuReply(0xe5c7, [0x2b, 0x2a, 0x33, 0x0e]));
+    await turn();
+    const row = probe.energySnapshot();
+    assert.equal(row.status, 'sample');
+    assert.deepEqual(row.fields, { availableWh: 60500, capacityWh: 80700 });
+    const records = new Map([[row.signal, row]]);
+    assert.deepEqual(vehicleReadings(records, row.sampledAt).batteryEnergy, row.fields);
+    assert.equal(vehicleReadings(records, row.sampledAt + row.freshForMs).batteryEnergy, undefined);
+    const labels = [];
+    const canvas = new Proxy({ text: value => labels.push(value), textWidth: value => String(value).length }, {
+        get: (target, key) => target[key] || (() => {})
+    });
+    drawHome(canvas, { selected: 0, article: 0 }, 0,
+        { energy: [], diagnostics: true, telemetry: [row] }, () => 1, row.sampledAt);
+    assert(labels.includes('60,5 kWh  ·  80,7 kWh'));
+    probe.show(false);
+    assert.equal(probe.energySnapshot().status, 'no-sample');
+});
+
+test('SME capacity rejects incomplete and inconsistent replies while preserving the power reading', async (t) => {
+    for (const [payload, failure] of [
+        [[0x33, 0x0e], 'format'],
+        [[0x33, 0x0f, 0x33, 0x0e], 'invalid-value'],
+        [[0x2b, 0x2a, 0xff, 0xff], 'invalid-value']
+    ]) {
+        await t.test(failure + ' ' + Buffer.from(payload).toString('hex'), async (testCase) => {
+            let notify, requested;
+            const energyRequested = new Promise(resolve => { requested = resolve; });
+            const probe = createPowerProbe({ buildAndInitTypedProxy: () => ({
+                sendTasuResponse: { subscribe(fn) { notify = fn; } },
+                sendTasuRequest(request) {
+                    const did = request.udsData.readUInt16BE();
+                    if (did === 0xe5c7) {
+                        notify(tasuReply(did, payload));
+                        requested();
+                    } else notify(tasuReply(did, did === 0xe54d ? [0x9c, 0x40] : [0, 0, 0xec, 0x78]));
+                }
+            }) }, { energyPeriodMs: 30000 });
+            testCase.after(() => probe.show(false));
+            probe.show(true);
+            await energyRequested;
+            await turn();
+            assert.equal(probe.snapshot().status, 'sample');
+            assert.equal(probe.energySnapshot().status, 'error');
+            assert.equal(probe.energySnapshot().fields.failure, failure);
+        });
+    }
+});
 
 test('SME native Buffers cross the OAP VM boundary without losing the voltage/current sample', async (t) => {
     const fs = require('node:fs'), vm = require('node:vm');
