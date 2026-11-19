@@ -101,99 +101,144 @@ function sampleJourney(value, paths) {
     return Object.keys(result).length ? result : null;
 }
 
-function start(builders, schedule = setTimeout, cancel = clearTimeout) {
-    const samples = new Map();
-    const subscriptions = [];
-    const proxies = [];
-    const timers = new Set();
+function start(builders, schedule = setTimeout, cancel = clearTimeout, options = {}) {
+    const samples = new Map(), sessions = new Set();
+    const timeoutMs = options.timeoutMs || 8000, retryMs = options.retryMs || 2000;
     let stopped = false;
-
+    function later(session, work, delay, custom) {
+        const run = () => { session.timers.delete(id); if (session.active && !stopped) work(); };
+        const id = (custom ? schedule : setTimeout)(run, delay);
+        session.timers.set(id, custom ? cancel : clearTimeout);
+        return id;
+    }
+    function bounded(session, work, late) {
+        return new Promise((resolve, reject) => {
+            let done = false;
+            const abort = () => {
+                if (done) return;
+                done = true; clearTimeout(timer); session.pending.delete(abort);
+                reject(new Error('timeout'));
+            };
+            const timer = setTimeout(abort, timeoutMs);
+            session.pending.add(abort);
+            let result;
+            try {
+                if (!session.active || stopped) throw new Error('cancelled');
+                result = work();
+            } catch (error) { result = Promise.reject(error); }
+            Promise.resolve(result).then(value => {
+                if (done) { if (late) late(value); return; }
+                done = true; clearTimeout(timer); session.pending.delete(abort); resolve(value);
+            }, error => {
+                if (done) return;
+                done = true; clearTimeout(timer); session.pending.delete(abort); reject(error);
+            });
+        });
+    }
     function dispose(proxy) {
-        if (typeof proxy.dispose === 'function') {
-            return Promise.resolve().then(() => proxy.dispose()).catch(() => undefined);
-        }
+        return Promise.resolve().then(() => {
+            if (typeof proxy.shutdown === 'function') return proxy.shutdown();
+            if (typeof proxy.dispose === 'function') return proxy.dispose();
+        }).then(() => true, () => false);
     }
-
     function unsubscribe(attribute, id) {
-        return Promise.resolve().then(() => attribute.unsubscribe(id)).catch(() => undefined);
+        return Promise.resolve().then(() => attribute.unsubscribe(id)).then(() => true, () => false);
     }
-
-    function stop() {
-        if (stopped) return;
-        stopped = true;
-        timers.forEach(cancel);
-        timers.clear();
-        Promise.all(subscriptions.map(([attribute, id]) => unsubscribe(attribute, id)))
-            .then(() => proxies.forEach(dispose));
+    function close(session) {
+        if (session.closing) return session.closing;
+        session.active = false;
+        session.timers.forEach((clear, id) => clear(id)); session.timers.clear();
+        session.pending.forEach(abort => abort());
+        session.closing = Promise.all(session.subscriptions.map(([attribute, id]) => unsubscribe(attribute, id)))
+            .then(results => {
+                if (results.some(ok => !ok)) session.cleanupFailed = true;
+                return session.proxy ? dispose(session.proxy) : true;
+            })
+            .then(ok => { if (!ok) session.cleanupFailed = true; sessions.delete(session); });
+        return session.closing;
     }
-
-    function observe(attribute, [mode, ...paths], signal) {
+    function reconnect(session, phase) {
+        if (!session.active || stopped) return;
+        for (const name of Object.keys(session.fields)) {
+            if (samples.get(name).status !== 'sample') samples.set(name, { status: 'error', phase });
+        }
+        // Wait for native shutdown before replacing a generation. Never accumulate proxies.
+        close(session).then(() => {
+            if (stopped || session.cleanupFailed) return;
+            const waiting = { active: true, timers: new Map(), pending: new Set(), subscriptions: [] };
+            sessions.add(waiting);
+            later(waiting, () => {
+                sessions.delete(waiting);
+                connect(session.service, session.instance, session.fields);
+            }, retryMs);
+        });
+    }
+    function observe(session, attribute, [mode, ...paths], signal) {
         const period = signal === 'statusCarSpeed2' ? 2000 : signal === 'statusHighVoltageBattery' ? 5000 : 10000;
         const readable = mode.includes('r');
         let notifications = 0;
-        const receive = (value) => {
-            if (stopped) return;
+        const active = () => session.active && !stopped;
+        const receive = value => {
+            if (!active()) return;
             const fields = signal === 'bcDataAll' ? sampleJourney(value, paths) : sample(value, paths);
             samples.set(signal, { status: fields ? 'sample' : 'empty', sampledAt: Date.now(),
                 freshForMs: readable ? period * 3 : undefined, fields });
         };
-        const fail = (phase) => {
-            if (!stopped && samples.get(signal).status !== 'sample') {
-                samples.set(signal, { status: 'error', phase });
-            }
+        const fail = phase => {
+            if (active() && samples.get(signal).status !== 'sample') samples.set(signal, { status: 'error', phase });
         };
         async function read() {
-            if (stopped) return;
+            if (!active()) return;
             const previous = notifications;
             try {
-                const value = await attribute.getValue();
+                const value = await bounded(session, () => attribute.getValue());
                 if (previous === notifications) receive(value);
-            } catch (_) {
+            } catch (error) {
                 if (previous === notifications) fail('getter');
+                if (error.message === 'timeout') return reconnect(session, 'getter');
             }
-            if (stopped) return;
-            const timer = schedule(() => {
-                timers.delete(timer);
-                read();
-            }, period);
-            timers.add(timer);
+            if (active()) later(session, read, period, true);
         }
-        if (mode.includes('s')) {
-            Promise.resolve().then(async () => {
-                if (stopped) return;
-                if (!attribute || typeof attribute.unsubscribe !== 'function') throw new Error();
-                const id = await attribute.subscribe((value) => {
-                    notifications++;
-                    receive(value);
-                });
-                if (stopped) return unsubscribe(attribute, id);
-                subscriptions.push([attribute, id]);
-            }).catch(() => fail('subscribe'));
+        async function subscribe() {
+            try {
+                if (!attribute || typeof attribute.unsubscribe !== 'function') throw new Error('subscribe');
+                const id = await bounded(session, () => attribute.subscribe(value => {
+                    notifications++; receive(value);
+                }), id => unsubscribe(attribute, id));
+                if (!active()) return unsubscribe(attribute, id);
+                session.subscriptions.push([attribute, id]);
+            } catch (error) {
+                fail('subscribe');
+                if (error.message === 'timeout') return reconnect(session, 'subscribe');
+                if (active()) later(session, subscribe, retryMs);
+            }
         }
+        if (mode.includes('s')) subscribe();
         if (readable) read();
     }
-
     async function connect(service, instance, fields) {
-        const names = Object.keys(fields);
-        for (const name of names) samples.set(name, { status: 'no-sample' });
+        const session = { service, instance, fields, active: true, timers: new Map(), pending: new Set(), subscriptions: [] };
+        sessions.add(session);
+        for (const name of Object.keys(fields)) if (!samples.has(name)) samples.set(name, { status: 'no-sample' });
         try {
-            const proxy = await builders.buildTypedProxy(service, instance);
-            if (stopped) return dispose(proxy);
-            proxies.push(proxy);
-            await proxy.init();
-            if (stopped) return;
-            await proxy.waitUntilAvailable();
-            if (stopped) return;
-            for (const name of names) observe(proxy[name], fields[name], name);
-        } catch (_) {
-            if (!stopped) {
-                for (const name of names) samples.set(name, { status: 'error', phase: 'proxy' });
-            }
-        }
+            const proxy = await bounded(session, () => builders.buildTypedProxy(service, instance), dispose);
+            session.proxy = proxy;
+            if (!session.active || stopped) return dispose(proxy);
+            await bounded(session, () => proxy.init());
+            await bounded(session, () => proxy.waitUntilAvailable());
+            if (!session.active || stopped) return;
+            for (const name of Object.keys(fields)) observe(session, proxy[name], fields[name], name);
+        } catch (_) { reconnect(session, 'proxy'); }
     }
-
     for (const [service, instance, fields] of signals) connect(service, instance, fields);
-    return { snapshot: () => Array.from(samples, ([signal, result]) => ({ signal, ...result })), stop };
+    return {
+        snapshot: () => Array.from(samples, ([signal, result]) => ({ signal, ...result })),
+        stop() {
+            if (stopped) return;
+            stopped = true;
+            sessions.forEach(close);
+        }
+    };
 }
 
 function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
@@ -213,6 +258,7 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
             });
             peer.on('data', (chunk) => { if (peer !== socket || !commands(chunk)) peer.destroy(); });
             peer.on('error', () => {});
+            peer.setTimeout(5000, () => peer.destroy());
             peer.on('connect', () => { if (socket === peer) send(); });
             peer.on('close', () => { if (socket === peer) socket = undefined; });
             return;

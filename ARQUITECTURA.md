@@ -83,6 +83,16 @@ RSS se normaliza en JavaScript con respuestas limitadas. La sesión comparte una
 
 ## Decisiones por funcionalidad
 
+### Recuperación de conexiones y entrega PCM · 0.2.22
+
+Telemetría posee una generación por servicio: construcción, inicialización, disponibilidad, getter y suscripción tienen un plazo de ocho segundos. Un fallo inicial vuelve a intentar la conexión a los dos segundos; una suscripción rechazada se reintenta sin duplicar las aceptadas. El cierre cancela temporizadores y respuestas pendientes, libera suscripciones y usa `shutdown()` del SDK (o `dispose()` en adaptadores). No se reemplaza un proxy mientras su cierre esté pendiente o haya fallado. Las muestras anteriores conservan su edad; no se convierten en datos recientes al reconectar. El socket de informe se retira tras cinco segundos sin progreso.
+
+AA espera contexto HMI reciente antes de capturar y hasta cuatro segundos si caduca durante identidad/armado. Ocultar cancela la espera y una respuesta tardía no adquiere foco. Las retiradas inciertas de captura/formato/foco siguen bloqueando la adquisición. No se reintenta automáticamente sobre otra fuente.
+
+PCM conserva como máximo 19.200 bytes (100 ms de estéreo S16LE a 48 kHz) mientras espera `drain`. Se entregan por orden sin empalmar un hueco con audio posterior. Desbordamiento o error retiran únicamente el auxiliar de audio y aplican el presupuesto de reintentos existente. `pendingBytes` distingue espera de descarte; contadores y entrega a tubería no acreditan altavoces. No cambian el compositor, FFmpeg, ALSA ni el arbitraje BMW.
+
+
+
 ### Invalidación y recuperación de la revisión 0.2.11
 
 La geometría de `navigation-model` se trata como inmutable: reemplaza el array cuando cambia la ruta. La UI compara esa identidad y una firma pequeña de coordenadas de resultados/paradas/posición, sin serializar la ruta completa por fotograma. Radio indexa la lista recibida y cachea filas por identidad de lista, filtros y revisión de favoritos locales; las publicaciones sustituyen arrays, no los mutan. Mantener las invalidaciones al cambiar filtros desde el asistente y al caducar la fuente.

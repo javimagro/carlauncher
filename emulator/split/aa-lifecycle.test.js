@@ -116,11 +116,17 @@ test('AA recovery waits for focus release before restarting and is bounded', asy
     await f.api.close();
 });
 
-test('AA refuses stale contexts before capture and before focus', async () => {
+test('AA waits for a fresh context before capture and before focus', async () => {
     const a = fixture(); a.clock(2000); a.api.setVisible(true); await tick();
-    assert.equal(a.calls.some(Array.isArray), false); assert.equal(a.api.status().state, 'error'); await a.api.close();
+    assert.equal(a.calls.some(Array.isArray), false); assert.equal(a.api.status().state, 'waiting');
+    a.api.context({ state: 1, applet: 1000 }, 1000); await tick();
+    assert.equal(a.callbacks.length, 1); await a.api.close();
     const b = fixture(); b.api.setVisible(true); await tick(); b.clock(2000); b.callbacks[0]('armed');
-    assert.equal(b.calls.includes('focus'), false); assert.equal(b.api.status().detail, 'context-changed'); await b.api.close();
+    assert.equal(b.calls.includes('focus'), false); assert.equal(b.api.status().state, 'waiting');
+    b.api.context({ state: 1, applet: 50 }, 1000); await tick();
+    assert.equal(b.calls.includes('focus'), false);
+    b.api.context({ state: 1, applet: 1000 }, 1000); await tick();
+    assert.equal(b.calls.filter(c => c === 'focus').length, 1); await b.api.close();
 });
 
 test('AA waits for loaded input support and starts only when its requirements become ready', async () => {

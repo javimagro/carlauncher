@@ -24,7 +24,7 @@ test('PCM accounting preserves stereo frames across odd chunks and distinguishes
     assert.equal(s.receivedBytes, s.deliveredBytes + s.overflowBytes + s.skippedBytes + s.queuedBytes);
 });
 
-test('audio counts readiness and blocked-pipe drops separately without corrupting accepted bytes', () => {
+test('audio preserves PCM during short backpressure and accounts readiness drops', () => {
     const pcm = new PassThrough(), peer = new EventEmitter(), writes = [];
     peer.stdin = new EventEmitter(); peer.stdout = new PassThrough(); peer.stderr = new PassThrough(); peer.kill = () => {};
     peer.stdin.write = (bytes) => { writes.push(Buffer.from(bytes)); return false; };
@@ -34,8 +34,12 @@ test('audio counts readiness and blocked-pipe drops separately without corruptin
         pcm.write(Buffer.alloc(8, 2)); pcm.write(Buffer.alloc(12, 3));
         assert.deepEqual(writes, [Buffer.alloc(8, 2)]);
         const s = output.stats();
-        assert.equal(s.receivedBytes, s.submittedBytes + s.droppedBytes);
-        assert.equal(s.notReadyBytes, 4); assert.equal(s.blockedBytes, 12);
+        assert.equal(s.receivedBytes, s.submittedBytes + s.droppedBytes + s.pendingBytes);
+        assert.equal(s.notReadyBytes, 4); assert.equal(s.blockedBytes, 0);
+        assert.equal(s.pendingBytes, 12);
+        peer.stdin.emit('drain');
+        assert.deepEqual(writes, [Buffer.alloc(8, 2), Buffer.alloc(12, 3)]);
+        assert.equal(output.stats().pendingBytes, 0);
         assert.equal(s.droppedBytes, s.notReadyBytes + s.blockedBytes);
     } finally { output.close(); }
 });

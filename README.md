@@ -1,5 +1,13 @@
 # BMWLauncher para iDrive 8
 
+## 0.2.22 · Recuperación de datos, Android Auto y audio
+
+Reúne las tareas integradas de navegación, Radio, TDT, cockpit y asistente, y el icono de navegación reducido. La telemetría reintenta el descubrimiento, las suscripciones rechazadas y las operaciones que agotan su plazo; descarta respuestas de conexiones antiguas y espera el cierre nativo antes de sustituirlas. Android Auto espera una muestra reciente del contexto HMI durante el arranque, sin relajar la restauración del foco ni del formato. La salida PCM conserva hasta 100 ms de muestras ante contrapresión breve; si se supera ese límite, retira esa salida y aplica los reintentos de audio existentes, manteniendo el vídeo.
+
+Actualiza **BMWLauncher** y **Motor gráfico** a **0.2.22** en la fuente `javimagro/carlauncher`, canal **Tags**. Se conservan Captura del mando **1.1.0** y Formato de Android Auto **1.0.0** como dependencias. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.22). Cierra y vuelve a abrir BMWLauncher para cargar los módulos nuevos.
+
+Las regresiones se verifican en local; queda confirmar en el i4 el arranque repetido de Datos/AA y la continuidad audible de TDT. Esta versión no incorpora cartografía BMW propia ni micrófono físico del asistente. Para volver atrás, reinstala app y motor de la [0.2.21](https://github.com/javimagro/carlauncher/releases/tag/v0.2.21).
+
 ## 0.2.21 · Android Auto integrado, versión de prueba
 
 Incluye Android Auto en el panel izquierdo con barra de batería debajo, selección AA/BMW, ajuste al formato normal/alto, toque y foco de la rueda. El menú **Pantalla y controles**, desde el engranaje de la barra inferior, permite elegir el mapa y asignar el mando a AA o DriveHub; tocar AA también le da el foco. El modo BMW conserva sus controles de búsqueda y ETA. Su cartografía propia continúa pendiente.
