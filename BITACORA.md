@@ -1,5 +1,14 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Arranque AA y orden de TDTWorld
+
+- En 0.2.22, el usuario confirma sensores correctos y AA original a pantalla completa. Dentro de BMWLauncher, AA termina con un error genérico. Cuatro no se ve y el orden de TDTWorld difiere de Carlinkit.
+- **AA.** `bridge-state.c` inicializa `off` con época y generación cero antes de `Begin`. El applet MAIN puede estar visible antes de ese inicio. El cliente anterior rechazaba el aviso inicial como `bridge-status`, reproducido con el mismo JSON y `aa-format.test.js`. Ahora acepta `off` limpio mientras conserva la identidad del proceso y el plazo existente. Solo fija la época cuando arranca la sesión y espera un GET con baseline confirmada antes de SET. Una vez vinculada la época conserva la validación de cambios de sesión y el cierre/restauración. La vista muestra el código acotado del fallo y conserva los códigos de precomprobación de captura. Falta identificar el código real del i4 y probar arranques repetidos.
+- **Cuatro.** TDTChannels publica una fila web sin HLS/DASH. La copia Android de TDTWorld (`456bb5d`, `ChannelStreamResolver.java`) obtiene la emisión oficial por sesión anónima de Mediaset y DAI. Se usa esa vía para Cuatro cuando no tiene una fuente directa. En iDrive las solicitudes salen desde el UID OAP y DNS de `mgu-uplink`, con límites y cancelación al retunar u ocultar. No se guarda el manifiesto de sesión ni se registran credenciales. Con Node 8.16.2 y FFmpeg 9.0.2 en Windows, la API autorizó CT y el HLS oficial decodificó 75 fotogramas en tres segundos, incluyendo pista de audio. Falta la prueba en el i4.
+- **Orden.** Se aplica la lista por defecto de `CountryCatalogConfig.java` de TDTWorld a los seis países, tanto al catálogo nuevo como a la caché. Los canales sin rango conservan el orden del proveedor y se mantiene el último canal por ID. En el catálogo español en vivo se obtuvieron los 14 prioritarios en el orden de referencia, con Cuatro cuarto. Las preferencias personales solo existen en el dispositivo de origen.
+- **Verificación.** `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 476/476. La nueva regresión de AA falla con el módulo de `HEAD` anterior y pasa con la corrección. Node 8.16.2 pasa sintaxis de los siete JS instalados modificados y carga de los seis módulos sin arrancar el servicio. No se ha conectado ni instalado nada en la MGU.
+
+
 ## 2026-11-19 · Unificación y robustez de datos, AA y audio · 0.2.22
 
 - **Síntomas del usuario.** A veces todas las lecturas permanecen esperando hasta reiniciar; AA solo conectó una vez; TDT alterna sonido limpio y chasquidos. No se ha capturado este fallo en la MGU durante el cambio y no se atribuye una causa física única.

@@ -37,9 +37,10 @@ function proc(pid, starttime) {
 function fixture(options) {
     options = options || {};
     const clock = fakeClock(), commands = [], errors = [], sockets = [], pathStats = [];
-    const state = { phase: options.phase || 'ready', epoch: options.epoch || 7, writes: options.writes === undefined ? 1 : options.writes,
-        baseline: 1, insets: options.insets || [248, 248, 0, 0], dirty: 0, uncertain: 0, starttime: '100',
-        generation: options.generation || 1, updateSeq: options.updateSeq || 0, setStartedNs: '0' };
+    const state = { phase: options.phase || 'ready', epoch: options.epoch === undefined ? 7 : options.epoch,
+        writes: options.writes === undefined ? 1 : options.writes, baseline: options.phase === 'off' ? 0 : 1,
+        insets: options.insets || [248, 248, 0, 0], dirty: 0, uncertain: 0, starttime: '100',
+        generation: options.generation === undefined ? 1 : options.generation, updateSeq: options.updateSeq || 0, setStartedNs: '0' };
     let client, connected = 0, gets = 0;
     const stat = (file) => {
         const isSocket = /\/control$/.test(file);
@@ -270,6 +271,22 @@ test('a fresh owner can wait for a new native session baseline and acquire only 
     assert(f.commands.includes('SET 9 alto')); assert.equal((await f.client.geometryProfile(identity)).w, 1168);
     const closing = f.client.close(); await turn(); await f.clock.advance(100); await closing;
     assert(f.commands.includes('RESTORE 9'));
+});
+
+test('AA underlay can be visible before aapd begins MAIN and publishes its baseline', async () => {
+    const f = fixture({ phase: 'off', epoch: 0, generation: 0, insets: [0, 0, 0, 0] });
+    const pending = f.acquiring(); await turn(); await f.clock.advance(300);
+    assert.deepEqual(f.errors, []);
+    assert(f.commands.length >= 2 && f.commands.every(command => command === 'GET'));
+    Object.assign(f.state, { phase: 'waiting-baseline', epoch: 1, generation: 1 });
+    f.send('state'); await f.clock.advance(250);
+    assert(f.commands.every(command => command === 'GET'));
+    Object.assign(f.state, { phase: 'ready', baseline: 1, insets: [248, 248, 0, 0] });
+    await f.clock.advance(270);
+    assert.equal((await pending).epoch, 1);
+    assert.equal(f.commands.filter(command => command === 'SET 1 alto').length, 1);
+    const closing = f.client.close(); await turn(); await f.clock.advance(100); await closing;
+    assert(f.commands.includes('RESTORE 1'));
 });
 
 test('cancelling a SET waiting behind older GET replies prevents every mutation', async () => {

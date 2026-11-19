@@ -72,6 +72,7 @@ const session = createSession(gpu, {
     assistantDirectory: path.join(profile, 'BMWLauncher-Assistant'),
     navigationFile: path.join(profile, 'BMWLauncher-Navigation.json'),
     tdtDirectory,
+    tdtCuatro: require(native + 'tdt-cuatro').startCuatro,
     assistantAudio: ffplay && {
         ffmpeg,
         playback: { command: ffplay, drain: true, args: ['-nodisp', '-autoexit', '-loglevel', 'error', '-f', 's16le', '-ar', '48000', '-ch_layout', 'stereo', '-i', 'pipe:0'] },

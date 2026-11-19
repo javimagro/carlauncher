@@ -1,5 +1,9 @@
 # Estado de BMWLauncher · 19-11-2026
 
+## Prueba del i4 y corrección candidata
+
+El usuario confirma que los sensores de 0.2.22 ya funcionan. AA original abre a pantalla completa y el integrado daba error. La corrección espera el arranque de la sesión si el puente aún anuncia `off` y muestra el código del fallo. TDTWorld adopta la prioridad de Carlinkit y resuelve Cuatro mediante Mediaset. Los ensayos locales cubren ambas correcciones. Queda comprobar AA integrado y el directo de Cuatro en el i4. Consulte [la bitácora](BITACORA.md) para las causas y las pruebas.
+
 ## Versión unificada 0.2.22
 
 - App y motor **0.2.22**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. Mantiene IDs, manifiestos y binarios nativos anteriores. La [release 0.2.22](https://github.com/javimagro/carlauncher/releases/tag/v0.2.22) es el destino del ZIP y `SHA256SUMS.txt`; el hash del commit está en la etiqueta y en el informe de empaquetado.

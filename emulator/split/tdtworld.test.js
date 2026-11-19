@@ -284,6 +284,84 @@ test('changing country replaces the displayed catalogue and ignores a late respo
     assert.deepEqual(live.state.channels.map((channel) => channel.name), ['RTP 1']);
 });
 
+test('the current catalogue and an old cache use the default Carlinkit order', async (t) => {
+    const names = ['La 1', 'La 2', 'Antena 3', 'Cuatro', 'Telecinco', 'laSexta', '24h',
+        'Neox', 'Nova', 'Mega', 'FDF', 'Divinity', 'Energy', 'Be Mad', 'Local B', 'Local A', 'Atreseries'];
+    const raw = names.slice(0, 14).reverse().concat(names.slice(14));
+    const source = raw.map(name => ({ name, epg_id: name === '24h' ? '24Horas.TV' : undefined, options: [] }));
+    const fresh = await catalog.loadCatalog('es', async () => Buffer.from(JSON.stringify({ countries: [
+        { name: 'Spain', ambits: [{ name: 'Generalistas', channels: source }] }
+    ] })));
+    assert.deepEqual(fresh.map(item => item.name), names);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-order-'));
+    fs.writeFileSync(path.join(dir, 'tdt-es-domestic-channels.json'), JSON.stringify(raw.map(name => ({
+        name, id: catalog.key(name), sources: []
+    }))));
+    fs.writeFileSync(path.join(dir, 'tdt-settings.json'), JSON.stringify({ resume: true, last: { es: 'cuatro' } }));
+    const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); } }, () => {});
+    t.after(() => { tdt.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    assert.equal(await tdt.prepareChannels(() => true), 'ready');
+    assert.deepEqual(tdt.state.channels.map(item => item.name), names);
+    assert.equal(tdt.selected().id, 'cuatro');
+    assert.deepEqual(catalog.orderChannels('pt', [{ name: 'RTP Notícias' }, { name: 'RTP 1 HD' }, { name: 'TVI' }])
+        .map(item => item.name), ['RTP 1 HD', 'TVI', 'RTP Notícias']);
+});
+
+test('Cuatro requests the official emission when selected and discards it if the card closes', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-cuatro-'));
+    fs.writeFileSync(path.join(dir, 'tdt-es-domestic-channels.json'), JSON.stringify([
+        { name: 'Cuatro', id: 'cuatro', epg: 'Cuatro.TV', sources: [] }
+    ]));
+    const requests = [], starts = [];
+    const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); },
+        tdtCuatro() {
+            let resolve;
+            const request = { result: new Promise(done => { resolve = done; }), resolve,
+                cancel() { this.cancelled = true; } };
+            requests.push(request);
+            return request;
+        },
+        tdtPlayer: { start(sources, changed) { starts.push(sources); changed('playing'); }, stop() {} }
+    }, () => {});
+    t.after(() => { tdt.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    tdt.update(Date.now(), true);
+    assert.equal(requests.length, 0);
+    tdt.press(false);
+    assert.equal(requests.length, 1);
+    tdt.update(Date.now(), false);
+    assert.equal(requests[0].cancelled, true);
+    requests[0].resolve(['https://example.com/old.m3u8']);
+    await delay(5);
+    assert.deepEqual(starts, []);
+    tdt.update(Date.now(), true);
+    tdt.press(false);
+    assert.equal(requests.length, 2);
+    requests[1].resolve(['https://example.com/current.m3u8']);
+    await eventually(() => tdt.state.playback === 'playing');
+    assert.deepEqual(starts, [['https://example.com/current.m3u8']]);
+});
+
+test('Mediaset authorizes Cuatro before requesting DAI and rejects an unexpected manifest host', async () => {
+    const { resolveCuatro } = require('../../native/javi-carlab/tdt-cuatro');
+    const requests = [];
+    const request = async (url, body, auth) => {
+        requests.push({ url, body, auth });
+        if (requests.length === 1) return { isOk: true, response: { sid: 'test&session', beToken: 'test-token' } };
+        if (requests.length === 2) return { isOk: true, response: { dai: { assetKey: 'test-asset' } } };
+        return { stream_manifest: 'https://directos.mediasetinfinity.es/test/live.m3u8' };
+    };
+    assert.deepEqual(await resolveCuatro(request), ['https://directos.mediasetinfinity.es/test/live.m3u8']);
+    assert.equal(requests[1].body.channelCode, 'CT');
+    assert.equal(new URL(requests[1].url).searchParams.get('sid'), 'test&session');
+    assert.equal(requests[2].auth, undefined);
+    assert.equal(new URL(requests[2].url).hostname, 'dai.google.com');
+    requests.length = 0;
+    await assert.rejects(resolveCuatro(async (...args) => {
+        const value = await request(...args);
+        return requests.length === 3 ? { stream_manifest: 'https://example.com/live.m3u8' } : value;
+    }), /cuatro-manifest/);
+});
+
 test('player channel picker waits for confirmation and selecting the current channel does not retune', async (t) => {
     const tuned = [];
     const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, tdtPlayer: {

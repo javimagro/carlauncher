@@ -13,8 +13,17 @@ const initialCapacity = 122880;
 
 function inspect(capture) {
     return new Promise((resolve, reject) => {
-        execFile(capture, ['--check'], { timeout: 5000, maxBuffer: 4096 }, (error, stdout) => {
-            if (error) return reject(new Error('capture-unavailable'));
+        execFile(capture, ['--check'], { timeout: 5000, maxBuffer: 4096 }, (error, stdout, stderr) => {
+            if (error) {
+                for (const line of String(stderr || '').trim().split('\n').reverse()) {
+                    try {
+                        const status = JSON.parse(line);
+                        if (status.type === 'error' && typeof status.code === 'string' && /^[a-z0-9-]{1,40}$/.test(status.code))
+                            return reject(new Error('capture-' + status.code));
+                    } catch (_) { /* Only bounded protocol codes reach the display. */ }
+                }
+                return reject(new Error('capture-unavailable'));
+            }
             try {
                 const value = JSON.parse(stdout);
                 if (value.type !== 'checked' || !Number.isInteger(value.pid) || value.pid <= 1 ||
@@ -44,7 +53,8 @@ function createIntegration(gpu, options) {
     let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, waiting = false, closing;
     let state = { state: 'unavailable', inputReady: false };
     function update(next, detail) {
-        state = { state: next, inputReady: false, detail: detail && detail.code };
+        const code = detail && detail.code;
+        state = { state: next, inputReady: false, detail: typeof code === 'string' && /^[a-z0-9-]{1,48}$/.test(code) ? code : undefined };
         listeners.slice().forEach(fn => fn());
     }
     function requirement() {
