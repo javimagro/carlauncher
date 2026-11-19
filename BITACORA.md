@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-20 · Publicación de BMWLauncher 0.2.24
+
+- Integrada la PR #24 en `main`. El commit de la versión es `d473f0d69edd6d08494cd5edb8251bc3bb6dc169`. App y motor 0.2.24, Captura del mando 1.1.0 y Formato de Android Auto 1.0.0. Los ensayos locales de mapa y audio siguen en el checkout antiguo.
+- Desde el checkout del commit se comprobaron 508 pruebas, la sintaxis de 125 archivos JS con Node 8.16.2, el lector de MGU Store y el enlace OAP con donante sintético. El paquete conserva el arranque OAP automático, el manifiesto RHMI 0.2.24 y el registro de trayecto en el motor.
+- Se verificaron la etiqueta y los dos adjuntos publicados. El ZIP descargado tiene 23.738.022 bytes y SHA-256 `f6f229d71e404804fa58d5d8169d3576bb2c353af07add6dd35d08113070d9f5`. Falta contrastar en el i4 la visibilidad en segundo plano y la recuperación de la selección del cuadro al encender. [Release 0.2.24](https://github.com/javimagro/carlauncher/releases/tag/v0.2.24).
+
 ## 2026-11-19 · Trayecto completo al volver a BMWLauncher
 
 - Contrastados `VehicleTripSessionRepository` y `SensorApiJourneyMapper` de BMWLauncher Carlinkit (`427786f4`) y `SensorSnapshotMapper` de DriveHub (`2a7755a`). El resumen BMWLauncher conservaba solo la gráfica de altura en su registro y el detalle de navegación consultaba métricas de previsualización durante el guiado activo. El motor registra ahora el resumen completo del viaje y el detalle enlaza distancia, tiempo, batería de llegada y paradas completadas con la ruta BMW vigente.
