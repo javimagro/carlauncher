@@ -12,6 +12,8 @@
 - **Entrega y límites.** App/motor 0.2.22; mando 1.1.0 y formato 1.0.0 sin cambios binarios. Falta comprobar arranques repetidos, AA original/integrado, alternancia, recuperación tras fallo y TDT prolongada por altavoces en el i4. Sin SSH, instalación ni reinicio. Reversión: app y motor 0.2.21, conservando datos privados. El lector oficial Store en Node 8 acepta los cuatro componentes del candidato y el OAP enlaza 21 módulos con donante sintético; no acredita el SDK real en el coche. El empaquetado final se ejecuta desde el commit integrado limpio y se coteja al publicar.
 
 
+- **Publicación verificada.** [v0.2.22](https://github.com/javimagro/carlauncher/releases/tag/v0.2.22), commit `8d4b9153ca0e0d3751389643592d6bb3d53725a7`; PR16 y PR17 integradas. Suite final sobre `main` limpio: 472/472. Lector Store acepta app/motor 0.2.22 y preloads 1.1.0/1.0.0; 21 módulos OAP enlazados con donante sintético. ZIP de 166 archivos, 23618809 bytes y SHA-256 `80725275216c5beb03ed1864ea0bbfc23b058e52a2553deb7f8c0d82f4620837`. Etiqueta remota, ZIP y suma descargados y cotejados. Sin PR de código abierta ni cambios de producción pendientes de esta tarea; el checkout antiguo conserva sus cambios locales.
+
 ## 2026-11-16 · Tamaño del icono de BMWLauncher
 
 - A petición del usuario, la flecha de navegación se reduce un 10 % dentro del PNG transparente de 140 × 140 px. El escalado de alta calidad se centra con un margen adicional de 7 px por lado.
