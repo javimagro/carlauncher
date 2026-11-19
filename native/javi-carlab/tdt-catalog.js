@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const zlib = require('zlib');
 const { URL } = require('url');
+const { channelCodes } = require('./tdt-mediaset');
 
 const guideRoot = 'https://raw.githubusercontent.com/javimagro/TdTTv-EPG/epg-data/epg/';
 const catalogUrl = 'https://www.tdtchannels.com/lists/tv.json';
@@ -19,10 +20,52 @@ const atres = {
     mega: ['Mega', '5a6a18357ed1a834493ebf6f'],
     atreseries: ['Atreseries', '5a6a189a7ed1a834493ebf70']
 };
+// Public 443 alternatives from the Spanish Carlinkit catalogue, verified by signal.
+const publica = new Map([
+    ['estutele', 'network_id=16818&live=1&avod=1'], ['12tvalicante', 'network_id=16126&live=1&avod=0'],
+    ['televigo', 'network_id=16113&live=1&avod=0'], ['cocinafamiliar', 'network_id=16114&live=1&avod=0']
+]);
+// Default channel ranks from TDTWorld Carlinkit, CountryCatalogConfig.java (456bb5d).
+const defaultOrder = {
+    es: ('la1 la2 antena3 cuatro telecinco lasexta 24h neox nova mega fdf divinity energy bemad').split(' '),
+    pt: ('rtp1 rtp2 sic tvi sicnoticias cnnportugal cmtv rtp3 rtpmemoria rtpafrica sicmulher sicradical siccaras tvificcao ' +
+        'tvireality canalpanda canalq artv').split(' '),
+    de: ('daserste zdf rtl sat1 prosieben vox kabeleins rtlzwei 3sat arte ntv welt n24doku phoenix ' +
+        'kika').split(' '),
+    fr: ('tf1 france2 france3 canalplus france5 m6 arte c8 w9 tmc tfx nrj12 lci france4 ' +
+        'bfmtv cnews cstar gulli franceo tf1seriesfilms lequipe 6ter rmcstory rmcdecouverte cherie25 franceinfo parispremiere rtl9 tvbreizh canalj').split(' '),
+    it: ('rai1 rai2 rai3 rete4 canale5 italia1 la7 tv8 nove rainews24 twentyseven la5 realtime skytg24 ' +
+        'dmax raipremium raimovie raisport cine34 focus topcrime mediasetextra iris italia2 warnertv giallo tv2000 la7d foodnetwork hgtv').split(' '),
+    uk: ('bbcone bbctwo itv1 channel4 channel5 itv2 bbcthree itv3 itv4 e4 film4 more4 skymix dave ' +
+        'drama w yesterday quest dmax skyarts challenge really itvbe 5star 5usa blaze talkingpicturestv').split(' '),
+};
+const orderAliases = {
+    'sexta': 'lasexta', 'bemadtv': 'bemad', 'a3': 'antena3', 'tve1': 'la1',
+    'tve2': 'la2', 'tele5': 'telecinco', 'rtltelevision': 'rtl', 'pro7': 'prosieben',
+    'kabel1': 'kabeleins', 'artefr': 'arte', 'artefrench': 'arte', 'rainews': 'rainews24',
+    '27twentyseven': 'twentyseven', 'la5mediaset': 'la5', 'realtimeitaly': 'realtime', 'dmaxitaly': 'dmax',
+    'raisporthdplus': 'raisport', 'raisportplus': 'raisport', 'italia2tv': 'italia2', 'giallotv': 'giallo',
+    'tv2000va': 'tv2000', 'la7cinema': 'la7d', 'foodnetworkitaly': 'foodnetwork', 'hgtvitaly': 'hgtv',
+    'hgtvhomegardentv': 'hgtv', 'homegardentv': 'hgtv', 'canal': 'canalplus', 'canalplusfr': 'canalplus',
+    'bfmtvfr': 'bfmtv', 'bfm': 'bfmtv', 'tf1seriesfilmsfr': 'tf1seriesfilms', 'tf1seriesfilm': 'tf1seriesfilms',
+    'lequipefr': 'lequipe', 'lequipe21': 'lequipe', 'rmcdecouvertefr': 'rmcdecouverte', 'franceinfotv': 'franceinfo',
+    'franceinfofr': 'franceinfo', 'rtl2': 'rtlzwei', 'canal24horas': '24h', 'canal24h': '24h',
+    '24horas': '24h', 'rtpnoticias': 'rtp3', 'bbc1': 'bbcone', 'bbc2': 'bbctwo',
+    'itv': 'itv1', 'udave': 'dave', 'udrama': 'drama', 'uw': 'w',
+    'channel4uk': 'channel4', 'channel5uk': 'channel5',
+};
 const mib = 1024 * 1024;
 
 function key(value) {
     return String(value || '').split('@')[0].normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/tv$/, '');
+}
+
+function mediasetCode(item) {
+    for (const value of [item.epg, item.name]) {
+        const id = key(String(value || '').replace(/\([^)]*\)|\[[^\]]*\]/g, '')).replace(/(?:hd|sd)$/, '');
+        if (Object.prototype.hasOwnProperty.call(channelCodes, id)) return channelCodes[id];
+        if (id === 'factoriadeficcion') return channelCodes.fdf;
+    }
 }
 
 function mediaUrl(value) {
@@ -62,7 +105,7 @@ function parseCatalog(text) {
             }
         }
     }
-    return unique(entries);
+    return unique(entries, true);
 }
 
 function parseMarkdown(text) {
@@ -83,7 +126,7 @@ function parseMarkdown(text) {
         entries.push(channel(name, epg === '-' ? '' : epg, group,
             (/(https?:\/\/[^)]+)/.exec(logo) || [])[1], sources));
     }
-    return unique(entries);
+    return unique(entries, true);
 }
 
 function parseM3u(text) {
@@ -103,10 +146,15 @@ function parseM3u(text) {
     return unique(entries);
 }
 
-function unique(entries) {
+function unique(entries, separateNamedChannels) {
     const channels = new Map();
     for (const entry of entries) {
         if (!entry) continue;
+        const first = channels.get(entry.id);
+        // Providers can reuse one programme guide for several distinct signals.
+        // Preserve the first channel's ID for existing last-channel preferences.
+        if (separateNamedChannels && first && key(first.name) !== key(entry.name))
+            entry.id += '-' + key(entry.name);
         const existing = channels.get(entry.id);
         if (existing) existing.sources = Array.from(new Set(existing.sources.concat(entry.sources)));
         else channels.set(entry.id, entry);
@@ -115,22 +163,49 @@ function unique(entries) {
     return Array.from(channels.values());
 }
 
+function orderChannels(country, entries) {
+    const order = defaultOrder[country];
+    if (!order) return entries;
+    const ranks = new Map(order.map((name, rank) => [name, rank]));
+    const buckets = order.map(() => []), remaining = [];
+    function sortName(value) {
+        const clean = String(value || '').split('@')[0].replace(/\([^)]*\)|\[[^\]]*\]/g, '')
+            .normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(?:hd|sd)$/, '');
+        return orderAliases[clean] || clean;
+    }
+    for (const item of entries) {
+        if (!item || typeof item !== 'object') continue;
+        const epg = sortName(item.epg), name = sortName(item.name);
+        const rank = ranks.get(ranks.has(epg) ? epg : name);
+        (rank === undefined ? remaining : buckets[rank]).push(item);
+    }
+    return [].concat(...buckets, remaining);
+}
+
 async function loadCatalog(country, get) {
     if (country !== 'es') {
-        return parseM3u((await get('https://iptv-org.github.io/iptv/countries/' + country + '.m3u', mib)).toString('utf8'));
+        const entries = parseM3u((await get('https://iptv-org.github.io/iptv/countries/' + country + '.m3u', mib)).toString('utf8'));
+        return orderChannels(country, entries);
     }
     let entries;
     try { entries = parseCatalog((await get(catalogUrl, 2 * mib)).toString('utf8')); }
     catch (_) { entries = parseMarkdown((await get(catalogFallback, mib)).toString('utf8')); }
     const existing = new Set(entries.map((item) => key(item.name)));
     const missing = Object.keys(atres).filter((id) => !existing.has(id));
-    entries.splice(2, 0, ...missing.map((id) => channel(atres[id][0], id, categories[0], '', [])));
-    return unique(entries);
+    entries.push(...missing.map((id) => channel(atres[id][0], id, categories[0], '', [])));
+    if (!entries.some(item => mediasetCode(item) === channelCodes.cuatro))
+        entries.push(channel('Cuatro', 'Cuatro.TV', categories[0], '', []));
+    return orderChannels(country, unique(entries));
 }
 
-async function resolveSources(item, get) {
+async function resolveSources(item, get, country, mediaset) {
+    if (item.sources.length) return item.sources;
+    const code = country === 'es' && mediasetCode(item);
+    if (code) return mediaset ? mediaset(code) : [];
+    const fallback = country === 'es' && publica.get(key(item.name));
+    if (fallback) return ['https://stream-us-east-1.getpublica.com/playlist.m3u8?' + fallback];
     const entry = atres[key(item.name)];
-    if (!entry || item.sources.length) return item.sources;
+    if (!entry) return item.sources;
     const host = 'https://api.atresplayer.com';
     let url = host + '/client/v1/page/channel/' + entry[1];
     const visited = new Set();
@@ -251,6 +326,6 @@ function currentIndex(programs, now) {
 }
 
 module.exports = {
-    countries, zones, categories, mediaUrl, key, loadCatalog, parseCatalog, parseMarkdown, parseM3u, parseGuide,
+    countries, zones, categories, mediaUrl, key, orderChannels, loadCatalog, parseCatalog, parseMarkdown, parseM3u, parseGuide,
     parseFanart, inflate, version, dataset, schedule, currentIndex, resolveSources
 };

@@ -49,7 +49,7 @@ function save(file, value) {
     }
 }
 
-function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Date.now, photo = loadPhoto }, change) {
+function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtMediaset, now = Date.now, photo = loadPhoto }, change) {
     const file = (name) => tdtDirectory && path.join(tdtDirectory, 'tdt-' + name);
     const store = loadJson(file('settings.json'), {});
     const prefs = {
@@ -77,6 +77,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
     let pendingArt;
     let artTimer;
     let tuning = 0;
+    let sourceLookup;
     let startup = true;
     let overlayWasVisible = false;
     const logos = createLogos(change);
@@ -136,7 +137,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
             }
         } else {
             const cached = loadJson(channelFile(country), []);
-            entries = Array.isArray(cached) ? cached : [];
+            entries = Array.isArray(cached) ? catalog.orderChannels(country, cached) : [];
         }
         state.guideStatus = guide ? 'ready' : 'loading';
         state.status = entries.length ? 'ready' : 'loading';
@@ -260,6 +261,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
 
     function stop() {
         tuning++;
+        if (sourceLookup) { sourceLookup.cancel(); sourceLookup = undefined; }
         if (tdtPlayer) tdtPlayer.stop();
         state.playback = 'idle';
         state.audioStatus = '';
@@ -284,8 +286,13 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         }
         change();
         if (!tdtPlayer) { state.playback = 'unavailable'; finishOverlay(); change(); return; }
+        let lookup;
         try {
-            const sources = await (fixture ? item.sources : catalog.resolveSources(item, get));
+            const mediaset = tdtMediaset && (code => {
+                lookup = sourceLookup = tdtMediaset(code);
+                return lookup.result;
+            });
+            const sources = await (fixture ? item.sources : catalog.resolveSources(item, get, prefs.country, mediaset));
             if (request !== tuning) return;
             if (!sources.length) { state.playback = 'no-source'; finishOverlay(); }
             else tdtPlayer.start(sources, (status, diagnostic) => {
@@ -312,7 +319,10 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, now = Dat
         } catch (_) {
             if (request !== tuning) return;
             state.playback = 'error';
+            if (lookup) state.playbackDiagnostic = 'Mediaset no devolvió una emisión';
             finishOverlay();
+        } finally {
+            if (sourceLookup === lookup) sourceLookup = undefined;
         }
         change();
     }

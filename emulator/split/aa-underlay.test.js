@@ -28,6 +28,19 @@ test('cancelling before AA context activation writes nothing', async () => {
     await f.control.poll(origin, 1000); assert.deepEqual(f.commands, []);
 });
 
+test('AA shutdown polls may restore a departing owner but never open a pending one', async () => {
+    const f = fixture(); await f.control.poll(origin, 1000);
+    const pending = f.acquire();
+    await f.control.poll(origin, 1000, true);
+    assert.deepEqual(f.commands, []);
+    await pending.stop();
+    const active = f.acquire();
+    await f.control.poll(origin, 1000); await f.control.poll(aa, 1000);
+    const closed = active.stop();
+    await f.control.poll(aa, 1000, true); await f.control.poll(origin, 1000, true); await closed;
+    assert.deepEqual(f.commands, ['open 1 50', 'open 200 1000']);
+});
+
 test('AA underlay never restores over a context selected outside the launcher', async () => {
     const f = fixture(); await f.control.poll(origin, 1000); const owner = f.acquire();
     await f.control.poll(origin, 1000); await f.control.poll(aa, 1000);

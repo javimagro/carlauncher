@@ -115,7 +115,10 @@ const session = createSession(gpu, {
     loadCockpit,
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
-        if (!confirmed) { underlay.abandon(); releaseController(); }
+        if (!confirmed) {
+            if (!stopping) underlay.abandon();
+            releaseController();
+        }
     },
     onExit() {
         if (!launcherVisible || !returnContext || homeDeadline) return;
@@ -135,6 +138,7 @@ const session = createSession(gpu, {
         } : null
     },
     tdtDirectory: dataDirectory,
+    tdtMediaset: resolveTdtMediaset,
     tdtPlayback: {
         nativeAudio: bmwAudio,
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
@@ -215,19 +219,40 @@ async function startTdtProxy() {
     });
 }
 
+function resolveTdtMediaset(code) {
+    let child, cancelled = false;
+    const result = onlineApp().then(uid => {
+        if (cancelled) return [];
+        return new Promise((resolve, reject) => {
+            child = execFile(process.execPath, [path.join(__dirname, 'tdt-mediaset.js'), code],
+                { uid, gid: uid, maxBuffer: 12 * 1024, timeout: 14000 }, (error, stdout) => {
+                    child = undefined;
+                    if (cancelled) return resolve([]);
+                    if (error) return reject(new Error('Canal no disponible en Mediaset'));
+                    try { resolve(JSON.parse(stdout)); } catch (err) { reject(err); }
+                });
+        });
+    });
+    return { result, cancel() { cancelled = true; if (child) child.kill(); } };
+}
+
 const request = require('./hmi.js')('/var/opt/iteriodev-overlays/current/hmictl', (err) => {
     console.error(err.message);
     shutdown(1);
 });
 
 async function poll() {
-    if (stopping) return;
+    if (stopping && !underlay.holding()) return;
     try {
         const installed = await installation();
         const id = installed.applet;
         const context = parseContext(await request('ctx'));
-        if (stopping) return;
         if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
+        if (stopping) {
+            // The normal UI is closed, but returning MAIN still needs live context.
+            await underlay.poll(context, id, true);
+            return;
+        }
         contextAt = Date.now();
         androidAuto.context(context, id);
         await underlay.poll(context, id);
@@ -277,7 +302,7 @@ async function poll() {
         releaseController();
         session.show(false);
     } finally {
-        if (!stopping) setTimeout(poll, 400);
+        if (!stopping || underlay.holding()) setTimeout(poll, 400);
     }
 }
 

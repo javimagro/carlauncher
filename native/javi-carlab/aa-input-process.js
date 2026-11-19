@@ -11,7 +11,7 @@ function createInput(options) {
     const later = options.setTimeout || setTimeout, clear = options.clearTimeout || clearTimeout;
     const worker = path.join(__dirname, 'aa-input-worker.js');
     let enabled = false, visible = false, focused = false, closed = false, blocked = false;
-    let current, heartbeat, closingPromise;
+    let current, heartbeat, closingPromise, cleanupError;
     function allowed() {
         try { return typeof options.allowed === 'function' && options.allowed() === true; }
         catch (_) { return false; }
@@ -27,14 +27,14 @@ function createInput(options) {
             function finish(ok) {
                 if (ended) return;
                 ended = true; clear(timer); clear(deadline);
-                if (!ok) error('input-release-unconfirmed');
-                resolve();
+                resolve(ok);
             }
             try {
                 child = spawn(worker, ['--release'], { detached: true, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
                 child.on('message', message => { if (message && message.op === 'released') released = true; });
                 child.on('error', () => { signal(child); finish(false); });
-                child.once('exit', code => finish(code === 0 && released));
+                // The exit event can precede the final IPC message.
+                child.once('close', code => finish(code === 0 && released));
                 timer = later(() => signal(child), 500);
                 deadline = later(() => finish(false), 750);
                 if (child.send({ op: 'release', point }, err => { if (err) { signal(child); finish(false); } }) === false) {
@@ -47,12 +47,17 @@ function createInput(options) {
         if (job.ended) return;
         job.ended = true; job.ready = false; clear(job.kill); clear(job.deadline);
         const point = job.confirmed || job.possible;
-        // Never start a second sender until the original worker has exited.
-        const release = exited && point ? recover(point) : Promise.resolve();
-        if (!exited) error('input-worker-stop-timeout');
-        release.then(() => {
+        // Drain IPC before deciding whether the original sender delivered UP.
+        const release = exited && point ? recover(point) : Promise.resolve(exited);
+        release.then(ok => {
+            if (!ok) {
+                const code = exited ? 'input-release-unconfirmed' : 'input-worker-stop-timeout';
+                cleanupError = new Error(code);
+                error(code);
+            }
             if (current === job) current = undefined;
-            job.resolve(); reconcile();
+            if (ok) job.resolve(); else job.reject(cleanupError);
+            reconcile();
         });
     }
     function stop(job, reason) {
@@ -86,7 +91,8 @@ function createInput(options) {
     }
     function start() {
         const job = { seq: 0, ack: 0, at: now(), command: 0, queue: [], ready: false };
-        job.finished = new Promise(resolve => { job.resolve = resolve; });
+        job.finished = new Promise((resolve, reject) => { job.resolve = resolve; job.reject = reject; });
+        job.finished.catch(() => {}); // A visibility transition may occur without an awaiting caller.
         current = job;
         try {
             // Separate process group: killing the UI's group must leave time
@@ -118,7 +124,7 @@ function createInput(options) {
                 }
             });
             job.child.on('error', () => stop(job, 'input-worker'));
-            job.child.once('exit', () => {
+            job.child.once('close', () => {
                 if (!job.stopping) error('input-worker-exit');
                 finish(job, true);
             });
@@ -170,13 +176,29 @@ function createInput(options) {
         if (closingPromise) return closingPromise;
         closed = true; enabled = false; clear(heartbeat); heartbeat = undefined;
         const job = current; stop(job);
-        closingPromise = job ? job.finished : Promise.resolve();
+        closingPromise = job ? job.finished : withdrawal();
         return closingPromise;
+    }
+    function withdrawal() {
+        if (current) return current.finished;
+        if (!cleanupError) return Promise.resolve();
+        const result = Promise.reject(cleanupError);
+        result.catch(() => {});
+        return result;
     }
     return {
         ready, touch, cancel, close,
         enable(value) { if (enabled === (value === true)) return; enabled = value === true; if (!enabled) cancel(); reconcile(); },
-        setVisible(value) { if (visible === (value === true)) return; visible = value === true; if (!visible) cancel(); reconcile(); },
+        setVisible(value) {
+            const next = value === true;
+            if (visible !== next) {
+                visible = next;
+                if (!visible) cancel();
+                else if (!cleanupError) blocked = false;
+                reconcile();
+            }
+            if (!visible) return withdrawal();
+        },
         setFocus(value) { if (focused === (value === true)) return; focused = value === true; if (!focused) cancel(); reconcile(); },
         controller() { return false; }
     };

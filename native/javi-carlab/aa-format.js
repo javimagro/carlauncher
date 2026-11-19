@@ -24,11 +24,13 @@ function statIdentity(pid, text) {
     return Object.freeze({ pid, starttime: fields[19] });
 }
 function equalIdentity(a, b) { return !!a && !!b && a.pid === b.pid && a.starttime === b.starttime; }
+const idle = value => value.phase === 'off' && !value.baseline && !value.dirty && !value.uncertain;
 function validStatus(s) {
     return !!s && s.v === 3 && s.marker === marker && s.rearm === 1 && s.leaseMs === 1000 && s.ackMs === 2000 &&
         typeof s.starttime === 'string' && /^\d{1,24}$/.test(s.starttime) &&
-        validPid(s.pid) && Number.isSafeInteger(s.epoch) && s.epoch > 0 &&
-        Number.isSafeInteger(s.generation) && s.generation > 0 && Number.isSafeInteger(s.updateSeq) && s.updateSeq >= 0 &&
+        validPid(s.pid) && Number.isSafeInteger(s.epoch) && s.epoch >= 0 &&
+        Number.isSafeInteger(s.generation) && s.generation >= 0 &&
+        (idle(s) || (s.epoch > 0 && s.generation > 0)) && Number.isSafeInteger(s.updateSeq) && s.updateSeq >= 0 &&
         validNs(s.setStartedNs) &&
         ['hello', 'ok', 'accepted', 'rejected', 'state'].indexOf(s.result) >= 0 &&
         ['off', 'waiting-baseline', 'ready', 'applying', 'active', 'restoring', 'done', 'blocked'].indexOf(s.phase) >= 0 &&
@@ -176,6 +178,16 @@ function createFormat(options) {
     function receive(value) {
         if (ended) return;
         if (!validStatus(value) || !equalIdentity(value, identity)) return fail('bridge-status', true);
+        if (epoch === undefined && idle(value)) {
+            // The MAIN applet can appear before the phone starts its video session.
+            // Consume GET replies without binding the owner to an idle epoch.
+            if (value.result !== 'hello' && value.result !== 'state') {
+                const pending = expected.shift();
+                if (!pending || pending.kind !== 'GET' || value.result !== 'ok') return fail('bridge-response-order', true);
+            }
+            if (value.writes !== 1 && !closing) fail('bridge-read-only');
+            return;
+        }
         if (epoch === undefined) epoch = value.epoch;
         if (value.epoch !== epoch) {
             // Never restore an old baseline into the new telephone session.

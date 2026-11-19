@@ -39,7 +39,10 @@ function parentFixture() {
             child.connected = true; child.exitCode = null;
             child.send = (message, callback) => { child.messages.push(message); if (callback) callback(); return true; };
             child.kill = signal => { child.signals.push(signal); };
-            child.exit = code => { child.connected = false; child.exitCode = code; child.emit('exit', code); };
+            child.exit = (code, close = true) => {
+                child.connected = false; child.exitCode = code; child.emit('exit', code);
+                if (close) child.emit('close', code);
+            };
             child.reply = message => child.emit('message', message);
             child.ackLease = () => {
                 const leases = child.messages.filter(m => m.op === 'lease');
@@ -151,6 +154,48 @@ test('AA process covers the UDP/ACK gap and never recovers before worker exit is
     assert.deepEqual(f.children[1].messages[0].point, physical);
     const closed = f.input.close(); f.children[1].reply({ op: 'released' }); f.children[1].exit(0); await closed;
     assert.equal(f.time.timers.size, 0);
+});
+
+test('AA holds the release open for a final IPC confirmation delivered after exit', async () => {
+    const f = parentFixture(); f.arm();
+    f.input.touch('down', point);
+    const hidden = f.input.setVisible(false);
+    f.children[0].exit(0);
+    const recovery = f.children[1];
+    let finished = false;
+    const waiting = Promise.resolve(hidden).then(() => { finished = true; });
+    recovery.exit(0, false); await settle();
+    assert.equal(finished, false);
+    recovery.reply({ op: 'released' }); recovery.emit('close', 0);
+    await waiting;
+    assert.equal(finished, true);
+    assert.deepEqual(f.errors, []);
+});
+
+test('AA reports unconfirmed release to the owner when the helper exits without confirmation', async () => {
+    const f = parentFixture(); f.arm(); f.input.touch('down', point);
+    const closing = f.input.setVisible(false);
+    const result = assert.rejects(closing, /input-release-unconfirmed/);
+    f.children[0].exit(0); f.children[1].exit(0);
+    await result;
+    f.input.setVisible(true);
+    assert.equal(f.children.length, 2);
+    await assert.rejects(f.input.close(), /input-release-unconfirmed/);
+    assert.equal(f.input.ready(), false);
+});
+
+test('an explicit AA reopen retries transient input failure only after confirmed withdrawal', async () => {
+    const f = parentFixture(); f.arm();
+    const first = f.children[0];
+    f.time.advance(750);
+    assert.deepEqual(f.errors, ['input-worker-unresponsive']);
+    const retired = f.input.setVisible(false);
+    first.exit(0); await retired;
+    f.input.setVisible(true);
+    assert.equal(f.children.length, 2);
+    const second = f.children[1]; second.ackLease();
+    assert.equal(f.input.ready(), true);
+    const closed = f.input.close(); second.exit(0); await closed;
 });
 
 test('AA worker releases on lease expiry and rejects renewal after a suspended deadline', async () => {

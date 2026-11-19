@@ -251,6 +251,11 @@
       "mode": "0644"
     },
     {
+      "path": "tdt-mediaset.js",
+      "from": "tdt-mediaset.js",
+      "mode": "0644"
+    },
+    {
       "path": "tdt-logos.js",
       "from": "tdt-logos.js",
       "mode": "0644"

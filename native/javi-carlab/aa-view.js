@@ -77,7 +77,8 @@ function drawAA(cv, ui, night) {
     }
     const message = {
         unavailable: 'Conecta el teléfono a Android Auto',
-        waiting: status.detail === 'aa-gate-restart-required' ? 'Actualiza el control del mando y reinicia iDrive' : 'Esperando los controles de BMWLauncher…',
+        waiting: status.detail === 'aa-gate-restart-required' ? 'Actualiza el control del mando y reinicia iDrive' :
+            status.detail === 'context-unavailable' ? 'Esperando a iDrive…' : 'Esperando los controles de BMWLauncher…',
         starting: 'Conectando Android Auto…', armed: 'Esperando la imagen de Android Auto…',
         'recovery-needed': 'Reconectando Android Auto…', error: 'No se ha podido abrir Android Auto'
     }[status.state];
@@ -85,8 +86,11 @@ function drawAA(cv, ui, night) {
         const y = frame ? box.y + box.h - 28 : box.y + box.h / 2;
         if (frame) cv.roundRect(box.x + 20, y - 24, box.w - 40, 36, 8, p.surface);
         cv.text(message, box.x + box.w / 2, y, 21, p.text, centered);
-        if (!frame) cv.text(status.state === 'error' ? 'Selecciona BMW y vuelve a Android Auto para reintentar' :
-            'El mapa y los controles del teléfono aparecerán aquí', box.x + box.w / 2, y + 30, 17, p.secondary, centered);
+        if (!frame) {
+            const detail = status.state === 'error' && status.detail;
+            cv.text(detail ? 'Código: ' + detail : status.state === 'error' ? 'Selecciona BMW y vuelve a Android Auto para reintentar' :
+                'El mapa y los controles del teléfono aparecerán aquí', box.x + box.w / 2, y + 30, 17, p.secondary, centered);
+        }
     } else if (status.state === 'playing' && !status.inputReady) {
         cv.text('Controles de Android Auto no disponibles', box.x + box.w / 2, box.y + box.h - 9, 16, p.secondary, centered);
     }
