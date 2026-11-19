@@ -120,45 +120,61 @@ function createRadio(builders, options) {
     timers.push(every(() => Object.keys(services).forEach(connect), 10000));
     function fresh(name) { const r = records[name]; return r && now() - r.at < 15000 ? r.value : undefined; }
     const listed = stationLists.all;
+    function radioSource() {
+        const available = sources(fresh('sources'));
+        const activeId = fresh('activeSourceId');
+        return available.find((v) => v.id === activeId && v.selectable && v.type !== 2) ||
+            available.find((v) => v.type === 4 && v.selectable) || available.find((v) => v.type === 1 && v.selectable);
+    }
+    function resolveStation(key, list, memoryKey) {
+        const row = stationLists.find(key, list);
+        if (!memoryKey || row && row.memoryKey === memoryKey) return row;
+        return listed().find((s) => s.memoryKey === memoryKey && stationLists.find(s.key, s.list));
+    }
     async function command(c) {
-        if (stopped || !c || typeof c.id !== 'string' || c.id.length > 40 || !['tune', 'refresh', 'artwork'].includes(c.op)) return false;
+        if (stopped || !c || typeof c.id !== 'string' || c.id.length > 40 ||
+            !['activate', 'tune', 'refresh', 'artwork'].includes(c.op) ||
+            (c.memoryKey !== undefined && (typeof c.memoryKey !== 'string' || !c.memoryKey.length || c.memoryKey.length > 110))) return false;
+        if ((c.op === 'tune' || c.op === 'artwork') &&
+            (typeof c.key !== 'string' || !/^\d{1,10}$/.test(c.key) || !lists.includes(c.list))) return false;
         if (c.op === 'artwork') {
             if (artworkBusy || busy || !proxies.tuner) return false;
-            const item = stationLists.find(c.key, c.list);
+            const item = resolveStation(c.key, c.list, c.memoryKey);
             if (!item) return false;
             artworkBusy = true;
             try {
                 let bytes = null; const attempts = [];
                 for (const source of ['metadata', 'tuner']) {
                     const proxy = proxies[source]; if (!proxy) continue;
-                    const live = stationLists.find(c.key, c.list);
+                    const live = resolveStation(item.key, item.list, item.memoryKey);
                     if (stopped || !live) return false;
                     const r = await safe(() => proxy.getStationListMetaData({ listType: live.list, pictures: 1, epgDataScope: 0, startPosition: live.position, length: 1 }));
                     if (stopped) return false;
-                    const row = r && Array.isArray(r.stationList) && r.stationList.find((v) => v.dataBaseIdentifier === item.id);
+                    const row = r && Array.isArray(r.stationList) && r.stationList.find((v) => {
+                        const candidate = station(v, live.list);
+                        return candidate && candidate.id === live.id && candidate.memoryKey === item.memoryKey;
+                    });
                     const info = row ? pictureDetails(row.stationIconPicture) : { bytes: null, status: r && Array.isArray(r.stationList) ? 'missing-row' : 'query-failed', size: 0, format: null };
                     attempts.push({ source, status: info.status, size: info.size, format: info.format });
                     bytes = info.bytes;
                     if (bytes) break;
                 }
                 // Two bounded diagnostic entries, no URL, raw SDK error or extra image copies.
-                artwork = { key: item.key, serial: ++artworkSerial, bytes, attempts };
+                artwork = { key: c.key, serial: ++artworkSerial, bytes, attempts };
                 return true;
-            } catch (_) { if (!stopped) artwork = { key: item.key, serial: ++artworkSerial, bytes: null }; return false; }
+            } catch (_) { if (!stopped) artwork = { key: c.key, serial: ++artworkSerial, bytes: null }; return false; }
             finally { artworkBusy = false; }
         }
         if (busy) return false;
         if (c.op === 'refresh') { wanted = true; refresh(); return true; }
-        const s = stationLists.find(c.key, c.list);
-        if (!s || !proxies.tuner || !proxies.media) {
+        const tuning = c.op === 'tune';
+        const s = tuning && resolveStation(c.key, c.list, c.memoryKey);
+        if (tuning && (!s || !proxies.tuner)) {
             wanted = true; result = { id: c.id, ok: false, message: 'La lista ha cambiado; vuelve a seleccionar la emisora' }; return false;
         }
-        const available = sources(fresh('sources'));
-        const activeId = fresh('activeSourceId');
-        const source = available.find((v) => v.id === activeId && v.selectable && v.type !== 2) ||
-            available.find((v) => v.type === 4 && v.selectable) || available.find((v) => v.type === 1 && v.selectable);
+        const source = proxies.media && radioSource();
         if (!source) { result = { id: c.id, ok: false, message: 'BMW no ofrece una fuente FM/DAB disponible' }; return false; }
-        busy = true; result = { id: c.id, ok: null, message: 'Sintonizando…' };
+        busy = true; result = { id: c.id, ok: null, message: tuning ? 'Sintonizando…' : 'Activando radio…' };
         let stage = 'fuente', nativeCode;
         try {
             // Hmi8 requests audio on every explicit station selection. An active
@@ -167,8 +183,12 @@ function createRadio(builders, options) {
             nativeCode = selected && selected.result;
             if (![0, 2, 'NO_ERROR', 'SOURCE_ALREADY_SELECTED'].includes(nativeCode)) throw new Error('SOURCE');
             if (stopped) return false;
+            if (!tuning) {
+                result = { id: c.id, ok: true, message: 'Fuente de radio solicitada a BMW' };
+                return true;
+            }
             // Resolve the index again after source activation; never tune a different row after a list update.
-            const live = stationLists.find(s.key, s.list);
+            const live = resolveStation(s.key, s.list, c.memoryKey);
             if (!live) throw new Error('STATION');
             stage = 'emisora'; nativeCode = undefined;
             const tuned = await proxies.tuner.selectStation({ listType: live.list, dataBaseIdentifier: live.id, positionIndex: live.position });
@@ -194,7 +214,7 @@ function createRadio(builders, options) {
             return { version: 1, at: now(), available: !!proxies.tuner, loading, busy, listError, incomplete,
                 clock: clock === null ? null : (clock + Math.floor((now() - records.epgReferenceTime.at) / 1000)) % 86400,
                 stations: listed(), current: live, active: typeof activeId === 'string' && available.some((s) => s.id === activeId),
-                sourceKnown: typeof activeId === 'string', result, artworkBusy, artwork,
+                sourceKnown: typeof activeId === 'string', canActivate: !!(proxies.media && radioSource()), result, artworkBusy, artwork,
                 logo: live && logo ? { key: logoKey, serial: logoSerial, bytes: logo } : null };
         },
         stop() {

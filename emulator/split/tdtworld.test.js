@@ -284,6 +284,138 @@ test('changing country replaces the displayed catalogue and ignores a late respo
     assert.deepEqual(live.state.channels.map((channel) => channel.name), ['RTP 1']);
 });
 
+test('the current catalogue and an old cache use the default Carlinkit order', async (t) => {
+    const names = ['La 1', 'La 2', 'Antena 3', 'Cuatro', 'Telecinco', 'laSexta', '24h',
+        'Neox', 'Nova', 'Mega', 'FDF', 'Divinity', 'Energy', 'Be Mad', 'Local B', 'Local A', 'Atreseries'];
+    const raw = names.slice(0, 14).reverse().concat(names.slice(14));
+    const source = raw.map(name => ({ name, epg_id: name === '24h' ? '24Horas.TV' : undefined, options: [] }));
+    const fresh = await catalog.loadCatalog('es', async () => Buffer.from(JSON.stringify({ countries: [
+        { name: 'Spain', ambits: [{ name: 'Generalistas', channels: source }] }
+    ] })));
+    assert.deepEqual(fresh.map(item => item.name), names);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-order-'));
+    fs.writeFileSync(path.join(dir, 'tdt-es-domestic-channels.json'), JSON.stringify(raw.map(name => ({
+        name, id: catalog.key(name), sources: []
+    }))));
+    fs.writeFileSync(path.join(dir, 'tdt-settings.json'), JSON.stringify({ resume: true, last: { es: 'cuatro' } }));
+    const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); } }, () => {});
+    t.after(() => { tdt.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    assert.equal(await tdt.prepareChannels(() => true), 'ready');
+    assert.deepEqual(tdt.state.channels.map(item => item.name), names);
+    assert.equal(tdt.selected().id, 'cuatro');
+    assert.deepEqual(catalog.orderChannels('pt', [{ name: 'RTP Notícias' }, { name: 'RTP 1 HD' }, { name: 'TVI' }])
+        .map(item => item.name), ['RTP 1 HD', 'TVI', 'RTP Notícias']);
+});
+
+test('Cuatro requests the official emission when selected and discards it if the card closes', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-cuatro-'));
+    fs.writeFileSync(path.join(dir, 'tdt-es-domestic-channels.json'), JSON.stringify([
+        { name: 'Cuatro', id: 'cuatro', epg: 'Cuatro.TV', sources: [] }
+    ]));
+    const requests = [], starts = [];
+    const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); },
+        tdtMediaset(code) {
+            assert.equal(code, 'CT');
+            let resolve;
+            const request = { result: new Promise(done => { resolve = done; }), resolve,
+                cancel() { this.cancelled = true; } };
+            requests.push(request);
+            return request;
+        },
+        tdtPlayer: { start(sources, changed) { starts.push(sources); changed('playing'); }, stop() {} }
+    }, () => {});
+    t.after(() => { tdt.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    tdt.update(Date.now(), true);
+    assert.equal(requests.length, 0);
+    tdt.press(false);
+    assert.equal(requests.length, 1);
+    tdt.update(Date.now(), false);
+    assert.equal(requests[0].cancelled, true);
+    requests[0].resolve(['https://example.com/old.m3u8']);
+    await delay(5);
+    assert.deepEqual(starts, []);
+    tdt.update(Date.now(), true);
+    tdt.press(false);
+    assert.equal(requests.length, 2);
+    requests[1].resolve(['https://example.com/current.m3u8']);
+    await eventually(() => tdt.state.playback === 'playing');
+    assert.deepEqual(starts, [['https://example.com/current.m3u8']]);
+});
+
+test('Mediaset authorizes Cuatro before requesting DAI and rejects an unexpected manifest host', async () => {
+    const { resolveMediaset } = require('../../native/javi-carlab/tdt-mediaset');
+    const requests = [];
+    const request = async (url, body, auth) => {
+        requests.push({ url, body, auth });
+        if (requests.length === 1) return { isOk: true, response: { sid: 'test&session', beToken: 'test-token' } };
+        if (requests.length === 2) return { isOk: true, response: { dai: { assetKey: 'test-asset' } } };
+        return { stream_manifest: 'https://directos.mediasetinfinity.es/test/live.m3u8' };
+    };
+    assert.deepEqual(await resolveMediaset('CT', request), ['https://directos.mediasetinfinity.es/test/live.m3u8']);
+    assert.equal(requests[1].body.channelCode, 'CT');
+    assert.equal(new URL(requests[1].url).searchParams.get('sid'), 'test&session');
+    assert.equal(requests[2].auth, undefined);
+    assert.equal(new URL(requests[2].url).hostname, 'dai.google.com');
+    requests.length = 0;
+    await assert.rejects(resolveMediaset('CT', async (...args) => {
+        const value = await request(...args);
+        return requests.length === 3 ? { stream_manifest: 'https://example.com/live.m3u8' } : value;
+    }), /mediaset-manifest/);
+});
+
+test('the Spanish catalogue keeps distinct signals with shared programme IDs', () => {
+    const rows = [
+        ['Canal Sur Andalucía', 'CanalSurA.TV', 'andalucia'], ['Canal Sur 2 Accesible', 'CanalSurA.TV', 'accesible'],
+        ['La 8 Ávila', 'La8CyL.TV', 'avila'], ['La 8 Bierzo', 'La8CyL.TV', 'bierzo'],
+        ['La 8 Bierzo', 'La8CyL.TV', 'bierzo-backup']
+    ];
+    const source = rows.map(([name, epg_id, ref]) => ({ name, epg_id,
+        options: [{ format: 'm3u8', url: 'https://example.com/' + ref + '.m3u8' }] }));
+    const json = JSON.stringify({ countries: [{ name: 'Spain', ambits: [{ name: 'Autonómicos', channels: source }] }] });
+    const markdown = '## Autonómicos\n' + rows.map(([name, epg, ref]) =>
+        `| ${name} | [m3u8](https://example.com/${ref}.m3u8) | - | - | ${epg} | - |`).join('\n');
+    const entries = catalog.parseCatalog(json);
+    assert.deepEqual(catalog.parseMarkdown(markdown), entries);
+    assert.deepEqual(entries.map(({ id, epg, sources }) => [id, epg, sources.length]), [
+        ['canalsura', 'CanalSurA.TV', 1], ['canalsura-canalsur2accesible', 'CanalSurA.TV', 1],
+        ['la8cyl', 'La8CyL.TV', 1], ['la8cyl-la8bierzo', 'La8CyL.TV', 2]
+    ]);
+});
+
+test('every verified Mediaset channel selects its own code, with direct-first and country checks', async () => {
+    const channels = [['Cuatro HD', 'Cuatro.TV', 'CT'], ['Telecinco', 'Telecinco.TV', 'T5'],
+        ['Factoría de Ficción HD', '', 'FD'], ['Energy', 'Energy.TV', 'EN'], ['Divinity', 'Divinity.TV', 'DV'],
+        ['Be Mad', 'Bemad.TV', 'BM'], ['Boing', 'Boing.TV', 'BO']];
+    const never = () => assert.fail('unexpected network request');
+    for (const [name, epg, expected] of channels) {
+        const item = { name, epg, sources: [] };
+        assert.deepEqual(await catalog.resolveSources(item, never, 'es', code => [code]), [expected]);
+        assert.deepEqual(await catalog.resolveSources(item, never, 'it', never), []);
+        item.sources = ['https://example.com/direct.m3u8'];
+        assert.equal(await catalog.resolveSources(item, never, 'es', never), item.sources);
+    }
+    const { resolveMediaset } = require('../../native/javi-carlab/tdt-mediaset');
+    await assert.rejects(resolveMediaset('UNKNOWN', never), /mediaset-channel/);
+    assert.deepEqual(await catalog.resolveSources({ name: 'Mediaset Comedia', sources: [] }, never, 'es', never), []);
+});
+
+test('the confirmed Spanish alternatives are selected only without a direct source', async () => {
+    const never = () => assert.fail('unexpected provider lookup');
+    for (const [name, network] of [['EsTuTele', '16818'], ['12TV Alicante', '16126'],
+        ['TeleVigo', '16113'], ['Cocina Familiar', '16114']]) {
+        const item = { name, sources: [] };
+        const [source] = await catalog.resolveSources(item, never, 'es', never);
+        const url = new URL(source);
+        assert.equal(url.protocol, 'https:');
+        assert.equal(url.port, '');
+        assert.equal(url.searchParams.get('network_id'), network);
+        assert.deepEqual([...url.searchParams.keys()], ['network_id', 'live', 'avod']);
+        assert.deepEqual(await catalog.resolveSources(item, never, 'pt', never), []);
+        item.sources = ['https://example.com/main.m3u8'];
+        assert.equal(await catalog.resolveSources(item, never, 'es', never), item.sources);
+    }
+});
+
 test('player channel picker waits for confirmation and selecting the current channel does not retune', async (t) => {
     const tuned = [];
     const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, tdtPlayer: {

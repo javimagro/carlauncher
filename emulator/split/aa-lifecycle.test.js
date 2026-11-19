@@ -185,7 +185,10 @@ function formatFixture(extra) {
             };
         },
         input: {
-            setVisible(value) { calls.push('input-' + value); inputVisible = value; },
+            setVisible(value) {
+                calls.push('input-' + value); inputVisible = value;
+                if (!value && extra.inputStop) return extra.inputStop.promise;
+            },
             ready: () => inputVisible, setFocus() {}, close: () => Promise.resolve(), touch: () => true
         }
     });
@@ -215,6 +218,16 @@ test('synchronous underlay ready still assigns its release owner before acquirin
     f.focusCallbacks[0]({ state: 'ready' }); await tick();
     assert.equal(f.calls.filter(value => value === 'configure').length, 1);
     await f.api.close(); assert.equal(f.calls.filter(value => value === 'focus-stop').length, 1);
+});
+
+test('closing MAIN waits for the Android Auto input worker to withdraw', async () => {
+    const inputStop = deferred(), f = formatFixture({ inputStop });
+    await f.ready(); f.callbacks[0]('playing');
+    const closed = f.api.close(); await tick();
+    assert(f.calls.includes('format-close'));
+    assert.equal(f.calls.includes('focus-stop'), false);
+    inputStop.resolve(); await closed;
+    assert(f.calls.includes('focus-stop'));
 });
 
 test('hiding while acquiring cancels the owner immediately and retains underlay until video and restoration finish', async () => {

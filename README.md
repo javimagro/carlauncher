@@ -1,5 +1,14 @@
 # BMWLauncher para iDrive 8
 
+## 0.2.23 · Radio FM/DAB, Android Auto y TDTWorld
+
+- **Radio BMW.** Selección desde el panel y la lista, filtro de favoritos guardado y activación al abrir fuera de TDTWorld. Se priorizan los logos del coche y se incluyen 32 de respaldo.
+- **Android Auto.** Espera al arranque de la sesión, conserva el contexto hasta completar la devolución a iDrive y recupera la entrada táctil al reabrir tras un fallo transitorio.
+- **TDTWorld.** Orden de Carlinkit, Cuatro y otras señales recuperadas, y separación de emisoras que comparten guía.
+- **Batería del i4.** El diagnóstico incorpora energía disponible y capacidad útil. La prueba local de los mensajes eléctricos de Android Auto queda disponible para el desarrollo del envío y las paradas de carga.
+
+En MGU Store → `javimagro/carlauncher` → **Tags** → **Comprobar ahora**, actualiza **BMWLauncher** y **Motor gráfico** a **0.2.23**. Si necesitas volver atrás, reinstala ambos componentes de la [0.2.22](https://github.com/javimagro/carlauncher/releases/tag/v0.2.22). [Release y ZIP USB de 0.2.23](https://github.com/javimagro/carlauncher/releases/tag/v0.2.23).
+
 ## 0.2.22 · Recuperación de datos, Android Auto y audio
 
 Reúne las tareas integradas de navegación, Radio, TDT, cockpit y asistente, y el icono de navegación reducido. La telemetría reintenta el descubrimiento, las suscripciones rechazadas y las operaciones que agotan su plazo; descarta respuestas de conexiones antiguas y espera el cierre nativo antes de sustituirlas. Android Auto espera una muestra reciente del contexto HMI durante el arranque, sin relajar la restauración del foco ni del formato. La salida PCM conserva hasta 100 ms de muestras ante contrapresión breve; si se supera ese límite, retira esa salida y aplica los reintentos de audio existentes, manteniendo el vídeo.

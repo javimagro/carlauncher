@@ -1,6 +1,6 @@
 'use strict';
 
-const { filters } = require('./radio-ui');
+const { filters, controls, listLayout } = require('./radio-ui');
 const white = '#f2f7fb', muted = '#a9b8c7', accent = '#3ed8c2', gold = '#ffa327';
 const center = { align: 'center' };
 function fit(cv, value, x, y, size, width, color, align) {
@@ -12,6 +12,10 @@ function icon(cv, type, x, y, color) {
     const line = (p) => cv.polyline(p.map((v) => [x + v[0], y + v[1]]), 2.5, color);
     if (type === 'favorites') {
         line([[0, 9], [-11, -1], [-11, -7], [-7, -10], [-2, -10], [0, -6], [2, -10], [7, -10], [11, -7], [11, -1], [0, 9]]);
+    } else if (type === 'previous' || type === 'next') {
+        const direction = type === 'previous' ? -1 : 1;
+        line([[-7 * direction, -9], [4 * direction, 0], [-7 * direction, 9]]);
+        line([[9 * direction, -9], [9 * direction, 9]]);
     } else if (type === 'popular') {
         const p = []; for (let i = 0; i <= 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 5 : 12; p.push([Math.cos(a) * r, Math.sin(a) * r]); } line(p);
     } else if (type === 'music') {
@@ -24,7 +28,7 @@ function icon(cv, type, x, y, color) {
     }
 }
 function logo(cv, ui, s, x, y, size) {
-    const image = s && ui.images.get(s.key);
+    const image = ui.stationImage(s);
     if (image) cv.image(image, x, y, size, size, 9);
     else {
         cv.roundRect(x, y, size, size, 9, '#183c50'); icon(cv, 'radio', x + size / 2, y + size / 2, muted);
@@ -38,7 +42,7 @@ function drawRadio(cv, x, y, w, h, ui, now) {
     }
     const state = ui.state, data = state.frame, current = data.current;
     if (state.mode === 'list') {
-        const bw = (w - 47) / 4;
+        const layout = listLayout(w, h), bw = layout.filterWidth;
         filters.forEach((type, i) => {
             const left = x + 16 + i * (bw + 5), on = state.filters.includes(type);
             cv.roundRect(left, y + 48, bw, 52, 7, '#21495c');
@@ -47,14 +51,15 @@ function drawRadio(cv, x, y, w, h, ui, now) {
         });
         const rows = ui.rows();
         rows.slice(state.top, state.top + 4).forEach((s, i) => {
-            const at = y + 112 + i * 84, focused = state.index === state.top + i;
-            cv.roundRect(x + 16, at, w - 32, 80, 8, focused ? '#51899b' : '#102331');
-            cv.rampRect(x + 18, at + 2, w - 36, 76, 7, focused ? ['#1c5066', '#142e40'] : ['#162e40', '#0c1927']);
-            if (focused) cv.line(x + 22, at + 77, x + w * .42, at + 77, 3, accent);
+            const at = y + layout.rowTop + i * layout.rowStep, focused = state.index === state.top + i;
+            const rowHeight = layout.rowStep - 4;
+            cv.roundRect(x + 16, at, w - 32, rowHeight, 8, focused ? '#51899b' : '#102331');
+            cv.rampRect(x + 18, at + 2, w - 36, rowHeight - 4, 7, focused ? ['#1c5066', '#142e40'] : ['#162e40', '#0c1927']);
+            if (focused) cv.line(x + 22, at + rowHeight - 3, x + w * .42, at + rowHeight - 3, 3, accent);
             logo(cv, ui, s, x + 28, at + 12, 54);
             fit(cv, s.name, x + 93, at + 28, 20, w - 159, ui.favorite(s) ? gold : white);
             fit(cv, s.title || s.artist || (s.frequency ? s.frequency.toFixed(1).replace('.', ',') + ' MHz' : s.band), x + 93, at + 52, 13, w - 159, muted);
-            if (current && current.key === s.key && data.active) cv.circle(x + w - 45, at + 65, 3, accent);
+            if (current && current.memoryKey === s.memoryKey && data.active) cv.circle(x + w - 45, at + 65, 3, accent);
             icon(cv, 'favorites', x + w - 45, at + 31, ui.favorite(s) ? gold : '#657c8d');
         });
         if (!rows.length) {
@@ -63,12 +68,12 @@ function drawRadio(cv, x, y, w, h, ui, now) {
             if (detail) fit(cv, detail, x + w / 2, y + 256, 13, w - 36, muted, center);
         }
         fit(cv, state.message || (rows.length + ' emisoras · FM/DAB'), x + 18, y + h - 58, 12, w - 36, muted);
-        cv.roundRect(x + 16, y + h - 47, w - 32, 34, 6, '#21495c');
+        cv.roundRect(x + layout.back.x, y + layout.back.y, layout.back.w, layout.back.h, 6, '#21495c');
         cv.text('Volver', x + w / 2, y + h - 24, 15, white, center);
         return;
     }
     fit(cv, current ? current.name : 'Radio BMW', x + 26, y + 70, 22, w - 52, current && ui.favorite(current) ? gold : white);
-    const entry = current && data.stations.find((s) => s.key === current.key && s.programme), programme = entry && entry.programme;
+    const entry = current && data.stations.find((s) => s.memoryKey === current.memoryKey && s.programme), programme = entry && entry.programme;
     const elapsed = programme && Number.isFinite(data.clock) ? (data.clock - programme.start + 86400) % 86400 : null;
     const duration = programme && (programme.end - programme.start + 86400) % 86400;
     const epg = elapsed !== null && duration > 0 && elapsed <= duration;
@@ -87,11 +92,18 @@ function drawRadio(cv, x, y, w, h, ui, now) {
     fit(cv, status, x + w / 2, y + 369, 14, w - 40, muted, center);
     const barWidth = (w - 64) / (64 * 3), gap = barWidth * 1.4, total = 64 * barWidth + 63 * gap;
     ui.levels.forEach((level, i) => {
-        const size = level * 57;
-        cv.roundRect(x + (w - total) / 2 + i * (barWidth + gap), y + h - 86 - size / 2, barWidth, Math.max(1.4, size), 1, accent);
+        const size = level * 40;
+        cv.roundRect(x + (w - total) / 2 + i * (barWidth + gap), y + h - 102 - size / 2, barWidth, Math.max(1.4, size), 1, accent);
     });
-    cv.text('Emisoras', x + 26, y + h - 23, 15, white);
-    icon(cv, 'favorites', x + w - 43, y + h - 28, current && ui.favorite(current) ? gold : muted);
-    fit(cv, state.message || data.listError || '', x + w / 2, y + h - 53, 12, w - 38, muted, center);
+    const buttons = controls(w, h);
+    for (const type of ['previous', 'list', 'next', 'favorite']) {
+        const button = buttons[type], cx = x + button.x + button.w / 2, cy = y + button.y + button.h / 2;
+        const active = type === 'list' || (type === 'favorite' ? current : ui.adjacent(type === 'next' ? 1 : -1));
+        cv.roundRect(x + button.x, y + button.y, button.w, button.h, 7, active ? '#274e64' : '#172d3d');
+        if (type === 'list') cv.text('Emisoras', cx, cy + 6, 16, white, center);
+        else if (type === 'favorite') icon(cv, 'favorites', cx, cy, current && ui.favorite(current) ? gold : muted);
+        else icon(cv, type, cx, cy, active ? white : muted);
+    }
+    fit(cv, state.message || data.listError || '', x + w / 2, y + h - 62, 12, w - 38, muted, center);
 }
 module.exports = { drawRadio };
