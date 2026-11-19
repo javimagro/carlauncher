@@ -49,7 +49,7 @@ function save(file, value) {
     }
 }
 
-function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtCuatro, now = Date.now, photo = loadPhoto }, change) {
+function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtMediaset, now = Date.now, photo = loadPhoto }, change) {
     const file = (name) => tdtDirectory && path.join(tdtDirectory, 'tdt-' + name);
     const store = loadJson(file('settings.json'), {});
     const prefs = {
@@ -288,11 +288,11 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtCuatro
         if (!tdtPlayer) { state.playback = 'unavailable'; finishOverlay(); change(); return; }
         let lookup;
         try {
-            const cuatro = tdtCuatro && (() => {
-                lookup = sourceLookup = tdtCuatro();
+            const mediaset = tdtMediaset && (code => {
+                lookup = sourceLookup = tdtMediaset(code);
                 return lookup.result;
             });
-            const sources = await (fixture ? item.sources : catalog.resolveSources(item, get, prefs.country, cuatro));
+            const sources = await (fixture ? item.sources : catalog.resolveSources(item, get, prefs.country, mediaset));
             if (request !== tuning) return;
             if (!sources.length) { state.playback = 'no-source'; finishOverlay(); }
             else tdtPlayer.start(sources, (status, diagnostic) => {

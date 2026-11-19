@@ -135,7 +135,7 @@ const session = createSession(gpu, {
         } : null
     },
     tdtDirectory: dataDirectory,
-    tdtCuatro: resolveTdtCuatro,
+    tdtMediaset: resolveTdtMediaset,
     tdtPlayback: {
         nativeAudio: bmwAudio,
         ffmpeg: process.env.JAVI_TDT_FFMPEG || path.join(__dirname, 'bin/ffmpeg'),
@@ -216,16 +216,16 @@ async function startTdtProxy() {
     });
 }
 
-function resolveTdtCuatro() {
+function resolveTdtMediaset(code) {
     let child, cancelled = false;
     const result = onlineApp().then(uid => {
         if (cancelled) return [];
         return new Promise((resolve, reject) => {
-            child = execFile(process.execPath, [path.join(__dirname, 'tdt-cuatro.js')],
+            child = execFile(process.execPath, [path.join(__dirname, 'tdt-mediaset.js'), code],
                 { uid, gid: uid, maxBuffer: 12 * 1024, timeout: 14000 }, (error, stdout) => {
                     child = undefined;
                     if (cancelled) return resolve([]);
-                    if (error) return reject(new Error('Cuatro no disponible en Mediaset'));
+                    if (error) return reject(new Error('Canal no disponible en Mediaset'));
                     try { resolve(JSON.parse(stdout)); } catch (err) { reject(err); }
                 });
         });

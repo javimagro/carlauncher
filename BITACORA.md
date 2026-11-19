@@ -1,5 +1,14 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Auditoría de canales españoles frente a Carlinkit
+
+- Comparados los 463 registros del catálogo en vivo antes del cambio con los 453 del catálogo español empaquetado por TDTWorld Android en la referencia local `456bb5d` (`channels_es.bin`, SHA-256 `e3913fbf7afb73115b4fbb3691f65d51c96274f275665d9efc076d8b2ba3ce04`). Se cotejaron nombres normalizados e IDs EPG, sin asumir que una coincidencia de guía implica la misma emisión. El catálogo presentaba 238 filas sin HLS/DASH directo admitido; varias se resuelven mediante sus proveedores. Se probaron señales nacionales, autonómicas y las alternativas candidatas de Carlinkit.
+- **Mediaset.** Telecinco, FDF, Energy, Divinity, Be Mad y Boing aparecían sin HLS/DASH admitido y carecían de la resolución que ya se había añadido a Cuatro. Los siete reciben su propio código en el conector compartido `tdt-mediaset.js`, con prioridad a cualquier fuente directa existente. Con Node 8.16.2, el proxy TDT local y FFmpeg 9.0.2 todos entregaron audio y 50 fotogramas en dos segundos. En el PC también se comprobaron las seis cadenas Atres, La 1, La 2, 24h, Clan, Teledeporte, TRECE y El Toro TV. laSexta y Mega funcionaron con una alternativa anunciada por Atres.
+- **Alternativas abiertas.** EsTuTele, 12TV Alicante, TeleVigo y Cocina Familiar tenían una alternativa HLS en Carlinkit. Se comprobaron imagen identificable, audio y vídeo en el proxy con los parámetros mínimos de la señal. En una toma más larga, 12TV Alicante entregó 149 fotogramas y audio en ocho segundos. Se conservan los límites del proxy y la selección directa primero. Telemadrid y Aragón TV quedan pendientes de fuente compatible validada. Varias señales locales anuncian puertos no estándar o requieren cabeceras del reproductor original.
+- **Identidad del canal.** TDTChannels usa en seis grupos el mismo ID EPG para canales con nombre distinto. El catálogo español ya no fusiona sus fuentes, entre ellas Canal Sur Andalucía/Canal Sur 2 Accesible, Teledeporte/+tdp y las ocho ediciones de La 8. El primero conserva su ID y ambos conservan la guía. Las filas pasan de 463 a 475 al refrescar en el PC.
+- **Verificación.** `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 479/479, incluido enrutamiento por código, precedencia de fuentes, identidad de señales y preservación de la caché. Node 8.16.2 pasó sintaxis y carga de bibliotecas; el ensayo real usa el proxy TDT y DNS del PC. Falta validar conectividad, imagen y sonido en la MGU.
+
+
 ## 2026-11-19 · Arranque AA y orden de TDTWorld
 
 - En 0.2.22, el usuario confirma sensores correctos y AA original a pantalla completa. Dentro de BMWLauncher, AA termina con un error genérico. Cuatro no se ve y el orden de TDTWorld difiere de Carlinkit.

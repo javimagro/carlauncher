@@ -314,7 +314,8 @@ test('Cuatro requests the official emission when selected and discards it if the
     ]));
     const requests = [], starts = [];
     const tdt = createTdt({ tdtDirectory: dir, get: async () => { throw new Error('offline'); },
-        tdtCuatro() {
+        tdtMediaset(code) {
+            assert.equal(code, 'CT');
             let resolve;
             const request = { result: new Promise(done => { resolve = done; }), resolve,
                 cancel() { this.cancelled = true; } };
@@ -342,7 +343,7 @@ test('Cuatro requests the official emission when selected and discards it if the
 });
 
 test('Mediaset authorizes Cuatro before requesting DAI and rejects an unexpected manifest host', async () => {
-    const { resolveCuatro } = require('../../native/javi-carlab/tdt-cuatro');
+    const { resolveMediaset } = require('../../native/javi-carlab/tdt-mediaset');
     const requests = [];
     const request = async (url, body, auth) => {
         requests.push({ url, body, auth });
@@ -350,16 +351,69 @@ test('Mediaset authorizes Cuatro before requesting DAI and rejects an unexpected
         if (requests.length === 2) return { isOk: true, response: { dai: { assetKey: 'test-asset' } } };
         return { stream_manifest: 'https://directos.mediasetinfinity.es/test/live.m3u8' };
     };
-    assert.deepEqual(await resolveCuatro(request), ['https://directos.mediasetinfinity.es/test/live.m3u8']);
+    assert.deepEqual(await resolveMediaset('CT', request), ['https://directos.mediasetinfinity.es/test/live.m3u8']);
     assert.equal(requests[1].body.channelCode, 'CT');
     assert.equal(new URL(requests[1].url).searchParams.get('sid'), 'test&session');
     assert.equal(requests[2].auth, undefined);
     assert.equal(new URL(requests[2].url).hostname, 'dai.google.com');
     requests.length = 0;
-    await assert.rejects(resolveCuatro(async (...args) => {
+    await assert.rejects(resolveMediaset('CT', async (...args) => {
         const value = await request(...args);
         return requests.length === 3 ? { stream_manifest: 'https://example.com/live.m3u8' } : value;
-    }), /cuatro-manifest/);
+    }), /mediaset-manifest/);
+});
+
+test('the Spanish catalogue keeps distinct signals with shared programme IDs', () => {
+    const rows = [
+        ['Canal Sur Andalucía', 'CanalSurA.TV', 'andalucia'], ['Canal Sur 2 Accesible', 'CanalSurA.TV', 'accesible'],
+        ['La 8 Ávila', 'La8CyL.TV', 'avila'], ['La 8 Bierzo', 'La8CyL.TV', 'bierzo'],
+        ['La 8 Bierzo', 'La8CyL.TV', 'bierzo-backup']
+    ];
+    const source = rows.map(([name, epg_id, ref]) => ({ name, epg_id,
+        options: [{ format: 'm3u8', url: 'https://example.com/' + ref + '.m3u8' }] }));
+    const json = JSON.stringify({ countries: [{ name: 'Spain', ambits: [{ name: 'Autonómicos', channels: source }] }] });
+    const markdown = '## Autonómicos\n' + rows.map(([name, epg, ref]) =>
+        `| ${name} | [m3u8](https://example.com/${ref}.m3u8) | - | - | ${epg} | - |`).join('\n');
+    const entries = catalog.parseCatalog(json);
+    assert.deepEqual(catalog.parseMarkdown(markdown), entries);
+    assert.deepEqual(entries.map(({ id, epg, sources }) => [id, epg, sources.length]), [
+        ['canalsura', 'CanalSurA.TV', 1], ['canalsura-canalsur2accesible', 'CanalSurA.TV', 1],
+        ['la8cyl', 'La8CyL.TV', 1], ['la8cyl-la8bierzo', 'La8CyL.TV', 2]
+    ]);
+});
+
+test('every verified Mediaset channel selects its own code, with direct-first and country checks', async () => {
+    const channels = [['Cuatro HD', 'Cuatro.TV', 'CT'], ['Telecinco', 'Telecinco.TV', 'T5'],
+        ['Factoría de Ficción HD', '', 'FD'], ['Energy', 'Energy.TV', 'EN'], ['Divinity', 'Divinity.TV', 'DV'],
+        ['Be Mad', 'Bemad.TV', 'BM'], ['Boing', 'Boing.TV', 'BO']];
+    const never = () => assert.fail('unexpected network request');
+    for (const [name, epg, expected] of channels) {
+        const item = { name, epg, sources: [] };
+        assert.deepEqual(await catalog.resolveSources(item, never, 'es', code => [code]), [expected]);
+        assert.deepEqual(await catalog.resolveSources(item, never, 'it', never), []);
+        item.sources = ['https://example.com/direct.m3u8'];
+        assert.equal(await catalog.resolveSources(item, never, 'es', never), item.sources);
+    }
+    const { resolveMediaset } = require('../../native/javi-carlab/tdt-mediaset');
+    await assert.rejects(resolveMediaset('UNKNOWN', never), /mediaset-channel/);
+    assert.deepEqual(await catalog.resolveSources({ name: 'Mediaset Comedia', sources: [] }, never, 'es', never), []);
+});
+
+test('the confirmed Spanish alternatives are selected only without a direct source', async () => {
+    const never = () => assert.fail('unexpected provider lookup');
+    for (const [name, network] of [['EsTuTele', '16818'], ['12TV Alicante', '16126'],
+        ['TeleVigo', '16113'], ['Cocina Familiar', '16114']]) {
+        const item = { name, sources: [] };
+        const [source] = await catalog.resolveSources(item, never, 'es', never);
+        const url = new URL(source);
+        assert.equal(url.protocol, 'https:');
+        assert.equal(url.port, '');
+        assert.equal(url.searchParams.get('network_id'), network);
+        assert.deepEqual([...url.searchParams.keys()], ['network_id', 'live', 'avod']);
+        assert.deepEqual(await catalog.resolveSources(item, never, 'pt', never), []);
+        item.sources = ['https://example.com/main.m3u8'];
+        assert.equal(await catalog.resolveSources(item, never, 'es', never), item.sources);
+    }
 });
 
 test('player channel picker waits for confirmation and selecting the current channel does not retune', async (t) => {

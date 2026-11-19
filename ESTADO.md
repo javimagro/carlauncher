@@ -2,7 +2,7 @@
 
 ## Prueba del i4 y corrección candidata
 
-El usuario confirma que los sensores de 0.2.22 ya funcionan. AA original abre a pantalla completa y el integrado daba error. La corrección espera el arranque de la sesión si el puente aún anuncia `off` y muestra el código del fallo. TDTWorld adopta la prioridad de Carlinkit y resuelve Cuatro mediante Mediaset. Los ensayos locales cubren ambas correcciones. Queda comprobar AA integrado y el directo de Cuatro en el i4. Consulte [la bitácora](BITACORA.md) para las causas y las pruebas.
+El usuario confirma que los sensores de 0.2.22 ya funcionan. AA original abre a pantalla completa y el integrado daba error. La corrección espera el arranque de la sesión si el puente aún anuncia `off` y muestra el código del fallo. TDTWorld adopta la prioridad de Carlinkit, resuelve siete canales de Mediaset, recupera cuatro señales locales mediante HLS y separa las emisiones que comparten guía. Los ensayos locales cubren ambas correcciones. Queda comprobar AA integrado y la reproducción de los canales recuperados en el i4. Consulte [la bitácora](BITACORA.md) para las causas y las pruebas.
 
 ## Versión unificada 0.2.22
 

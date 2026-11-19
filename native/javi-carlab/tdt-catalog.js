@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const zlib = require('zlib');
 const { URL } = require('url');
+const { channelCodes } = require('./tdt-mediaset');
 
 const guideRoot = 'https://raw.githubusercontent.com/javimagro/TdTTv-EPG/epg-data/epg/';
 const catalogUrl = 'https://www.tdtchannels.com/lists/tv.json';
@@ -19,6 +20,11 @@ const atres = {
     mega: ['Mega', '5a6a18357ed1a834493ebf6f'],
     atreseries: ['Atreseries', '5a6a189a7ed1a834493ebf70']
 };
+// Public 443 alternatives from the Spanish Carlinkit catalogue, verified by signal.
+const publica = new Map([
+    ['estutele', 'network_id=16818&live=1&avod=1'], ['12tvalicante', 'network_id=16126&live=1&avod=0'],
+    ['televigo', 'network_id=16113&live=1&avod=0'], ['cocinafamiliar', 'network_id=16114&live=1&avod=0']
+]);
 // Default channel ranks from TDTWorld Carlinkit, CountryCatalogConfig.java (456bb5d).
 const defaultOrder = {
     es: ('la1 la2 antena3 cuatro telecinco lasexta 24h neox nova mega fdf divinity energy bemad').split(' '),
@@ -54,8 +60,12 @@ function key(value) {
     return String(value || '').split('@')[0].normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/tv$/, '');
 }
 
-function isCuatro(item) {
-    return [item.name, item.epg].some(value => /^(cuatro|cuatrohd)$/.test(key(value)));
+function mediasetCode(item) {
+    for (const value of [item.epg, item.name]) {
+        const id = key(String(value || '').replace(/\([^)]*\)|\[[^\]]*\]/g, '')).replace(/(?:hd|sd)$/, '');
+        if (Object.prototype.hasOwnProperty.call(channelCodes, id)) return channelCodes[id];
+        if (id === 'factoriadeficcion') return channelCodes.fdf;
+    }
 }
 
 function mediaUrl(value) {
@@ -95,7 +105,7 @@ function parseCatalog(text) {
             }
         }
     }
-    return unique(entries);
+    return unique(entries, true);
 }
 
 function parseMarkdown(text) {
@@ -116,7 +126,7 @@ function parseMarkdown(text) {
         entries.push(channel(name, epg === '-' ? '' : epg, group,
             (/(https?:\/\/[^)]+)/.exec(logo) || [])[1], sources));
     }
-    return unique(entries);
+    return unique(entries, true);
 }
 
 function parseM3u(text) {
@@ -136,10 +146,15 @@ function parseM3u(text) {
     return unique(entries);
 }
 
-function unique(entries) {
+function unique(entries, separateNamedChannels) {
     const channels = new Map();
     for (const entry of entries) {
         if (!entry) continue;
+        const first = channels.get(entry.id);
+        // Providers can reuse one programme guide for several distinct signals.
+        // Preserve the first channel's ID for existing last-channel preferences.
+        if (separateNamedChannels && first && key(first.name) !== key(entry.name))
+            entry.id += '-' + key(entry.name);
         const existing = channels.get(entry.id);
         if (existing) existing.sources = Array.from(new Set(existing.sources.concat(entry.sources)));
         else channels.set(entry.id, entry);
@@ -178,16 +193,19 @@ async function loadCatalog(country, get) {
     const existing = new Set(entries.map((item) => key(item.name)));
     const missing = Object.keys(atres).filter((id) => !existing.has(id));
     entries.push(...missing.map((id) => channel(atres[id][0], id, categories[0], '', [])));
-    if (!entries.some(isCuatro))
+    if (!entries.some(item => mediasetCode(item) === channelCodes.cuatro))
         entries.push(channel('Cuatro', 'Cuatro.TV', categories[0], '', []));
     return orderChannels(country, unique(entries));
 }
 
-async function resolveSources(item, get, country, cuatro) {
-    if (country === 'es' && !item.sources.length && isCuatro(item))
-        return cuatro ? cuatro() : [];
+async function resolveSources(item, get, country, mediaset) {
+    if (item.sources.length) return item.sources;
+    const code = country === 'es' && mediasetCode(item);
+    if (code) return mediaset ? mediaset(code) : [];
+    const fallback = country === 'es' && publica.get(key(item.name));
+    if (fallback) return ['https://stream-us-east-1.getpublica.com/playlist.m3u8?' + fallback];
     const entry = atres[key(item.name)];
-    if (!entry || item.sources.length) return item.sources;
+    if (!entry) return item.sources;
     const host = 'https://api.atresplayer.com';
     let url = host + '/client/v1/page/channel/' + entry[1];
     const visited = new Set();
