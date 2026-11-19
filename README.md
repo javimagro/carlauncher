@@ -1,5 +1,12 @@
 # BMWLauncher para iDrive 8
 
+## 0.2.24 · Cuadro, trayecto y guiado en segundo plano
+
+- **Cuadro.** El widget se ofrece desde el arranque de iDrive. Mientras esté seleccionado, el tiempo meteorológico, la temperatura HV, la potencia y el consumo se actualizan al salir de BMWLauncher.
+- **Trayecto.** Al volver se mantiene la sesión con sus seis indicadores y el historial de altura. El guiado BMW sigue indicando la distancia y el tiempo restantes, la previsión de batería disponible y las paradas completadas de la ruta activa.
+
+En MGU Store → `javimagro/carlauncher` → **Tags** → **Comprobar ahora**, actualiza **BMWLauncher** y **Motor gráfico** a **0.2.24**. Para el widget, selecciona **Cluster renderer** desde **Contenido** en el cuadro. Queda por comprobar si iDrive recupera esa selección al apagar y encender el i4. Para volver atrás, reinstala la app y el motor de la versión 0.2.23. [Release y ZIP USB de 0.2.24](https://github.com/javimagro/carlauncher/releases/tag/v0.2.24) · [Versión 0.2.23](https://github.com/javimagro/carlauncher/releases/tag/v0.2.23).
+
 ## 0.2.23 · Radio FM/DAB, Android Auto y TDTWorld
 
 - **Radio BMW.** Selección desde el panel y la lista, filtro de favoritos guardado y activación al abrir fuera de TDTWorld. Se priorizan los logos del coche y se incluyen 32 de respaldo.

@@ -1,4 +1,10 @@
-# Estado de BMWLauncher · 19-11-2026
+# Estado de BMWLauncher · 20-11-2026
+
+## Versión 0.2.24
+
+- App y motor **0.2.24**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. La PR #24 incorpora el cuadro, el trayecto y la observación del guiado en segundo plano.
+- El cuadro se ofrece al arrancar y actualiza los datos mientras está seleccionado. Trayecto sigue recibiendo las lecturas originales de BMW. El resumen de la ruta activa usa sus datos vigentes y las paradas que BMW confirma como completadas.
+- Queda comprobar en el i4 la continuidad al ir al menú principal y la restauración de la última vista del cuadro tras apagar y encender. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.24).
 
 ## Versión 0.2.23
 
