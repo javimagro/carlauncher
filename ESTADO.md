@@ -4,14 +4,14 @@
 
 - App y motor **0.2.22**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. Mantiene IDs, manifiestos y binarios nativos anteriores. La [release 0.2.22](https://github.com/javimagro/carlauncher/releases/tag/v0.2.22) es el destino del ZIP y `SHA256SUMS.txt`; el hash del commit está en la etiqueta y en el informe de empaquetado.
 - Reconciliados el `main` remoto, los tres worktrees anteriores y la PR16 del icono reducido. El código local antiguo ya estaba integrado o superado; se conserva intacto para no perder trabajo del usuario. Se recuperan las notas pendientes de eRoute/RTTI, sin activar experimentos ni incluir firmware.
-- PR17 reúne recuperación de telemetría, espera de contexto HMI en AA y continuidad PCM. La publicación requiere integrar esa PR y empaquetar el `main` limpio probado. El informe final y la verificación descargada quedan en `dist/release-0.2.22/`, ignorado por Git.
+- **Publicada y descargada de nuevo para verificar:** `v0.2.22`, commit `8d4b9153ca0e0d3751389643592d6bb3d53725a7` de `main`. Integradas PR16 y PR17. ZIP de 166 archivos y 23618809 bytes; SHA-256 `80725275216c5beb03ed1864ea0bbfc23b058e52a2553deb7f8c0d82f4620837`. La etiqueta y ambos adjuntos se han comprobado en GitHub. El informe y la verificación descargada quedan en `dist/release-0.2.22/`, ignorado por Git.
 
 ## Comprobado en local
 
 - **472/472 pruebas** con `node --test --test-concurrency=4 emulator/split/*.test.js`. Diez regresiones iniciales fallan contra los módulos anteriores; la nueva suite cubre conexión/reconexión, llamadas detenidas, baja/cierre, respuestas tardías, ocultación/reapertura inmediata y contrapresión PCM.
 - **123 archivos JS instalados** pasan sintaxis Node **8.16.2**; cargan los tres módulos de producción modificados. La telemetría actualizada tras la última revisión vuelve a pasar sintaxis/carga.
 - HLS sintético con FFmpeg **9.0.2** y Node **8.16.2**: 250 cuadros, cero vaciados/reconexiones y 14 avances durante bloqueo deliberado de UI. Los bytes PCM recibidos no acreditan sonido. No se presenta la diferencia de tiempos del PC como mejora medida en MGU.
-- Lector Store en Node 8: cuatro componentes y enlace OAP con donante sintético (21 módulos). ZIP candidato de 166 archivos, versiones/dependencias comprobadas. Se repite la validación sobre el ZIP final y se coteja su descarga tras publicar.
+- Lector Store en Node 8: cuatro componentes y enlace OAP con donante sintético (21 módulos). ZIP final de 166 archivos, versiones/dependencias comprobadas. CRC y contenido cotejados contra el commit; descarga pública y SHA-256 comprobados.
 
 ## Cambios y límites
 
