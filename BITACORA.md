@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-19 · Cuadro y trayecto en segundo plano
+
+- Al salir al menú de iDrive, el ciclo de la pantalla central cerraba Cluster renderer, detenía los observadores OAP y borraba la altura acumulada. La nueva prueba de sesión reproducía la falta de lecturas al arrancar con la pantalla central cerrada.
+- El motor ofrece el widget al arrancar y conserva la capa al volver a iDrive. El instalador activa el arranque automático OAP. El historial de altura sigue muestreando al ocultar la pantalla central y se recupera tras un reinicio del motor dentro del mismo arranque, previa comprobación del contador BMW. Las observaciones del guiado continúan y la ruta activa permanece bajo control de BMW.
+- `node --test --test-concurrency=2 emulator/split/*.test.js` pasó 505 pruebas. Las regresiones cubren el arranque del cuadro sin abrir BMWLauncher, cambios de visibilidad, potencia bajo demanda, viaje y GPS, guiado activo y bloqueo de órdenes ocultas. Se comprobó la sintaxis de los módulos instalados modificados con Node 8.16.2. La comprobación en el i4 sigue pendiente, incluida la recuperación de la última selección del cuadro tras apagar y encender.
+
 ## 2026-11-19 · Integración de BMWLauncher 0.2.23
 
 - Reúne PR19 (AA y TDTWorld), PR20 (energía del i4 y ensayo eléctrico local de AA) y PR21 (Radio FM/DAB). Se conservan las entradas de las tres tareas al resolver los conflictos de bitácora.

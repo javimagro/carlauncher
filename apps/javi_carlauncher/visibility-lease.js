@@ -4,16 +4,17 @@ const fs = require('fs');
 const file = '/run/javi-carlab/aa-visible.lease';
 const lifetime = 700;
 
-function age(stat, now) {
+function age(stat, now, maxAge = lifetime) {
     if (!stat || !stat.isFile() || stat.uid !== 0 || (stat.mode & 0o022)) return null;
     const value = now - stat.mtime.getTime();
-    return Number.isFinite(value) && value >= 0 && value < lifetime ? value : null;
+    return Number.isFinite(value) && value >= 0 && value < maxAge ? value : null;
 }
 
 // The root renderer owns this lease. OAP observes it without creating or renewing it.
 function observeLease(changed, options) {
     options = options || {};
     const inspect = options.lstat || fs.lstat, clock = options.now || Date.now;
+    const maxAge = options.lifetime || lifetime;
     let closed = false, pending = false, visible = false, expiry, revision = 0, refreshing;
     function show(next) { if (!closed && next !== visible) { visible = next; changed(next); } }
     function finishRefresh(value) {
@@ -35,13 +36,13 @@ function observeLease(changed, options) {
             if (started !== revision) { if (refreshing) poll(); return; }
             if (refreshing && clock() >= refreshing.until) { expireRefresh(); return; }
             clearTimeout(expiry);
-            const elapsed = error ? null : age(stat, clock());
+            const elapsed = error ? null : age(stat, clock(), maxAge);
             show(elapsed !== null);
-            if (elapsed !== null) expiry = setTimeout(() => { expiry = undefined; show(false); }, lifetime - elapsed);
+            if (elapsed !== null) expiry = setTimeout(() => { expiry = undefined; show(false); }, maxAge - elapsed);
             finishRefresh(elapsed !== null);
         });
     }
-    const timer = setInterval(poll, 250); poll();
+    const timer = setInterval(poll, options.pollMs || 250); poll();
     return {
         refresh(done) {
             if (closed) { done(false); return; }

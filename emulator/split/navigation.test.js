@@ -2,11 +2,12 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createProbe, services, tripSummary, polyline } = require('../../apps/javi_carlauncher/navegacion-bmw');
+const { createProbe, report, services, tripSummary, polyline } = require('../../apps/javi_carlauncher/navegacion-bmw');
 const { consume, createNavigation, decodePolyline, routeGeometry, validate } = require('../../native/javi-carlab/navigation-model');
 const { drawNavigation, projection, actionAt, toggle, controls } = require('../../native/javi-carlab/navigation-view');
 const { Recorder } = require('../../native/javi-carlab/vendor/kit_record');
-const { EventEmitter } = require('node:events');
+const { EventEmitter, once } = require('node:events');
+const net = require('node:net');
 const createSession = require('../../native/javi-carlab/drivehub-session');
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const encoded = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';
@@ -50,7 +51,7 @@ test('navigation removes stale data and never presents endpoint-mismatched or in
     assert.equal(model.snapshot(2000).points.length, 0);
     model.receive(null, 3000); assert.equal(model.snapshot(3000).state, 'unavailable');
 });
-function rig(state) {
+function rig(state, create = true) {
     const callbacks = {}, timers = [], calls = [], disposed = [], removed = [];
     const values = { guidanceState: state, currentRoute: { sessionID: 1, routeHandle: 2 },
         allDestinationsInfo: [{ position: Object.assign({ coordinatesValid: true }, end), isCheckeredFlag: true,
@@ -71,11 +72,45 @@ function rig(state) {
         proxies[spec.name] = p;
     });
     let time = 1000;
-    const probe = createProbe({ async buildAndInitTypedProxy(name, instance) { assert.equal(instance, name === services.light.name ? '1' : 'Main_Instance'); return proxies[name]; } },
+    const builders = { async buildAndInitTypedProxy(name, instance) {
+        assert.equal(instance, name === services.light.name ? '1' : 'Main_Instance');
+        return proxies[name];
+    } };
+    const probe = create && createProbe(builders,
         { now: () => time, every(fn, ms) { const t = { fn, ms }; timers.push(t); return t; }, cancel(t) { t.cancelled = true; } });
-    return { probe, callbacks, timers, calls, disposed, removed, values, proxies,
+    return { probe, builders, callbacks, timers, calls, disposed, removed, values, proxies,
         advance(n) { time += n; }, async tick(ms) { timers.filter((t) => !t.cancelled && t.ms === ms).forEach((t) => t.fn()); await flush(); } };
 }
+test('active BMW guidance keeps publishing while hidden and drops commands from closed controls', { timeout: 5000 }, async t => {
+    const r = rig('ACTIVE', false);
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const observer = report(r.builders, { host: '127.0.0.1', port: server.address().port });
+    let peer, next, stopCalls = 0;
+    r.proxies[services.guidance.name].stopGuidance = async () => { stopCalls++; };
+    t.after(() => { observer.show(false); if (peer) peer.destroy(); server.close(); });
+    const connected = once(server, 'connection');
+    observer.setInteractive(true); observer.show(true);
+    [peer] = await connected;
+    r.callbacks.allDestinationsInfo(r.values.allDestinationsInfo);
+    const parse = consume(frame => { if (next) next(frame); });
+    peer.on('data', bytes => assert(parse(bytes)));
+    const waitFrame = predicate => new Promise(resolve => {
+        next = frame => { if (predicate(frame)) { next = undefined; resolve(frame); } };
+    });
+    const first = await waitFrame(frame => frame.state === 'active' && frame.destinations.length && frame.controls);
+    assert.equal(first.destinations[0].metres, 12345);
+
+    observer.setInteractive(false);
+    peer.write('{"request":1,"action":"stop"}\n');
+    r.values.allDestinationsInfo[0].formattedDistance.rawDistance = 7800;
+    r.callbacks.allDestinationsInfo(r.values.allDestinationsInfo);
+    const background = await waitFrame(frame => frame.destinations.length && frame.destinations[0].metres === 7800);
+    assert.equal(background.state, 'active');
+    assert.equal(background.controls, undefined);
+    assert.equal(stopCalls, 0);
+});
 test('BMW adapter exports only the active route, filters other sessions and releases every subscription', async () => {
     const r = rig('INACTIVE'); await flush(); await r.tick(1000); assert.equal(r.calls.length, 0);
     r.callbacks.guidanceState('ACTIVE'); await r.tick(5000); // refresh also re-reads the state
@@ -158,7 +193,8 @@ test('the route view contains no invented roads, identifies missing cartography 
     const dateline = projection([{ latitude: 0, longitude: 179.9 }, { latitude: 0, longitude: -179.9 }], 1);
     assert.ok(dateline.points.every((p) => p.every(Number.isFinite)));
 });
-test('map controls use completed taps, preserve DriveHub input and cancel a gesture when covered', async () => {
+test('map controls use completed taps, preserve DriveHub input and cancel a gesture when covered', t => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1100 });
     class GPU extends EventEmitter {
         constructor() { super(); this.frames = []; }
         frame(cv) { this.frames.push(Array.from(cv.words())); }
@@ -172,17 +208,17 @@ test('map controls use completed taps, preserve DriveHub input and cancel a gest
         const x = toggle.x + 5, y = toggle.y + 5;
         gpu.emit('touch', 'down', x, y); gpu.emit('state', { onScreen: false });
         gpu.emit('state', { onScreen: true }); gpu.emit('touch', 'up', x, y);
-        await new Promise((resolve) => setTimeout(resolve, 45));
+        t.mock.timers.tick(33);
         assert.deepEqual(gpu.frames[gpu.frames.length - 1], initial);
         // A second full tap remains usable after the cancelled gesture.
         gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y);
-        await new Promise((resolve) => setTimeout(resolve, 45));
+        t.mock.timers.tick(33);
         assert.ok(gpu.frames.length > 1);
         assert.notDeepEqual(gpu.frames[gpu.frames.length - 1], initial);
         session.telemetry([{ signal: 'rawPositionData', status: 'sample', sampledAt: Date.now(), freshForMs: 5000,
             fields: { 'position.coordinatesValid': true, 'position.latitude': 40.4168, 'position.longitude': -3.7038 } }]);
         gpu.emit('touch', 'down', x, y); gpu.emit('touch', 'up', x, y);
-        await new Promise((resolve) => setTimeout(resolve, 45));
+        t.mock.timers.tick(33);
         assert.ok(gpu.frames.length > 2);
     } finally { session.close(); }
 });

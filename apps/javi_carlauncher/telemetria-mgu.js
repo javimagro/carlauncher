@@ -250,17 +250,17 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
     let preconditioning;
     let socket;
     let timer;
-    let requested = false, closing = Promise.resolve(true);
+    let requested = false, interactive = false, powerRequested = false, closing = Promise.resolve(true);
 
     function send() {
         if (!probe) return;
         if (!socket) {
             const peer = net.createConnection(endpoint);
             socket = peer;
-            const commands = consumeCommands((command) => {
-                if (peer === socket && preconditioning) preconditioning.command(command).catch(() => {});
+            const commands = consumeCommands((command, owner) => {
+                if (peer === socket && owner && owner === preconditioning) owner.command(command).catch(() => {});
             });
-            peer.on('data', (chunk) => { if (peer !== socket || !commands(chunk)) peer.destroy(); });
+            peer.on('data', (chunk) => { if (peer !== socket || !commands(chunk, preconditioning)) peer.destroy(); });
             peer.on('error', () => {});
             peer.setTimeout(5000, () => peer.destroy());
             peer.on('connect', () => { if (socket === peer) send(); });
@@ -269,11 +269,20 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
         }
         if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
             socket.write(JSON.stringify({ version: 1, records: probe.snapshot().concat(power.snapshot(), power.energySnapshot()),
-                preconditioning: preconditioning.snapshot() }) + '\n');
+                preconditioning: preconditioning ? preconditioning.snapshot() : undefined }) + '\n');
         }
     }
 
     return {
+        setInteractive(on) {
+            interactive = !!on;
+            if (interactive && probe && !preconditioning) preconditioning = createPreconditioning(builders);
+            if (!interactive && preconditioning) { preconditioning.stop(); preconditioning = undefined; }
+        },
+        setPower(on) {
+            powerRequested = !!on;
+            if (probe) power.show(powerRequested);
+        },
         show(on) {
             if (requested === !!on) return;
             requested = !!on;
@@ -281,8 +290,8 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
                 closing.then(safe => {
                     if (!safe || !requested || probe) return;
                     probe = start(builders);
-                    preconditioning = createPreconditioning(builders);
-                    power.show(true);
+                    if (interactive) preconditioning = createPreconditioning(builders);
+                    power.show(powerRequested);
                     timer = setInterval(send, 1000);
                     send();
                 });
@@ -290,7 +299,8 @@ function report(builders, endpoint = '/run/javi-carlab/telemetry.sock') {
                 clearInterval(timer);
                 power.show(false);
                 closing = probe.stop();
-                preconditioning.stop(); preconditioning = undefined;
+                if (preconditioning) preconditioning.stop();
+                preconditioning = undefined;
                 probe = undefined;
                 if (socket) { socket.destroy(); socket = undefined; }
             }

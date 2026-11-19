@@ -128,6 +128,11 @@ test('HV command and telemetry parsers are bounded and preserve old telemetry cl
     const commands = [], receive = consumeCommands((c) => commands.push(c));
     assert(receive(Buffer.from('{"op":"precon'))); assert(receive(Buffer.from('dition","id":"a","enabled":true}\n')));
     assert.equal(commands.length, 1);
+    const owners = [];
+    const splitCommand = consumeCommands((c, owner) => owners.push(owner));
+    assert(splitCommand(Buffer.from('{"op":"precon'), 'old-controls'));
+    assert(splitCommand(Buffer.from('dition","id":"a","enabled":true}\n{"op":"precondition","id":"b","enabled":false}\n'), 'new-controls'));
+    assert.deepEqual(owners, ['old-controls', 'new-controls']);
     for (const s of ['{"op":"other","id":"a","enabled":true}\n', '{"op":"precondition","enabled":1}\n', 'x'.repeat(2050)])
         assert.equal(consumeCommands(() => assert.fail())(Buffer.from(s)), false);
     const frames = [], read = consume((rows, control) => frames.push([rows, control]));
@@ -138,29 +143,37 @@ test('HV command and telemetry parsers are bounded and preserve old telemetry cl
     assert.equal(read(Buffer.from(JSON.stringify({ version: 1, records: [], preconditioning: status({ failure: 'raw remote error' }) }) + '\n')), false);
 });
 
-test('the telemetry connection carries an explicit HV request back to OAP and releases it on hide', { timeout: 5000 }, async (t) => {
+test('telemetry keeps streaming on hide and only carries HV requests from active controls', { timeout: 5000 }, async (t) => {
     const server = net.createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    let disposed = 0, notify, resolveWrite;
+    let disposed = 0, notify, resolveWrite, requests = 0;
     const written = new Promise((resolve) => { resolveWrite = resolve; });
     const sender = report({ async buildTypedProxy() { throw Error('unused probe'); },
         async buildAndInitTypedProxy(name) {
             if (name !== service) throw Error('unused TASU');
-            return { operationMode: { async setValue(value) { resolveWrite(value); notify(sample(1)); } },
+            return { operationMode: { async setValue(value) { requests++; resolveWrite(value); notify(sample(1)); } },
                 statusPredictiveThermalManagement: { async getValue() { return sample(); },
                     async subscribe(cb) { notify = cb; return 1; }, async unsubscribe() {} },
                 async dispose() { disposed++; } };
         }
     }, { host: '127.0.0.1', port: server.address().port });
     let socket; t.after(() => { sender.show(false); if (socket) socket.destroy(); server.close(); });
-    const connected = once(server, 'connection'); sender.show(true); [socket] = await connected;
+    const connected = once(server, 'connection');
+    sender.setInteractive(true); sender.show(true); [socket] = await connected;
+    let receiveFrame;
+    const parse = consume((rows, thermal) => { if (receiveFrame) receiveFrame(thermal); });
+    socket.on('data', (data) => assert(parse(data)));
     const frame = await new Promise((resolve) => {
-        const parse = consume((rows, thermal) => { if (thermal && thermal.available) resolve(thermal); });
-        socket.on('data', (data) => assert(parse(data)));
+        receiveFrame = thermal => { if (thermal && thermal.available) resolve(thermal); };
     });
     assert.equal(frame.mode, 0);
     socket.write(JSON.stringify(command('socket-tap', true)) + '\n');
     assert.deepEqual(await written, { operationModeVWM: 2 });
-    sender.show(false); await flush(); assert.equal(disposed, 1);
+    sender.setInteractive(false); await flush(); assert.equal(disposed, 1);
+    socket.write(JSON.stringify(command('hidden-tap', false)) + '\n');
+    await new Promise(resolve => { receiveFrame = thermal => { if (!thermal) resolve(); }; });
+    assert.equal(requests, 1);
+    const closed = once(socket, 'close');
+    sender.show(false); await closed;
 });
 
 test('HV UI never toggles from missing data, handles stale feedback and shows a failed transport', () => {

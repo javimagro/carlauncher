@@ -361,10 +361,16 @@ function createNavigationUI(options, invalidate) {
             }
             return true;
         },
-        reset() {
+        reset(exiting) {
             gesture = null; knob = undefined; press = false; tilt = undefined; state.assistantEditor = null;
             if (suggestionRequest && suggestionRequest === presentRequest) presentRequest = 0;
             if (state.panel === 'assistant-edit') state.panel = 'assistant-settings';
+            if (exiting) {
+                pending = presentRequest = suggestionRequest = 0;
+                displayRequest = undefined;
+                state.controls = null; state.pending = false;
+                state.panel = 'none'; state.stack = [];
+            }
             tiles.update(state.camera, false);
         },
         close() { closed = true; releaseIcons(); tiles.close(); }

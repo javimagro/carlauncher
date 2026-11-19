@@ -112,18 +112,23 @@ function createPreconditioning(builders, options) {
 
 function consumeCommands(receive) {
     let partial = '';
-    return (chunk) => {
+    let partialOwner;
+    return (chunk, currentOwner) => {
         if (chunk.length > 2048) return false;
         const text = chunk.toString('latin1');
         if (!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(text)) return false;
-        const lines = (partial + text).split('\n'); partial = lines.pop();
+        let owner = partial ? partialOwner : currentOwner;
+        const lines = (partial + text).split('\n');
+        partial = lines.pop();
+        partialOwner = partial ? (lines.length ? currentOwner : owner) : undefined;
         if (partial.length > 1024 || lines.length > 8) return false;
         for (const line of lines) {
             if (line.length > 1024) return false;
             let command; try { command = JSON.parse(line); } catch (_) { return false; }
             if (!command || command.op !== 'precondition' || typeof command.enabled !== 'boolean' ||
                 typeof command.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(command.id)) return false;
-            receive(command);
+            receive(command, owner);
+            owner = currentOwner;
         }
         return true;
     };

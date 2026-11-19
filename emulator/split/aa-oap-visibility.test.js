@@ -74,20 +74,31 @@ test('a stat reply arriving after the refresh deadline is rejected even before i
 });
 function oapFixture() {
     const calls = [], app = new EventEmitter(), state = new EventEmitter();
-    let lease, refresh, leaseClosed = false;
+    let lease, cockpit, refresh, leaseClosed = false, cockpitClosed = false;
     const entry = { getDescription: () => ({ uuid: 'entry' }), init: async () => {}, setAvailability: async () => {} };
     state.updateResources = async () => {};
-    app.rhmiApplication = { getByName: () => state, mapEntryState: async () => {}, openEntryState: async () => {} };
+    app.rhmiApplication = { getByName: () => state, mapEntryState: async () => {}, openEntryState: async () => calls.push(['open']) };
     app.appDescription = { application: { entryPoints: [{ uuid: 'entry' }] } };
     app.getEntryPoints = () => [entry]; app.start = app.initialized = app.destroyBundles = async () => {};
     for (const name of ['registerActive', 'registerInactive', 'registerHmiVisible', 'unregisterHmiVisible']) app[name] = async () => calls.push([name]);
-    const report = name => ({ show(on) { calls.push([name, on]); }, close: async () => calls.push([name, 'close']) });
+    const report = name => ({
+        show(on) { calls.push([name, on]); },
+        setInteractive(on) { calls.push([name + ':interactive', on]); },
+        setPower(on) { calls.push(['power', on]); },
+        close: async () => calls.push([name, 'close'])
+    });
     const stubs = {
         'oap-sdk/src/core/OnlineApp.js': function () { return app; }, 'oap-sdk/src/someip/someipBuilders': {},
         './controller.js': { observe: () => report('controller') }, './telemetria-mgu.js': { report: () => report('telemetry') },
         './navegacion-bmw.js': { report: () => report('navigation') }, './radio-bmw.js': { report: () => report('radio') },
         './audio-bmw-transport.js': { report: () => report('audio') },
-        './visibility-lease.js': { observeLease(cb) { lease = cb; return { refresh(done) { refresh = done; }, close() { leaseClosed = true; } }; } }
+        './visibility-lease.js': { observeLease(cb, options) {
+            if (options) {
+                assert.equal(options.file, '/run/javi-carlab/cockpit-visible.lease');
+                cockpit = cb; return { close() { cockpitClosed = true; } };
+            }
+            lease = cb; return { refresh(done) { refresh = done; }, close() { leaseClosed = true; } };
+        } }
     };
     const module = { exports: {} };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../apps/javi_carlauncher/oap.js'), 'utf8'), {
@@ -95,12 +106,34 @@ function oapFixture() {
         console, process: { exit() {} }
     });
     module.exports();
-    return { app, state, calls, lease: value => lease(value), refresh(value) { lease(value); const done = refresh; refresh = undefined; done(value); }, leaseClosed: () => leaseClosed };
+    return { app, state, calls, lease: value => lease(value), cockpit: value => cockpit(value),
+        refresh(value) { lease(value); const done = refresh; refresh = undefined; done(value); },
+        leasesClosed: () => leaseClosed && cockpitClosed };
 }
+test('OAP autostart reads vehicle and navigation data without opening the last entry or activating the centre', async () => {
+    const f = oapFixture();
+    f.app.startReason = 'AUTOSTART';
+    f.app.getLastExecutedEntryPointUuid = () => 'entry';
+    f.app.emit('initialized'); await delay(10);
+    assert(f.calls.some(x => x[0] === 'telemetry' && x[1] === true));
+    assert(f.calls.some(x => x[0] === 'navigation' && x[1] === true));
+    assert(!f.calls.some(x => ['open', 'controller', 'registerActive', 'registerHmiVisible'].includes(x[0])));
+    assert(!f.calls.some(x => ['telemetry:interactive', 'navigation:interactive', 'radio', 'audio', 'power'].includes(x[0]) && x[1] === true));
+    f.calls.length = 0;
+    f.cockpit(true); f.cockpit(false);
+    assert.deepEqual(f.calls, [['power', true], ['power', false]]);
+    f.calls.length = 0;
+    f.app.emit('entryPointExecute', 'entry'); await delay(0);
+    assert.deepEqual(f.calls, [['open']]);
+    f.app.emit('shutdown'); await delay(0);
+    assert(f.leasesClosed());
+    assert(f.calls.some(x => x[0] === 'telemetry' && x[1] === false));
+    assert(f.calls.some(x => x[0] === 'navigation' && x[1] === false));
+});
 test('OAP external visibility keeps data/input/audio active without claiming real HMI visibility', async () => {
     const f = oapFixture(); f.app.emit('initialized'); await delay(10); f.calls.length = 0;
     f.lease(true); await delay(0);
-    for (const name of ['controller', 'telemetry', 'navigation', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === true));
+    for (const name of ['controller', 'telemetry:interactive', 'navigation:interactive', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === true));
     assert(f.calls.some(x => x[0] === 'registerActive'));
     assert(!f.calls.some(x => x[0] === 'registerHmiVisible'));
     f.state.emit('visible', { visible: true }); await delay(0);
@@ -109,8 +142,9 @@ test('OAP external visibility keeps data/input/audio active without claiming rea
     assert.deepEqual(f.calls, [['unregisterHmiVisible']], 'real HMI hide does not stop externally visible data streams');
     f.lease(false); await delay(0);
     assert(f.calls.some(x => x[0] === 'registerInactive'));
-    for (const name of ['controller', 'telemetry', 'navigation', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === false));
-    f.app.emit('shutdown'); await delay(0); assert(f.leaseClosed());
+    for (const name of ['controller', 'telemetry:interactive', 'navigation:interactive', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === false));
+    assert(!f.calls.some(x => (x[0] === 'telemetry' || x[0] === 'navigation') && x[1] === false));
+    f.app.emit('shutdown'); await delay(0); assert(f.leasesClosed());
     f.calls.length = 0; f.lease(true); await delay(0); assert.deepEqual(f.calls, []);
 });
 test('OAP serializes visibility registrations across a slow activation', async () => {
@@ -131,7 +165,7 @@ test('HMI hide between lease creation and its regular poll does not tear down OA
     f.refresh(true); await delay(0);
     assert.deepEqual(f.calls, [['unregisterHmiVisible']], 'valid newly created lease keeps all effective services alive');
     f.lease(false); await delay(0);
-    for (const name of ['controller', 'telemetry', 'navigation', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === false));
+    for (const name of ['controller', 'telemetry:interactive', 'navigation:interactive', 'radio', 'audio']) assert(f.calls.some(x => x[0] === name && x[1] === false));
     f.app.emit('shutdown');
 });
 test('a failed hide refresh stops services and cannot override a later real HMI show', async () => {

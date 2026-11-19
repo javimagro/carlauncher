@@ -22,6 +22,7 @@
   "version": "0.2.23",
   "description": "BMWLauncher y sus tarjetas integradas para iDrive 8",
   "mguInternet": true,
+  "mguAppStartType": "autostart",
   "mguHmi": [
     "ID8"
   ],

@@ -13,6 +13,7 @@ const { createNavigation } = require('./navigation-model.js');
 const { actionAt } = require('./navigation-view.js');
 const { createNavigationUI } = require('./navigation-ui');
 const { vehicleReadings } = require('./vehicle-readings');
+const { createTripHistory } = require('./trip-history');
 const { createPreconditioningUI } = require('./preconditioning-ui');
 const { createAssistant } = require('./assistant');
 const { createCommands } = require('./assistant-drivehub');
@@ -45,6 +46,8 @@ module.exports = function createSession(gpu, options) {
     let lastFrame = 0;
     let lastArticle;
     let cockpit;
+    let cockpitRetryAt = 0;
+    let cockpitPending = false;
     const player = options.tdtPlayback && (options.tdtPlayback.preview ? createPlayer : createIsolatedPlayer)(gpu, options.tdtPlayback);
     const tdt = createTdt(Object.assign({}, options, { tdtPlayer: player }), () => { dirty = true; });
     const radio = createRadioUI(options, () => { dirty = true; });
@@ -61,11 +64,13 @@ module.exports = function createSession(gpu, options) {
     data.tdt = tdt;
     data.radio = radio;
     data.diagnostics = options.diagnostics;
-    data.altitudeHistory = { values: [] };
+    const tripHistory = createTripHistory(options.tripHistoryFile);
+    data.altitudeHistory = tripHistory;
     data.navigationUi = navigationUi;
     data.preconditioning = preconditioning;
     data.aaUi = aa;
-    const currentVehicle = () => vehicleReadings(data.telemetry && new Map(data.telemetry.map((r) => [r.signal, r])), Date.now());
+    let telemetryRecords;
+    const currentVehicle = (now = Date.now()) => vehicleReadings(telemetryRecords, now);
     const assistant = createAssistant(options, createCommands({ panel, radio, tdt, navigation: navigationUi, data,
         vehicle: currentVehicle, weather: () => provider.weatherSnapshot(Date.now()) }), () => { dirty = true; });
     navigationUi.assistant = assistant;
@@ -96,18 +101,16 @@ module.exports = function createSession(gpu, options) {
         }
         cv.reset();
         data.navigation = navigation.snapshot(now);
-        const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
-        const vehicle = vehicleReadings(records, now);
-        provider.refresh(now, vehicle.location, shown && onScreen);
+        const vehicle = currentVehicle(now);
+        if (shown && onScreen) provider.refresh(now, vehicle.location);
         assistant.setVisible(shown && onScreen);
         if (aa) aa.update(shown && onScreen && confirmedOnScreen && touchAvailable && !!area,
             data.diagnostics, navigationUi.state.panel === 'none');
         navigationUi.update(data.navigation, vehicle, shown && onScreen && !data.diagnostics && (!aa || aa.state.source === 'bmw'));
         if (options.loadCockpit) data.cockpitStatus = cockpit ? cockpit.status(now) : 'Falta Cluster renderer';
         if (player && player.stats) data.playbackStats = player.stats();
-        const readings = drawHome(cv, panel.state, panel.position(), data, art, now);
+        drawHome(cv, panel.state, panel.position(), data, art, now);
         gpu.frame(cv);
-        if (cockpit && onScreen) cockpit.update(readings, now, provider.weatherSnapshot(now));
         lastFrame = now;
         dirty = false;
     }
@@ -172,23 +175,22 @@ module.exports = function createSession(gpu, options) {
         }
     }
     gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
-    function hidden() {
+    function suspend(exiting) {
         data.toast = undefined;
         assistant.setVisible(false);
-        provider.suspend();
-        onScreen = false;
+        provider.suspend(cockpit && cockpit.visible());
         confirmedOnScreen = false;
         homeGesture = undefined;
         mapGesture = null;
         if (aa) aa.update(false, data.diagnostics, false);
-        navigationUi.reset();
+        navigationUi.reset(exiting);
         preconditioning.reset();
         reportScreen();
         panel.resetInput();
         tdt.update(Date.now(), false);
         radio.update(Date.now(), false);
-        if (cockpit) cockpit.close();
     }
+    function hidden() { onScreen = false; suspend(); }
     gpu.on('closed', hidden);
     gpu.on('close', () => { area = undefined; hidden(); });
     gpu.on('state', (state) => {
@@ -201,7 +203,7 @@ module.exports = function createSession(gpu, options) {
     });
 
     const timer = setInterval(() => {
-        if (!shown || !area) return;
+        if (!shown || !area || !onScreen) return;
         const now = Date.now();
         if (data.toast && now >= data.toast.until) { data.toast = undefined; dirty = true; }
         const radioCard = cards[1], radioX = viewport.x + radioCard.x - panel.position();
@@ -213,6 +215,27 @@ module.exports = function createSession(gpu, options) {
         const voiceIndicator = onScreen && !data.diagnostics && navigationUi.state.panel === 'none' && assistant.state.indicator;
         if (dirty || panel.animating() || now - lastFrame >= (voiceIndicator ? 50 : newsLoading ? 240 : 900)) frame(now);
     }, 33);
+
+    // The head unit starts this service before the central surface is opened.
+    function updateBackground() {
+        const now = Date.now();
+        if (!cockpit && options.loadCockpit && !cockpitPending && now >= cockpitRetryAt) {
+            cockpitRetryAt = now + 5000;
+            cockpitPending = true;
+            options.loadCockpit().then(client => {
+                if (closing) { if (client) client.close(); return; }
+                cockpit = client;
+                if (client) updateBackground();
+            }, () => {}).then(() => { cockpitPending = false; });
+        }
+        const vehicle = currentVehicle(now);
+        tripHistory.sample(vehicle, now);
+        if (!shown || !onScreen || !area) provider.refresh(now, vehicle.location, false, !!(cockpit && cockpit.visible()));
+        if (cockpit) cockpit.update(vehicle, now, provider.weatherSnapshot(now));
+        if (options.onCockpitVisible) options.onCockpitVisible(!!(cockpit && cockpit.visible()));
+    }
+    const background = setInterval(updateBackground, 1000);
+    updateBackground();
 
     return {
         navigation(frame) { navigation.receive(frame, Date.now()); dirty = true; },
@@ -228,6 +251,7 @@ module.exports = function createSession(gpu, options) {
         },
         telemetry(records, thermal) {
             data.telemetry = records;
+            telemetryRecords = records && new Map(records.map(row => [row.signal, row]));
             if (shown && onScreen) preconditioning.receive(thermal, Date.now());
             dirty = true;
         },
@@ -236,25 +260,10 @@ module.exports = function createSession(gpu, options) {
             if (closing || shown === on) return;
             shown = on;
             if (!on) {
-                data.toast = undefined;
-                assistant.setVisible(false);
-                provider.suspend();
-                confirmedOnScreen = false;
-                homeGesture = undefined;
-                mapGesture = null;
-                if (aa) aa.update(false, data.diagnostics, false);
-                navigation.receive(null, Date.now());
-                navigationUi.reset();
-                preconditioning.reset();
-                data.telemetry = null;
-                data.altitudeHistory = { values: [] };
-                tdt.update(Date.now(), false);
-                radio.update(Date.now(), false);
+                suspend(true);
                 radio.receive(null, Date.now());
-                if (cockpit) cockpit.close();
             } else {
                 radio.beginVisibility();
-                if (options.loadCockpit && !cockpit) cockpit = options.loadCockpit();
             }
             panel.resetInput();
             reportScreen();
@@ -264,13 +273,15 @@ module.exports = function createSession(gpu, options) {
             if (closing) return closing;
             hidden();
             clearInterval(timer);
+            clearInterval(background);
+            if (cockpit) cockpit.close();
             provider.close();
             photos.close();
             navigationUi.close();
             assistant.close();
             radio.close();
             tdt.close();
-            closing = aa ? aa.close() : Promise.resolve();
+            closing = Promise.all([aa && aa.close(), tripHistory.close()]);
             gpu.close();
             return closing;
         }

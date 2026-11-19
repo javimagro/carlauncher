@@ -72,10 +72,14 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert.equal(cockpit.status(2000), 'Widget en espera');
     client.emit('target', 'widget', 'parked');
     assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');
+    assert.equal(cockpit.visible(), false);
+    cockpit.update({ ...readings, power: 10 }, 2500);
+    assert.equal(calls.length, 2, 'the advertised image stays parked without periodic pixel writes');
     client.emit('layer', 99, 'shown');
     assert.equal(cockpit.status(2000), 'Selecciona Cluster renderer en el cuadro');
     client.emit('layer', 1, 'shown');
     assert.equal(cockpit.status(2000), 'Widget visible');
+    assert.equal(cockpit.visible(), true);
     cockpit.update({ ...readings, power: -5 }, 3000);
     function band(index) {
         const [y, h] = bands[index];
@@ -110,4 +114,5 @@ test('the cockpit publishes a selectable ID8 widget and updates telemetry and lo
     assert(frames[5].equals(batteryWithoutIcon), 'the icon disappears when the sample expires');
     cockpit.close();
     assert.equal(calls[7], 'closed');
+    assert.equal(cockpit.visible(), false);
 });

@@ -219,17 +219,6 @@ function tripDuration(seconds) {
     return hours ? hours + ' h ' + String(minutes).padStart(2, '0') + ' m' : minutes + ' m';
 }
 
-function sampleAltitude(history, altitude, now) {
-    if (!Number.isFinite(altitude)) {
-        history.values.length = 0;
-        history.lastAt = undefined;
-    } else if (history.lastAt === undefined || now - history.lastAt >= 60000) {
-        history.lastAt = now;
-        history.values.push(altitude);
-        if (history.values.length > 360) history.values.shift();
-    }
-}
-
 function trip(cv, x, y, w, h, vehicle, heights) {
     const { trip: current, factory } = vehicle;
     const compatible = (current.distanceUnit === 'km' && current.averageUnit === 'kWh/100 km') ||
@@ -723,7 +712,6 @@ function drawHome(cv, state, scroll, data, art, now) {
     cv.strokeRoundRect(map.x + 1, map.y + 1, map.w - 2, map.h - 2, 10, 1, '#263641');
     const records = data.telemetry && new Map(data.telemetry.map((row) => [row.signal, row]));
     const vehicle = vehicleReadings(records, now);
-    if (data.altitudeHistory) sampleAltitude(data.altitudeHistory, vehicle.altitude, now);
     const theme = data.navigationUi && data.navigationUi.state.theme;
     const night = data.diagnostics || (theme === 'auto' || !theme ? !data.navigation || data.navigation.theme !== 'day' : theme !== 'day');
     const aaVisible = !data.diagnostics && data.aaUi && data.aaUi.state.source === 'aa';

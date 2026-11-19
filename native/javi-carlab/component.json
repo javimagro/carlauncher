@@ -296,6 +296,11 @@
       "mode": "0644"
     },
     {
+      "path": "trip-history.js",
+      "from": "trip-history.js",
+      "mode": "0644"
+    },
+    {
       "path": "vendor/sax.js",
       "from": "vendor/sax.js",
       "mode": "0644"

@@ -246,6 +246,44 @@ test('wheel skip notifications are edge-triggered and independent of the rotary 
     assert.deepEqual(events, [{ skip: -1 }, { skip: 1 }]);
 });
 
+test('the cockpit starts without a centre display and follows live trip readings after exit', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] });
+    const gpu = new EventEmitter();
+    let centralFrames = 0, closed = 0;
+    const updates = [];
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() { centralFrames++; } });
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), fixture: { news: [] },
+        loadCockpit: async () => ({
+            visible: () => true, status: () => 'Widget visible',
+            update(readings) { updates.push(readings); }, close() { closed++; }
+        }) });
+    t.after(() => session.close());
+    function samples(distance, minute) {
+        return [{ signal: 'bcDataAll', status: 'sample', fields: {
+            'bcUnits.tachoDigital': 1, 'trip.counterDistance': distance,
+            'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 0, 'trip.dateTimeTrip.minute': minute, 'trip.dateTimeTrip.second': 0
+        } }];
+    }
+    session.telemetry(samples(25, 4));
+    await Promise.resolve();
+    t.mock.timers.tick(1000);
+    assert.equal(updates.at(-1)?.trip.duration, 240, 'the first readings reach the widget at startup');
+    assert.equal(centralFrames, 0);
+    gpu.emit('ready', {}, { touch: true });
+    session.show(true);
+    gpu.emit('state', { onScreen: false });
+    session.show(false);
+    const before = centralFrames;
+    session.telemetry(samples(39, 6));
+    t.mock.timers.tick(1000);
+    assert.equal(updates.at(-1)?.trip.duration, 360);
+    assert.equal(updates.at(-1)?.trip.distance, 3.9);
+    assert.equal(centralFrames, before);
+    assert.equal(closed, 0);
+    await session.close();
+    assert.equal(closed, 1);
+});
+
 test('the whole content receives touch and the house exits only on a completed tap', (t) => {
     const gpu = new EventEmitter();
     let exits = 0;

@@ -24,11 +24,14 @@ module.exports = function run() {
     let visible = false;
     let hmiVisible = false;
     let externallyVisible = false;
+    let cockpitVisible = false;
     let closed = false;
     let activeReported, hmiReported;
     let registration = Promise.resolve(), hmiRegistration = Promise.resolve();
     let visibilityGeneration = 0;
     let pending;
+
+    function updatePower() { if (ready && !closed) telemetry.setPower(visible || cockpitVisible); }
 
     function registerHmiVisibility() {
         hmiRegistration = hmiRegistration.then(async () => {
@@ -60,9 +63,11 @@ module.exports = function run() {
         visible = effective;
         if (!ready) return;
         if (changed || force) {
+            if (visible && !controller) controller = observe(someipBuilders);
             if (controller) controller.show(visible);
-            telemetry.show(visible);
-            navigation.show(visible);
+            telemetry.setInteractive(visible);
+            navigation.setInteractive(visible);
+            updatePower();
             radio.show(visible);
             audio.show(visible);
         }
@@ -73,7 +78,7 @@ module.exports = function run() {
         hmiVisible = value;
         const generation = ++visibilityGeneration;
         // Withdraw real HMI visibility independently of a slow active-register
-        // call. Before tearing down data/audio, inspect an AA lease that may have
+        // call. Before tearing down the foreground controls and audio, inspect an AA lease that may have
         // been created since the observer's last 250 ms poll.
         registerHmiVisibility();
         if (!value && !externallyVisible) visibilityLease.refresh(() => {
@@ -82,6 +87,8 @@ module.exports = function run() {
         else publish();
     }
     const visibilityLease = observeLease((value) => { externallyVisible = value; publish(); });
+    const cockpitLease = observeLease((value) => { cockpitVisible = value; updatePower(); },
+        { file: '/run/javi-carlab/cockpit-visible.lease', lifetime: 2500, pollMs: 500 });
 
     function open(uuid) {
         if (!ready) { pending = uuid; return; }
@@ -107,20 +114,22 @@ module.exports = function run() {
             await rhmi.mapEntryState(entry, state);
             await tile.setAvailability('ENABLED');
             const start = app.getVisibilityData && app.getVisibilityData();
-            if (['ENTRY_POINT', 'LUM', 'BOOKMARK', 'TRIGGER_HMI'].indexOf((start && start.reason) || app.startReason) >= 0) {
-                await app.registerActive();
-            }
+            const interactiveStart = ['ENTRY_POINT', 'LUM', 'BOOKMARK', 'TRIGGER_HMI']
+                .includes((start && start.reason) || app.startReason);
+            if (interactiveStart) await app.registerActive();
             await app.initialized();
             if (closed) return;
             ready = true;
-            controller = observe(someipBuilders);
+            telemetry.show(true);
+            navigation.show(true);
             publish(true);
-            await open(pending || (app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
+            await open(pending || (interactiveStart && app.getLastExecutedEntryPointUuid && app.getLastExecutedEntryPointUuid()));
         } catch (err) { console.error('CarLab: ' + err.message); }
     });
     app.on('shutdown', () => {
         closed = true;
         visibilityLease.close();
+        cockpitLease.close();
         if (controller) controller.close();
         telemetry.show(false);
         navigation.show(false);

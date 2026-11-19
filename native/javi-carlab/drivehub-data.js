@@ -263,14 +263,14 @@ function createData({ cacheFile, fixture, get = download, photo = loadPhoto, now
 
     return {
         data,
-        refresh(now, location, visible = true) {
+        refresh(now, location, visible = true, weatherVisible = visible) {
             if (fixture) return;
-            weather.update(location, now, visible);
+            weather.update(location, now, weatherVisible);
             if (visible && !closed) refreshItem('news', newsInterval, () => loadNews(get), now);
         },
         weatherSnapshot: weather.snapshot,
-        suspend() {
-            weather.suspend();
+        suspend(keepWeather) {
+            if (!keepWeather) weather.suspend();
             if (data.photoStatus === 'loading') { photoRequest++; photoUrl = undefined; data.photoStatus = 'unavailable'; }
         },
         showPhoto(url) {

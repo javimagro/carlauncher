@@ -22,6 +22,8 @@ function createCockpit(Client, get, log = console) {
     let frameKeys;
     let supported = false;
     let status;
+    let visible = false;
+    let parked = false;
     let connectingSince;
     let ownWeather, weatherTime;
     const art = loadArtwork('cockpit-weather.rgba.gz');
@@ -41,26 +43,37 @@ function createCockpit(Client, get, log = console) {
                 return;
             }
             status = layerStatus.waiting;
+            parked = false;
             if (layer) return;
             layer = client.image({ target: 'widget', klass: 'overlay', contend: false,
                 x, y, w: width, h: height, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
         });
         client.on('layer', (ref, state) => {
-            if (renderer === client && ref === layer) status = layerStatus[state] || status;
+            if (renderer !== client || ref !== layer) return;
+            status = layerStatus[state] || status;
+            visible = state === 'shown';
+            if (visible) parked = false;
         });
         client.on('target', (target, state) => {
             if (renderer !== client || target !== 'widget') return;
-            if (state === 'parked') status = 'Selecciona Cluster renderer en el cuadro';
-            if (state === 'unavailable') status = 'El cuadro no admite el widget';
+            if (state === 'shown') parked = false;
+            if (state === 'parked' || state === 'unavailable') {
+                parked = true;
+                visible = false;
+                status = state === 'parked' ? 'Selecciona Cluster renderer en el cuadro' : 'El cuadro no admite el widget';
+            }
         });
         client.on('refused', (op, ref, reason) => {
             if (renderer !== client || ref !== layer) return;
+            visible = false;
+            parked = true;
             status = layerStatus.error;
             log.warn('BMWLauncher: cluster-render: ' + op + ' · ' + reason);
         });
         client.on('disconnected', () => {
             if (renderer !== client) return;
             status = undefined;
+            visible = false;
             connectingSince = Date.now();
         });
         client.on('error', (error) => {
@@ -70,6 +83,7 @@ function createCockpit(Client, get, log = console) {
     }
 
     return {
+        visible: () => visible,
         status(now) {
             if (status) return status;
             return now - connectingSince >= 5000 ? 'Cluster renderer no responde' : 'Conectando al cuadro…';
@@ -77,6 +91,10 @@ function createCockpit(Client, get, log = console) {
         update(readings, now, sharedWeather) {
             if (!renderer) open(now);
             if (!renderer.ready || !supported || !layer) return;
+            if (parked && frameKeys) {
+                if (ownWeather) ownWeather.suspend();
+                return;
+            }
             // The rendered session owns one GPS forecast for both displays. Standalone
             // consumers can still own a provider, with the same movement/expiry policy.
             if (arguments.length < 3) {
@@ -111,6 +129,8 @@ function createCockpit(Client, get, log = console) {
             layer = undefined;
             frameKeys = undefined;
             status = undefined;
+            visible = false;
+            parked = false;
             connectingSince = undefined;
         }
     };

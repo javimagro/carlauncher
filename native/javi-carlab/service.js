@@ -36,6 +36,7 @@ const tdtAudio = process.env.JAVI_TDT_PCM || 'plug:smartx:MediaSink_AudioOut_Fro
 const clusterClient = '/var/opt/cluster-render/current/cluster_render_client.js';
 const lease = createLease('/run/javi-carlab/frontccu.lease', (err) => console.warn('BMWLauncher: captura del mando: ' + err.code));
 const aaVisibleLease = createLease('/run/javi-carlab/aa-visible.lease', (err) => console.warn('BMWLauncher: sesión AA: ' + err.code));
+const cockpitVisibleLease = createLease('/run/javi-carlab/cockpit-visible.lease', (err) => console.warn('BMWLauncher: cuadro: ' + err.code));
 let aaKnob = false;
 let screenConfirmed = false;
 let ccuReady = false;
@@ -78,12 +79,15 @@ function renewController() {
 }
 
 function loadCockpit() {
-    if (!fs.existsSync(clusterClient)) return undefined;
-    try {
-        const { ClusterRender } = require(clusterClient);
-        if (typeof ClusterRender === 'function') return createCockpit(ClusterRender, downloadAsApp);
-    } catch (_) { console.warn('BMWLauncher: cliente de cockpit no disponible'); }
-    return undefined;
+    return new Promise(resolve => fs.access(clusterClient, (error) => {
+        if (!error) {
+            try {
+                const { ClusterRender } = require(clusterClient);
+                if (typeof ClusterRender === 'function') return resolve(createCockpit(ClusterRender, downloadAsApp));
+            } catch (_) { console.warn('BMWLauncher: cliente de cockpit no disponible'); }
+        }
+        resolve(undefined);
+    }));
 }
 
 const gpu = new RenderClient('javi_carlab_frame', console, { kit: record });
@@ -109,11 +113,12 @@ const session = createSession(gpu, {
     diagnostics: false,
     useOap: true,
     autoStartRadio: true,
-    preconditioningCommand(command) { return telemetry.send(JSON.stringify(command) + '\n'); },
+    preconditioningCommand(command) { return launcherVisible && screenConfirmed && telemetry.send(JSON.stringify(command) + '\n'); },
     radioCommand(command) { return radio.send(JSON.stringify(command) + '\n'); },
     radioFile: path.join(dataDirectory, 'radio.json'),
-    navigationCommand(command) { return navigation.send(JSON.stringify(command) + '\n'); },
+    navigationCommand(command) { return launcherVisible && screenConfirmed && navigation.send(JSON.stringify(command) + '\n'); },
     loadCockpit,
+    onCockpitVisible(visible) { cockpitVisibleLease(visible); },
     onCaptureScreen(confirmed) {
         screenConfirmed = confirmed;
         if (!confirmed) {
@@ -127,6 +132,7 @@ const session = createSession(gpu, {
         session.setHome('pending');
     },
     cacheFile: path.join(dataDirectory, 'drivehub-cache.json'),
+    tripHistoryFile: path.join(dataDirectory, 'trip-history.json'),
     navigationFile: path.join(dataDirectory, 'navigation.json'),
     assistantDirectory: path.join(dataDirectory, 'assistant'),
     assistantNetwork: async () => ({ uid: await onlineApp(), uplink: true }),
@@ -246,6 +252,13 @@ async function poll() {
     if (stopping && !underlay.holding()) return;
     try {
         const installed = await installation();
+        if (stopping && !underlay.holding()) return;
+        if (!stopping) {
+            try {
+                telemetry.setOwner(installed.uid || 0);
+                navigation.setOwner(installed.uid || 0);
+            } catch (_) { /* The passive clients retry while OAP registration completes. */ }
+        }
         const id = installed.applet;
         const context = parseContext(await request('ctx'));
         if (!context) throw new Error('BMWLauncher: contexto de iDrive no disponible');
@@ -265,8 +278,6 @@ async function poll() {
                 const uid = installed.uid;
                 if (uid) {
                     input.setOwner(uid);
-                    telemetry.setOwner(uid);
-                    navigation.setOwner(uid);
                     radio.setOwner(uid);
                     audio.setOwner(uid);
                 }
@@ -322,6 +333,7 @@ function shutdown(code) {
     stopping = true;
     clearInterval(controllerTimer);
     releaseController();
+    cockpitVisibleLease(false);
     input.close();
     telemetry.close();
     navigation.close();

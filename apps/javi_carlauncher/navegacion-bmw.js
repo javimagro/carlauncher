@@ -214,37 +214,67 @@ function createProbe(builders, options) {
 
 function report(builders, endpoint = '/run/javi-carlab/navigation.sock') {
     let probe, actions, displays, socket, timer;
+    let interactive = false;
+    function updateControls() {
+        if (interactive && probe && !actions) {
+            displays = createDisplays(builders);
+            actions = createActions(builders, { onGuidanceSetting: displays.confirmSetting });
+        } else if (!interactive && actions) {
+            actions.stop();
+            displays.stop();
+            actions = displays = undefined;
+        }
+    }
     function send() {
         if (!probe) return;
         if (!socket) {
             const peer = net.createConnection(endpoint); socket = peer;
             const decoder = new StringDecoder('utf8');
             let partial = '';
+            let partialOwner;
             peer.on('data', (chunk) => {
-                if (peer !== socket || !actions) return;
+                if (peer !== socket) return;
                 if (chunk.length > 65536) { peer.destroy(); return; }
-                const lines = (partial + decoder.write(chunk)).split('\n'); partial = lines.pop();
+                let owner = partial ? partialOwner : actions;
+                const lines = (partial + decoder.write(chunk)).split('\n');
+                partial = lines.pop();
+                partialOwner = partial ? (lines.length ? actions : owner) : undefined;
                 if (Buffer.byteLength(partial) > 65536 || lines.length > 8) { peer.destroy(); return; }
                 for (const line of lines) {
                     if (Buffer.byteLength(line) > 65536) { peer.destroy(); return; }
-                    try { actions.command(JSON.parse(line)); } catch (_) { peer.destroy(); return; }
+                    if (owner && owner === actions) {
+                        try { owner.command(JSON.parse(line)); } catch (_) { peer.destroy(); return; }
+                    }
+                    owner = actions;
                 }
             });
             peer.on('error', () => {});
             peer.on('connect', () => { if (socket === peer) send(); });
             peer.on('close', () => { if (socket === peer) socket = null; });
         } else if (!socket.connecting && !socket.destroyed && !socket.bufferSize) {
-            socket.write(JSON.stringify(Object.assign({}, probe.snapshot(), { controls: actions.snapshot(), presentation: displays.snapshot() })) + '\n', 'utf8');
+            const frame = probe.snapshot();
+            if (actions) {
+                frame.controls = actions.snapshot();
+                frame.presentation = displays.snapshot();
+            }
+            socket.write(JSON.stringify(frame) + '\n', 'utf8');
         }
     }
-    return { show(on) {
-        if (on && !probe) {
-            probe = createProbe(builders);
-            displays = createDisplays(builders);
-            actions = createActions(builders, { onGuidanceSetting: displays.confirmSetting });
-            timer = setInterval(send, 1000); send();
+    return {
+        setInteractive(on) { interactive = !!on; updateControls(); },
+        show(on) {
+            if (on && !probe) {
+                probe = createProbe(builders);
+                updateControls();
+                timer = setInterval(send, 1000); send();
+            } else if (!on && probe) {
+                clearInterval(timer);
+                probe.stop(); probe = undefined;
+                interactive = false; updateControls();
+                if (socket) socket.destroy();
+                socket = undefined;
+            }
         }
-        else if (!on && probe) { clearInterval(timer); probe.stop(); actions.stop(); displays.stop(); probe = actions = displays = null; if (socket) socket.destroy(); socket = null; }
-    } };
+    };
 }
 module.exports = { services, instance, createProbe, report, position, polyline, tripSummary };

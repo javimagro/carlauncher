@@ -63,3 +63,21 @@ test('DriveHub and cockpit receive the same forecast and closing prevents furthe
     data.refresh(now, null); assert.equal(data.data.weather, undefined);
     data.close(); now += refreshMs; data.refresh(now, moved); await settle(); assert.equal(requests.filter((url) => url.includes('open-meteo')).length, 1);
 });
+test('a visible cockpit keeps the GPS forecast active while the central display is hidden', async t => {
+    let now = 1000000;
+    const requests = [];
+    const data = createData({ now: () => now, get: async url => { requests.push(url); return forecast(); } }, () => {});
+    t.after(() => data.close());
+    data.refresh(now, point, false, true);
+    await settle();
+    assert.equal(data.weatherSnapshot(now).temp, 20);
+    data.suspend(true);
+    assert.equal(data.weatherSnapshot(now).temp, 20);
+    now += 60000;
+    data.refresh(now, moved, false, true);
+    await settle();
+    assert.equal(requests.length, 2);
+    assert(requests.every(url => new URL(url).hostname === 'api.open-meteo.com'));
+    data.refresh(now, moved, false, false);
+    assert.equal(data.weatherSnapshot(now), undefined);
+});
