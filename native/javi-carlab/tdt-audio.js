@@ -9,6 +9,15 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
     let timer, stalled, retry, draining;
     let failures = 0;
     let tail = Buffer.alloc(0);
+    // At 48 kHz stereo S16LE this holds at most 100 ms while the pipe drains.
+    // Never splice later PCM onto a gap: overflow retires this sink generation.
+    const pending = [];
+    const pendingLimit = 19200;
+    let pendingBytes = 0;
+    function discardPending() {
+        stats.droppedBytes += pendingBytes; stats.blockedBytes += pendingBytes;
+        pending.length = 0; pendingBytes = 0;
+    }
     const retryMs = audio.retryMs || 2000;
     const maxRetries = audio.maxRetries === undefined ? 3 : audio.maxRetries;
     let focus, focusReady = !audio.bmwFocus, focusPending = false, focusFailed = false;
@@ -17,6 +26,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         clearTimeout(timer);
         clearTimeout(stalled);
         draining = undefined;
+        discardPending();
         timer = stalled = undefined;
         const old = sink;
         sink = null;
@@ -52,7 +62,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
             focus = (audio.createFocus || createFocus)(lost);
             focus.start().then(() => {
                 focusPending = false;
-                if (stopped) { focus.close(); return; }
+                if (stopped || focusFailed) { focus.close(); return; }
                 focusReady = true; open();
             }, () => { focusPending = false; lost('error'); });
             return;
@@ -62,6 +72,7 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         catch (_) { fail(sink, 'unavailable'); return; }
         sink = peer;
         changed('audio-connecting');
+        if (stopped || sink !== peer) return;
         let diagnostic = '', stderr = '', reply = '';
         const failure = (reason) => fail(peer, reason, diagnostic);
         peer.on('error', () => failure('unavailable'));
@@ -89,6 +100,11 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
             blocked = false;
             clearTimeout(stalled);
             stalled = undefined;
+            while (sink === peer && !blocked && pending.length) {
+                const bytes = pending.shift(); pendingBytes -= bytes.length;
+                submit(peer, bytes);
+            }
+            if (sink === peer && draining && !pending.length) peer.stdin.end();
         });
         if (!audio.handshake) { ready = true; changed('audio-ready'); return; }
         peer.stdout.on('data', (chunk) => {
@@ -101,20 +117,34 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
         });
         timer = setTimeout(() => failure('timeout'), 4000);
     }
+    function submit(peer, bytes) {
+        try {
+            const accepted = peer.stdin.write(bytes);
+            stats.submittedBytes += bytes.length; // Pipe submission, not audible playback.
+            if (!accepted) {
+                stats.backpressure++; blocked = true;
+                stalled = setTimeout(() => fail(peer, 'pipe'), 2500);
+            }
+        } catch (_) {
+            stats.droppedBytes += bytes.length; stats.blockedBytes += bytes.length;
+            fail(peer, 'pipe');
+        }
+    }
     function write(bytes) {
-        if (stopped || !ready || blocked) {
-            stats.droppedBytes += bytes.length;
-            if (blocked && ready && !stopped) stats.blockedBytes += bytes.length;
-            else stats.notReadyBytes += bytes.length;
+        if (stopped || !ready) {
+            stats.droppedBytes += bytes.length; stats.notReadyBytes += bytes.length;
             return;
         }
-        const peer = sink;
-        stats.submittedBytes += bytes.length; // Pipe accepted bytes, NOT proof of ALSA playback.
-        if (!peer.stdin.write(bytes)) {
-            stats.backpressure++;
-            blocked = true;
-            stalled = setTimeout(() => fail(peer, 'pipe'), 2500);
+        if (blocked) {
+            if (pendingBytes + bytes.length <= pendingLimit) {
+                pending.push(Buffer.from(bytes)); pendingBytes += bytes.length;
+            } else {
+                stats.droppedBytes += bytes.length; stats.blockedBytes += bytes.length;
+                fail(sink, 'pipe');
+            }
+            return;
         }
+        submit(sink, bytes);
     }
     pcm.on('data', (bytes) => {
         if (stopped) return;
@@ -135,9 +165,9 @@ function playAudio(pcm, changed, queue, audio, spawn, log) {
             const peer = sink;
             draining = done;
             timer = setTimeout(() => fail(peer, 'stall'), 4000);
-            peer.stdin.end();
+            if (!pending.length) peer.stdin.end();
         },
-        stats: () => Object.assign({}, stats, { ready, blocked }),
+        stats: () => Object.assign({}, stats, { ready, blocked, pendingBytes }),
         close() { stopped = true; clearTimeout(retry); release(); if (focus) focus.close(); }
     };
 }

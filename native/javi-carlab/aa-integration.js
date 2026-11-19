@@ -65,6 +65,7 @@ function createIntegration(gpu, options) {
         if (old) {
             old.cancelled = true;
             if (old.cancelGeometry) old.cancelGeometry();
+            if (old.cancelContext) old.cancelContext();
         }
         if (options.input) options.input.setVisible(false);
         // Cancel the format owner now, even if capture is still withdrawing.
@@ -152,9 +153,30 @@ function createIntegration(gpu, options) {
         } catch (error) { fail(job, error.code || error.message || 'format'); }
         finally { clearTimeout(deadline); job.cancelGeometry = undefined; }
     }
+    function waitContext(job) {
+        if (validContext()) return Promise.resolve(true);
+        if (job.contextWait) return job.contextWait;
+        update('waiting', { code: 'context-unavailable' });
+        job.contextWait = new Promise(resolve => {
+            const finish = value => {
+                clearTimeout(timer); job.resumeContext = job.cancelContext = undefined;
+                resolve(value);
+            };
+            const timer = setTimeout(() => {
+                finish(false); fail(job, 'context-unavailable');
+            }, options.contextWaitMs || 4000);
+            job.resumeContext = () => { if (active(job) && validContext()) finish(true); };
+            job.cancelContext = () => finish(false);
+            if (!active(job)) finish(false);
+        }).then(value => { job.contextWait = undefined; return value; });
+        return job.contextWait;
+    }
     function acquireFocus(job) {
         if (job.focus || job.focusStarting) return;
-        if (!validContext()) return fail(job, 'context-changed');
+        if (!validContext()) {
+            waitContext(job).then(ready => { if (ready && active(job)) acquireFocus(job); });
+            return;
+        }
         const missing = requirement();
         if (missing) return fail(job, missing);
         job.focusStarting = true;
@@ -184,7 +206,7 @@ function createIntegration(gpu, options) {
             if (!active(job)) return;
             const profile = createFormat ? undefined : await geometryProfile(job, identity);
             if (!active(job)) return;
-            if (!validContext()) return fail(job, 'context-unavailable');
+            if (!await waitContext(job) || !active(job)) return;
             job.identity = Object.freeze(Object.assign({}, identity, { initialBytes: job.initialBytes }));
             const changed = (value, detail) => {
                 if (!active(job)) return;
@@ -218,7 +240,7 @@ function createIntegration(gpu, options) {
     function start() {
         if (closed || !shown || !capable || current) return;
         if (blocked) { update('error', { code: blocked }); return; }
-        const missing = requirement();
+        const missing = requirement() || (!validContext() ? 'context-unavailable' : null);
         waiting = !!missing;
         if (missing) {
             if (state.state !== 'waiting' || state.detail !== missing) update('waiting', { code: missing });
@@ -231,7 +253,8 @@ function createIntegration(gpu, options) {
         ready(info) { capable = !!(info && info.video); player.ready(info); if (!capable) stopJob(); else start(); },
         context(value, id) {
             context = value; applet = id; contextAt = now();
-            if (waiting) start();
+            if (current && current.resumeContext) current.resumeContext();
+            else if (waiting) start();
         },
         setVisible(value) {
             if (shown === !!value || closed) return;
