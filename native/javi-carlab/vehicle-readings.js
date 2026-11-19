@@ -62,6 +62,7 @@ function vehicleReadings(records, now) {
     const lat = position['position.latitude'];
     const lon = position['position.longitude'];
     const journey = field('bcDataAll');
+    const energy = field('batteryEnergyHv');
     return {
         soc: valid(battery, 200) ? battery / 2 : undefined,
         range: valid(range, 4094) ? range : undefined,
@@ -73,6 +74,8 @@ function vehicleReadings(records, now) {
         location: position['position.coordinatesValid'] === true && Number.isFinite(lat) && Math.abs(lat) <= 90 &&
             Number.isFinite(lon) && Math.abs(lon) <= 180 ? { latitude: lat, longitude: lon } : undefined,
         power: field('batteryPowerHv').kw,
+        batteryEnergy: energy.capacityWh > 0 && valid(energy.capacityWh, 200000) && valid(energy.availableWh, energy.capacityWh)
+            ? { availableWh: energy.availableWh, capacityWh: energy.capacityWh } : undefined,
         currentConsumption: currentConsumption(journey),
         trip: journeyReading(journey, 'trip'),
         factory: journeyReading(journey, 'factory')
