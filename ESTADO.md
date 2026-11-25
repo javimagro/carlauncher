@@ -5,7 +5,7 @@
 - **Publicada y verificada en GitHub.** `v0.2.24` apunta al commit `d473f0d69edd6d08494cd5edb8251bc3bb6dc169` de `main`. El ZIP de 169 archivos y `SHA256SUMS.txt` se descargaron de nuevo. SHA-256 `f6f229d71e404804fa58d5d8169d3576bb2c353af07add6dd35d08113070d9f5`.
 - App y motor **0.2.24**, Captura del mando **1.1.0**, Formato de Android Auto **1.0.0**. La PR #24 incorpora el cuadro, el trayecto y la observación del guiado en segundo plano.
 - El cuadro se ofrece al arrancar y actualiza los datos mientras está seleccionado. Trayecto sigue recibiendo las lecturas originales de BMW. El resumen de la ruta activa usa sus datos vigentes y las paradas que BMW confirma como completadas.
-- Confirmado por el usuario el 25-11-2026: el cuadro muestra datos al ir al menú principal y aunque no se abra BMWLauncher. Tras apagar y arrancar con el widget personalizado seleccionado, iDrive vuelve a la vista de velocidad. Las otras vistas sí conservan su selección. La recuperación del widget sigue pendiente. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.24).
+- Confirmado en el i4 el 25-11-2026: el cuadro muestra datos al ir al menú principal y aunque no se abra BMWLauncher. Tras salir con la llave, cerrar y volver, el cuadro muestra velocidad mientras BMWLauncher sigue anunciando el widget. Kernel y servicios conservaron su instancia durante la prueba. Las otras vistas conservan su selección según el usuario. La recuperación del widget sigue pendiente. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.24).
 
 ## Versión 0.2.23
 
