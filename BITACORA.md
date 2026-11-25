@@ -1,5 +1,12 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-25 · Selección del cuadro tras apagar el i4
+
+- En la comprobación del usuario, con BMWLauncher 0.2.24 el cuadro sigue recibiendo datos fuera de la app, incluso antes de abrirla. Al apagar con la vista personalizada y volver a arrancar, reaparece la vista de velocidad. iDrive conserva la selección de las otras vistas.
+- Cluster renderer 0.8.9 (`9dbe31159a8c9c6dccd63c0a19346cb293246932`) registra `contentHide` y `contentRelease` por separado, pero ambos llegan al cliente como `parked`. La confirmación de foco queda en el registro del motor. El cliente puede ofrecer su widget y dibujar en él. El ajuste `id8_widget_focus` solicita foco en cada oferta, sin consultar la última selección. Sigue pendiente identificar una señal que distinga la deselección manual del apagado y una solicitud de foco puntual para ese mismo widget. [Port DCSM](https://github.com/robertnisipeanu/idrive-apps/blob/9dbe31159a8c9c6dccd63c0a19346cb293246932/native/cluster-render/src/dcsm27_port.cpp#L184-L216) · [Proveedor y eventos de foco](https://github.com/robertnisipeanu/idrive-apps/blob/9dbe31159a8c9c6dccd63c0a19346cb293246932/native/cluster-render/src/unit_idrive8.cpp).
+- `node --test emulator/split/cockpit.test.js`: dos pruebas superadas de oferta, selección simulada y actualización de datos. El simulador no reproduce la preferencia de arranque de la unidad de instrumentos. No hay una traza de Cluster renderer de este i4 en las capturas locales consultadas.
+- Para comparar en el i4, registrar primero el cambio manual widget → vista de serie con el coche encendido y luego el apagado y encendido con el widget seleccionado. Anotar hora y versión de Cluster renderer. Buscar para el identificador del widget los eventos `shown`, `hidden`, `released by the cluster`, `focus` y la siguiente oferta, junto con el arranque o la parada del servicio. Hacer la lectura con autorización vigente. La prueba de aceptación debe repetir el arranque con una vista de serie y comprobar que se conserva, además de comprobar que el mando puede cambiar después de una restauración.
+
 ## 2026-11-20 · Publicación de BMWLauncher 0.2.24
 
 - Integrada la PR #24 en `main`. El commit de la versión es `d473f0d69edd6d08494cd5edb8251bc3bb6dc169`. App y motor 0.2.24, Captura del mando 1.1.0 y Formato de Android Auto 1.0.0. Los ensayos locales de mapa y audio siguen en el checkout antiguo.
