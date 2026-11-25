@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-25 · Seleccionar el widget al abrir BMWLauncher
+
+- Tras perder la selección en el cierre real del i4, el usuario eligió recuperar el widget al abrir BMWLauncher. El arranque automático del motor sigue ofreciendo y actualizando el widget. La orden de foco se arma al entrar, exige confirmación de la superficie central y se consume una vez por apertura. Si el cliente aún no tiene una oferta aparcada, puede esperar dentro de una ventana de cinco segundos.
+- Parche para la versión instalada de Cluster renderer, 0.5.9. Negocia `widget_focus` y limita la petición al propietario de la imagen del widget de BMWLauncher. Usa `enableFocusRequest` con identificador propio y `disableFocusRequest` al confirmar, cancelar o agotar el plazo. El ajuste global sigue desactivado. [Parche y prueba de aceptación](tools/cluster-render/README.md)
+- `node --test --test-concurrency=4 emulator/split/*.test.js`: 510 pruebas superadas. El simulador cubre arranque en segundo plano, apertura confirmada, caducidad, ocultación, reapertura y compatibilidad con el renderer anterior. Se han cargado los dos módulos de BMWLauncher y el cliente de Cluster renderer con Node 8.16.2. Falta comprobar en el i4 que retirar la petición conserve el widget y que el volante pueda cambiar la vista después.
+
 ## 2026-11-25 · Selección del cuadro tras apagar el i4
 
 - En la comprobación del usuario, con BMWLauncher 0.2.24 el cuadro sigue recibiendo datos fuera de la app, incluso antes de abrirla. Al apagar con la vista personalizada y volver a arrancar, reaparece la vista de velocidad. iDrive conserva la selección de las otras vistas.

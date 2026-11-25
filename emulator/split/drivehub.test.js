@@ -303,6 +303,57 @@ test('the cockpit starts without a centre display and refreshes weather, power a
     assert.equal(closed, 1);
 });
 
+test('cockpit focus is requested once per confirmed opening and is cancelled when covered', async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    const gpu = new EventEmitter();
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() {} });
+    const calls = [];
+    let focusReady = true;
+    const session = createSession(gpu, {
+        area: () => ({ scale: 1 }),
+        get: async () => Buffer.from(''),
+        loadCockpit: async () => ({
+            visible: () => false, status: () => '', update() {}, close() {},
+            requestFocus() {
+                if (!focusReady) return 'waiting';
+                calls.push('focus');
+                return 'sent';
+            },
+            cancelFocus() { calls.push('cancel'); }
+        })
+    });
+    t.after(() => session.close());
+    await new Promise(setImmediate);
+    gpu.emit('ready', {}, { touch: true });
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, []);
+    session.show(true);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, []);
+    gpu.emit('state', { onScreen: true });
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, ['focus']);
+    gpu.emit('state', { onScreen: false });
+    gpu.emit('state', { onScreen: true });
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'cancel']);
+
+    session.show(false);
+    focusReady = false;
+    session.show(true);
+    gpu.emit('state', { onScreen: true });
+    t.mock.timers.tick(5000);
+    focusReady = true;
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'cancel']);
+
+    session.show(false);
+    session.show(true);
+    gpu.emit('state', { onScreen: true });
+    session.show(false);
+    assert.deepEqual(calls, ['focus', 'cancel', 'focus', 'cancel']);
+});
+
 test('the whole content receives touch and the house exits only on a completed tap', (t) => {
     const gpu = new EventEmitter();
     let exits = 0;

@@ -48,6 +48,8 @@ module.exports = function createSession(gpu, options) {
     let cockpit;
     let cockpitRetryAt = 0;
     let cockpitPending = false;
+    let cockpitFocusUntil = 0;
+    let cockpitFocusSent = false;
     const player = options.tdtPlayback && (options.tdtPlayback.preview ? createPlayer : createIsolatedPlayer)(gpu, options.tdtPlayback);
     const tdt = createTdt(Object.assign({}, options, { tdtPlayer: player }), () => { dirty = true; });
     const radio = createRadioUI(options, () => { dirty = true; });
@@ -84,6 +86,15 @@ module.exports = function createSession(gpu, options) {
 
     function reportScreen() {
         if (options.onCaptureScreen) options.onCaptureScreen(!!(shown && area && touchAvailable && confirmedOnScreen));
+    }
+
+    function focusCockpit(now) {
+        if (now >= cockpitFocusUntil) { cockpitFocusUntil = 0; return; }
+        if (!shown || !area || !confirmedOnScreen || !cockpit) return;
+        const result = cockpit.requestFocus();
+        if (result === 'waiting') return;
+        cockpitFocusSent = result === 'sent';
+        cockpitFocusUntil = 0;
     }
 
     function present() {
@@ -177,6 +188,9 @@ module.exports = function createSession(gpu, options) {
     }
     gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
     function suspend(exiting) {
+        if (exiting || confirmedOnScreen) cockpitFocusUntil = 0;
+        if (cockpitFocusSent) cockpit.cancelFocus();
+        cockpitFocusSent = false;
         data.toast = undefined;
         assistant.setVisible(false);
         provider.suspend(cockpit && cockpit.visible());
@@ -199,6 +213,7 @@ module.exports = function createSession(gpu, options) {
             onScreen = true;
             confirmedOnScreen = true;
             reportScreen();
+            focusCockpit(Date.now());
         }
         else hidden();
     });
@@ -232,6 +247,7 @@ module.exports = function createSession(gpu, options) {
         const vehicle = currentVehicle(now);
         if (!shown || !onScreen || !area) provider.refresh(now, vehicle.location, false, !!(cockpit && cockpit.visible()));
         if (cockpit) cockpit.update(vehicle, now, provider.weatherSnapshot(now));
+        focusCockpit(now);
         if (options.onCockpitVisible) options.onCockpitVisible(!!(cockpit && cockpit.visible()));
     }
     const background = setInterval(updateBackground, 1000);
@@ -265,6 +281,7 @@ module.exports = function createSession(gpu, options) {
                 suspend(true);
                 radio.receive(null, Date.now());
             } else {
+                if (options.loadCockpit) cockpitFocusUntil = Date.now() + 5000;
                 radio.beginVisibility();
             }
             panel.resetInput();
