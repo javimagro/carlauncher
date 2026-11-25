@@ -274,14 +274,14 @@ module.exports = function createSession(gpu, options) {
             dirty = true;
         },
         controller(event) { if (shown && onScreen && !canGrab) controller(event); },
-        show(on) {
+        show(on, enteringLauncher) {
             if (closing || shown === on) return;
             shown = on;
             if (!on) {
                 suspend(true);
                 radio.receive(null, Date.now());
             } else {
-                if (options.loadCockpit) cockpitFocusUntil = Date.now() + 5000;
+                if (enteringLauncher && options.loadCockpit) cockpitFocusUntil = Date.now() + 5000;
                 radio.beginVisibility();
             }
             panel.resetInput();

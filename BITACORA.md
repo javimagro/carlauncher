@@ -4,7 +4,11 @@
 
 - Tras perder la selección en el cierre real del i4, el usuario eligió recuperar el widget al abrir BMWLauncher. El arranque automático del motor sigue ofreciendo y actualizando el widget. La orden de foco se arma al entrar, exige confirmación de la superficie central y se consume una vez por apertura. Si el cliente aún no tiene una oferta aparcada, puede esperar dentro de una ventana de cinco segundos.
 - Parche para la versión instalada de Cluster renderer, 0.5.9. Negocia `widget_focus` y limita la petición al propietario de la imagen del widget de BMWLauncher. Usa `enableFocusRequest` con identificador propio y `disableFocusRequest` al confirmar, cancelar o agotar el plazo. El ajuste global sigue desactivado. [Parche y prueba de aceptación](tools/cluster-render/README.md)
-- `node --test --test-concurrency=4 emulator/split/*.test.js`: 510 pruebas superadas. El simulador cubre arranque en segundo plano, apertura confirmada, caducidad, ocultación, reapertura y compatibilidad con el renderer anterior. Se han cargado los dos módulos de BMWLauncher y el cliente de Cluster renderer con Node 8.16.2. Falta comprobar en el i4 que retirar la petición conserve el widget y que el volante pueda cambiar la vista después.
+- `node --test --test-concurrency=4 emulator/split/*.test.js`: 510 pruebas superadas. El simulador cubre arranque en segundo plano, apertura confirmada, caducidad, ocultación, reapertura, recuperación de la misma vista y compatibilidad con el renderer anterior. Con Node 8.16.2 se ha comprobado la sintaxis del servicio y la carga de los módulos de sesión y del cliente de Cluster renderer. Falta comprobar en el i4 que retirar la petición conserve el widget y que el volante pueda cambiar la vista después.
+
+## 2026-11-25 · YouTube en MGU Store y audio de TDTWorld
+
+- Descargados en el PC Bube y RideTube. Sus catálogos declaran iDrive 7. El catálogo actual de IterioDev carece de la app histórica `mgu-ytplay`. La comparación identifica dos referencias que usan el reloj del audio y una ruta de GPU específica de RideTube. Falta correlacionar los chasquidos del i4 con los contadores PCM, ALSA y foco. [Comparación de vídeo y audio](TDT-AUDIO-MGU21.md#referencias-de-youtube-de-mgu-store--25-11-2026)
 
 ## 2026-11-25 · Selección del cuadro tras apagar el i4
 

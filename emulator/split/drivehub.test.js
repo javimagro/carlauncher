@@ -327,7 +327,7 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     gpu.emit('ready', {}, { touch: true });
     gpu.emit('state', { onScreen: true });
     assert.deepEqual(calls, []);
-    session.show(true);
+    session.show(true, true);
     t.mock.timers.tick(1000);
     assert.deepEqual(calls, []);
     gpu.emit('state', { onScreen: true });
@@ -339,8 +339,13 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     assert.deepEqual(calls, ['focus', 'cancel']);
 
     session.show(false);
+    session.show(true, false);
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, ['focus', 'cancel'], 'recovering the renderer for the same context is not a new opening');
+
+    session.show(false);
     focusReady = false;
-    session.show(true);
+    session.show(true, true);
     gpu.emit('state', { onScreen: true });
     t.mock.timers.tick(5000);
     focusReady = true;
@@ -348,7 +353,7 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     assert.deepEqual(calls, ['focus', 'cancel']);
 
     session.show(false);
-    session.show(true);
+    session.show(true, true);
     gpu.emit('state', { onScreen: true });
     session.show(false);
     assert.deepEqual(calls, ['focus', 'cancel', 'focus', 'cancel']);
