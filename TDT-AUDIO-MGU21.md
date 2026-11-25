@@ -35,6 +35,20 @@ Ensayo real autorizado por SSH el 15-11: preparación del archivo en ~23–24 se
 
 Regresión del directo en PC con FFmpeg 9.0.2: 250 cuadros, cero vaciados/reconexiones, hueco máximo del presentador 58 ms y 12 avances durante el bloqueo sintético de UI de 650 ms. El receptor PCM recibió 2.380.800 bytes. No son cifras de altavoces/MGU. La captura sintética valida formato WAV, límites, cancelación y seguimiento de reloj; la disponibilidad del reproductor de este i4 sigue bloqueando la prueba audible.
 
+## Referencias de YouTube de MGU Store · 25-11-2026
+
+El catálogo actual de [IterioDev/car-apps](https://github.com/IterioDev/car-apps) no ofrece YouTube. La documentación del [renderer de MGU Store](https://github.com/robertnisipeanu/mgu-store/blob/main/native/mgu-render/README.md#video) conserva la referencia a la app de IterioDev y su ejecutable `mgu-ytplay`. Acredita el uso del anillo I420 en memoria compartida para presentar con GPU. El catálogo revisado no permite descargar ese reproductor.
+
+| Referencia revisada | Vídeo | Audio |
+| --- | --- | --- |
+| Bube 0.1.10 / `drake1804-ytplay` 0.1.16, fuentes `543a23b` | FFmpeg sin aceleración de decodificación configurada, I420 en anillo MGVF y composición en GPU | Un FFmpeg aparte decodifica AAC a PCM estéreo de 48 kHz. `ytaudio` abre ALSA en otro proceso, cuenta vaciados y usa `snd_pcm_delay` para estimar el audio reproducido. El vídeo ajusta su reloj a esa estimación. El autor registró que la unidad abrió dispositivos sin que se oyera audio. |
+| RideTube 0.6.4, `eb0973bd8f6a3b90b52af4710b093e6afb1ca384` | Intel Media SDK decodifica H.264 o VP9 y VPP escala. Copia I420 a MGVF para mgu-render. | `MediaPlayer.playFile` de BMW reproduce M4A locales y publica el reloj que sigue el vídeo. Utiliza archivos de audio completos y advierte de un posible hueco al pasar de la muestra inicial al fichero completo. |
+| BMWLauncher 0.2.24 | FFmpeg decodifica y escala con CPU. El worker escribe I420 en MGVF y mgu-render compone con GPU. | La salida SmartX recibe PCM estéreo de 48 kHz. Con precarga, `tdt-player.js` entrega bloques de PCM con el temporizador del vídeo y descarta muestras cuando descarta fotogramas para recuperar el ritmo. |
+
+Se descargaron los dos paquetes de Bube del catálogo `Releases`, con SHA-256 coincidente, y su código fuente, con el digest de la API de GitHub verificado. Se descargó también la etiqueta de RideTube. El catálogo de Bube y el catálogo generado por RideTube declaran `ID7`, incluido el servicio del que depende cada app. Se examinaron los paquetes y el código en el PC. [Releases de Bube](https://github.com/Drake1804/bube-releases/releases/tag/catalog) · [Servicio de RideTube](https://github.com/JustAnotherPU/ridetube/blob/eb0973bd8f6a3b90b52af4710b093e6afb1ca384/native/jap-ridetube-d/README.md) · [Decodificador de RideTube](https://github.com/JustAnotherPU/ridetube/blob/eb0973bd8f6a3b90b52af4710b093e6afb1ca384/native/ytdec/README.md)
+
+Para localizar los chasquidos, en la misma emisión conviene cotejar el instante oído con los descartes PCM del worker, el retardo y los vaciados en ALSA y el estado de foco de BMW. Un descarte al recuperar el reloj puede cortar la continuidad de onda, pero esa coincidencia aún no está medida en el i4. El reloj de audio de las dos referencias orienta el ensayo. Cambiar la decodificación de vídeo a GPU requiere primero verificar la ABI y medir presión de CPU coincidente con el fallo en MGU21.
+
 ## Ruta de RideTube contrastada con el i4 · 15-11-2026
 
 Investigación pública posterior a publicar 0.2.15, sin ENET. Referencia: `JustAnotherPU/ridetube`, revisión **63364945d85344071dda0821464c4822372001e7**. Su [README](https://github.com/JustAnotherPU/ridetube/blob/63364945d85344071dda0821464c4822372001e7/README.md) declara prueba en un X5 G05 iDrive 7; no valida automáticamente MGU21/ID8. Las capturas de interfaz del README son renders de PC, no fotos del coche.
