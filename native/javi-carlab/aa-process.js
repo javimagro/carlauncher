@@ -31,7 +31,7 @@ function createAAPlayer(gpu, options) {
                 finished = true; clearTimeout(force); clearTimeout(deadline);
                 if (error) reject(error); else resolve();
             }
-            function onClose() { complete(current.closeAcknowledged ? null : new Error('worker-close-unconfirmed')); }
+            function onClose() { complete(current.closeAcknowledged ? null : new Error(current.closeError || 'worker-close-unconfirmed')); }
             if (current.processClosed) return onClose();
             current.child.once('close', onClose);
             force = setTimeout(() => { try { current.child.kill('SIGKILL'); } catch (_) {} }, 3500);
@@ -84,7 +84,13 @@ function createAAPlayer(gpu, options) {
                 child.once('close', () => { current.processClosed = true; });
                 child.on('message', message => {
                     if (!message) return;
-                    if (message.type === 'closed') { current.closeAcknowledged = message.ok === true; return; }
+                    if (message.type === 'closed') {
+                        current.closeAcknowledged = message.ok === true;
+                        if (typeof message.error === 'string' &&
+                            /^(capture-close-unconfirmed|capture-cleanup-pending|playback-close-timeout)$/.test(message.error))
+                            current.closeError = message.error;
+                        return;
+                    }
                     if (!alive()) {
                         // A start already queued over IPC can create its ring after stop().
                         if ((message.type === 'ring' || message.type === 'video') && validRing(message.file) &&

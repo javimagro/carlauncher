@@ -6,6 +6,7 @@ const { createFocus } = require('./aa-focus');
 const { resolveGeometry } = require('./aa-frame');
 const { isLauncher } = require('./home-context');
 const monotonic = () => { const t = process.hrtime(); return t[0] * 1000 + t[1] / 1000000; };
+const diagnosticCode = value => typeof value === 'string' && /^[a-z0-9-]{1,48}$/.test(value) ? value : undefined;
 // Real MAIN keyframes reached 72,717 bytes in the i4. The former 60 KiB
 // starting window repeatedly interrupted acquisition; 120 KiB was exercised
 // by the bounded recovery trial without incomplete or lost capture records.
@@ -38,6 +39,7 @@ function inspect(capture) {
 function createIntegration(gpu, options) {
     options = Object.assign({}, options || {});
     const now = options.now || monotonic;
+    const log = options.log || console;
     const resolveProfile = options.resolveGeometryProfile;
     const createFormat = options.createFormat;
     if (resolveProfile !== undefined && typeof resolveProfile !== 'function') throw new Error('geometry-resolver');
@@ -53,8 +55,7 @@ function createIntegration(gpu, options) {
     let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, waiting = false, closing;
     let state = { state: 'unavailable', inputReady: false };
     function update(next, detail) {
-        const code = detail && detail.code;
-        state = { state: next, inputReady: false, detail: typeof code === 'string' && /^[a-z0-9-]{1,48}$/.test(code) ? code : undefined };
+        state = { state: next, inputReady: false, detail: diagnosticCode(detail && detail.code) };
         listeners.slice().forEach(fn => fn());
     }
     function requirement() {
@@ -63,7 +64,9 @@ function createIntegration(gpu, options) {
     }
     function validContext() { return now() - contextAt < 1600 && isLauncher(context, applet); }
     function active(job) { return !closed && shown && capable && current === job && !job.cancelled; }
-    function releaseFailure(code) {
+    function releaseFailure(code, error) {
+        const cause = diagnosticCode(error && error.message);
+        if (blocked !== code) log.warn('BMWLauncher AA: cierre ' + code + (cause ? ' · ' + cause : ''));
         blocked = code;
         // Failed restoration ends recovery: do not retain an unusable surface.
         safely(() => player.stop()).catch(() => {});
@@ -83,7 +86,7 @@ function createIntegration(gpu, options) {
         // Otherwise a pending acquisition could SET while shutdown is waiting.
         // Keep MAIN underlay until capture, format and input have withdrawn.
         const video = safely(() => player.stop({ preserveFrame: preserveFrame === true }))
-            .catch(() => releaseFailure('capture-stop-unconfirmed'));
+            .catch(error => releaseFailure('capture-stop-unconfirmed', error));
         const format = old && old.format ? safely(() => old.format.close()).catch(() =>
             releaseFailure('format-restoration-unconfirmed')) : Promise.resolve();
         const finished = Promise.all([video, format, input]).then(() => old && old.focus ? old.focus.stop() : undefined)
@@ -91,8 +94,11 @@ function createIntegration(gpu, options) {
         serial = Promise.all([serial, finished]).then(() => {});
         return serial;
     }
-    function fail(job, code) {
+    function fail(job, code, errno) {
         if (!active(job)) return;
+        code = diagnosticCode(code) || 'playback';
+        const nativeError = Number.isInteger(errno) && errno > 0 && errno <= 4095 ? ' · errno ' + errno : '';
+        log.warn('BMWLauncher AA: fallo ' + code + nativeError);
         stopJob(); update('error', { code });
     }
     async function geometryProfile(job, identity) {
@@ -227,6 +233,8 @@ function createIntegration(gpu, options) {
                     if (job.retries >= 2) return fail(job, 'recovery-exhausted');
                     const bytes = detail && detail.requiredBytes;
                     if (bytes !== undefined && (!Number.isInteger(bytes) || bytes < 1 || bytes > 262144)) return fail(job, 'capture-frame-limit');
+                    const reason = diagnosticCode(detail && detail.code) || 'capture-gap';
+                    log.warn('BMWLauncher AA: recuperación ' + reason + (bytes ? ' · bytes ' + bytes : ''));
                     stopJob(true);
                     // A newly requested keyframe can be larger than the one
                     // that triggered recovery. Grow with bounded headroom,
@@ -235,7 +243,7 @@ function createIntegration(gpu, options) {
                         job.retries ? 262144 : job.initialBytes * 2)) : job.initialBytes;
                     const next = { retries: job.retries + 1, initialBytes: capacity, epoch: ++epoch };
                     current = next; update('recovery-needed', detail); launch(next);
-                } else if (value === 'error' || value === 'unavailable') fail(job, detail && detail.code || 'playback');
+                } else if (value === 'error' || value === 'unavailable') fail(job, detail && detail.code, detail && detail.errno);
                 else if (value === 'playing') {
                     if (createFormat && (!job.focusReady || !job.configured)) return fail(job, 'geometry-not-configured');
                     update('playing');

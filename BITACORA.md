@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-25 · Diagnóstico de capture-stop-unconfirmed en Android Auto
+
+- En el i4 con la variante local 0.2.25, Android Auto integrado pasa de conectando a `capture-stop-unconfirmed`. Por ENET, en lectura, se confirmó `aapd` activo, el módulo de formato cargado y salida 0 al ejecutar `aa-capture --check`. El último registro propio indica 128 ventanas y no había sondas activas ni un dueño del bloqueo al consultar. El journal carecía del error que precedió al cierre.
+- El supervisor registra el primer fallo, incluido el errno nativo cuando existe, y registra por separado el cierre que no pudo confirmar. El worker conserva la causa de su cierre y la valida antes de usarla. También registra recuperaciones acotadas y su tamaño solicitado. El bloqueo al no poder verificar la retirada se conserva.
+- 508 pruebas del simulador superadas, incluida la regresión de fallo de captura seguido de error de cierre. La mejora es de diagnóstico. Falta obtener un intento con esos registros para localizar el fallo en el i4.
+
 ## 2026-11-20 · Publicación de BMWLauncher 0.2.24
 
 - Integrada la PR #24 en `main`. El commit de la versión es `d473f0d69edd6d08494cd5edb8251bc3bb6dc169`. App y motor 0.2.24, Captura del mando 1.1.0 y Formato de Android Auto 1.0.0. Los ensayos locales de mapa y audio siguen en el checkout antiguo.

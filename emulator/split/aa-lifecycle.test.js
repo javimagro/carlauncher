@@ -166,6 +166,7 @@ function formatFixture(extra) {
         stop() { calls.push('video-stop'); return extra.videoStop && extra.videoStop.promise; }
     };
     const api = createIntegration({}, {
+        log: extra.log,
         now: () => time, createPlayer: () => player,
         inspect: async () => ({ pid: 2, starttime: '10', profile: 'mgu21-aa-20261115' }),
         createFocus(applet, changed) {
@@ -274,9 +275,15 @@ test('format loss disables input and an unconfirmed restoration blocks further a
 });
 
 test('failed capture removal still restores format and releases underlay but blocks a new generation', async () => {
-    const videoStop = deferred(), f = formatFixture({ videoStop }); await f.ready(); f.api.setVisible(false);
-    videoStop.reject(Error('worker-stop-timeout')); await tick();
+    const warnings = [], videoStop = deferred();
+    const f = formatFixture({ videoStop, log: { warn: message => warnings.push(message) } });
+    await f.ready();
+    f.callbacks[0]('error', { code: 'capture-prepare', errno: 22 });
+    videoStop.reject(Error('capture-cleanup-pending')); await tick();
+    assert.deepEqual(warnings, ['BMWLauncher AA: fallo capture-prepare · errno 22',
+        'BMWLauncher AA: cierre capture-stop-unconfirmed · capture-cleanup-pending']);
     assert(f.calls.includes('format-close')); assert(f.calls.includes('focus-stop'));
+    f.api.setVisible(false);
     f.api.setVisible(true); await tick();
     assert.equal(f.api.status().detail, 'capture-stop-unconfirmed');
     assert.equal(f.calls.filter(value => value === 'arm').length, 1);

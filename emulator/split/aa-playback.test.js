@@ -522,7 +522,7 @@ test('real worker reports unavailable capture closure as uncertain without alloc
         forkProcess(file, args, options) { worker = require('node:child_process').fork(file, args, options); return worker; } });
     t.after(() => { if (worker && worker.exitCode === null) worker.kill('SIGKILL'); });
     p.ready({ video: true }); p.arm({ pid: 77, starttime: '123456' });
-    await assert.rejects(p.stop(), /worker-close-unconfirmed/);
+    await assert.rejects(p.stop(), /capture-close-unconfirmed/);
     assert.equal(worker.exitCode, 1); assert.equal(p.frame(), undefined);
 });
 
