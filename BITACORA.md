@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-26 · Última lectura válida en el cuadro y DriveHub
+
+- Una muestra HV fallida o caducada dejaba sin potencia al cuadro, aunque se hubiera dibujado un valor válido antes. La regresión del motor en segundo plano reproducía `undefined` tras el error.
+- La sesión conserva cada medida validada para el cuadro, Trayecto y la franja «Ahora», también al reconectar el socket de telemetría. Admite cero y regeneración, conserva la unidad de cada medida y descarta las muestras retrasadas. Un reinicio de los contadores limpia el viaje anterior. La energía del trayecto se calcula cuando distancia y consumo llegan juntos y son compatibles. El diagnóstico sigue mostrando errores y caducidad, y el guiado, el precalentamiento y el historial reciben la telemetría vigente.
+- `node --test --test-concurrency=4 emulator/split/*.test.js` supera 509 pruebas. Los cuatro módulos modificados pasan sintaxis y carga en Node 8.16.2. En el renderizado de software, la imagen del cuadro es idéntica antes y después de que caduquen potencia, temperatura HV y consumo. La pantalla central conserva batería y autonomía mientras el diagnóstico muestra «Sin actualizar». Comprobación física en el i4 pendiente.
+
 ## 2026-11-20 · Publicación de BMWLauncher 0.2.24
 
 - Integrada la PR #24 en `main`. El commit de la versión es `d473f0d69edd6d08494cd5edb8251bc3bb6dc169`. App y motor 0.2.24, Captura del mando 1.1.0 y Formato de Android Auto 1.0.0. Los ensayos locales de mapa y audio siguen en el checkout antiguo.
