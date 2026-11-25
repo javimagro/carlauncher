@@ -13,11 +13,13 @@ const { fitArea } = require('../../native/javi-carlab/layout');
 const { loadArtwork, loadNews, parseFeed, parseWeather, networkDetail } = require('../../native/javi-carlab/drivehub-data');
 const { appUid, authorizeApp } = require('../../native/javi-carlab/drivehub-uplink');
 const { consume } = require('../../native/javi-carlab/controller-input');
-const { sample, steeringInput } = require('../../apps/javi_carlauncher/controller');
+const { observe, sample, steeringInput, backInput } = require('../../apps/javi_carlauncher/controller');
 const { createLease } = require('../../native/javi-carlab/controller-lease');
 const { parseContext, isLauncher, openContext } = require('../../native/javi-carlab/home-context');
 const createSession = require('../../native/javi-carlab/drivehub-session');
 const fonts = require('../../native/javi-carlab/vendor/kit_fonts');
+const { Recorder, play } = require('../../native/javi-carlab/vendor/kit_record');
+const { Canvas } = require('../../native/javi-carlab/vendor/kit_canvas');
 
 function panel() {
     let now = 0;
@@ -244,6 +246,80 @@ test('wheel skip notifications are edge-triggered and independent of the rotary 
     receive(button('KEINE_AKTION'));
     receive(button('SUCHLAUF_AUFWAERTS_MENUE_SKIP_RECHTS'));
     assert.deepEqual(events, [{ skip: -1 }, { skip: 1 }]);
+});
+
+test('physical Back is mapped independently of the rotary and fires once for short plus long press', () => {
+    const events = [];
+    const receive = backInput(consume(event => events.push(event)));
+    receive({ frontOperationButton7: 1 }, true);
+    receive({ frontOperationButton7: 2 });
+    receive({ frontOperationButton7: 0, frontOperationButton8: 1 });
+    receive({ frontOperationButton7: 'TASTE_KURZ_GEDRUECKT' });
+    receive({ frontOperationButton7: 7 });
+    receive({ frontOperationButton7: 'TASTE_LANG_GEDRUECKT' });
+    receive({ frontOperationButton7: 'KEINE_BETAETIGUNG' });
+    receive({ frontOperationButton7: 2 });
+    assert.deepEqual(events, [{ back: true }, { back: true }]);
+});
+
+test('the OAP subscribes to both FrontCCU inputs and releases both subscriptions', async () => {
+    const steps = [];
+    const attribute = (name, sample) => ({
+        subscribe() { steps.push('subscribe ' + name); return name; },
+        getValue() { return sample; },
+        unsubscribe(token) { steps.push('unsubscribe ' + token); }
+    });
+    const controller = observe({ buildTypedProxy() {
+        return { init() {}, waitUntilAvailable() {}, shutdown() { steps.push('shutdown'); },
+            statusRotaryEncoderState: attribute('rotary', { frontRotaryEncoderOperation: 0 }),
+            statusPushButtonsState: attribute('buttons', { frontOperationButton7: 0 }) };
+    } });
+    await new Promise(setImmediate);
+    await controller.close();
+    assert.deepEqual(steps, ['subscribe rotary', 'subscribe buttons', 'unsubscribe rotary', 'unsubscribe buttons', 'shutdown']);
+});
+
+test('Back crosses the FrontCCU transport and returns from the TDT player to the list', async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    const gpu = new EventEmitter();
+    let labels;
+    const text = Recorder.prototype.text;
+    t.mock.method(Recorder.prototype, 'text', function (label, ...args) {
+        if (labels) labels.add(label);
+        return text.call(this, label, ...args);
+    });
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() {} });
+    const session = createSession(gpu, { area: () => ({ scale: 1 }), useOap: true, fixture: { news: [] } });
+    t.after(() => session.close());
+    gpu.emit('ready', {}, { touch: true });
+    session.show(true);
+    gpu.emit('state', { onScreen: true });
+    session.controller({ knob: 16, press: 0, tilt: 0 });
+    session.controller({ knob: 20, press: 0, tilt: 0 });
+    t.mock.timers.tick(300);
+    session.controller({ knob: 20, press: 1, tilt: 0 });
+    session.controller({ knob: 20, press: 0, tilt: 0 });
+    labels = new Set();
+    t.mock.timers.tick(40);
+    assert.ok(labels.has('Canales'), 'starts in the TV player');
+    const receive = backInput(consume(session.controller));
+    receive({ frontOperationButton7: 0 }, true);
+    receive({ frontOperationButton7: 1 });
+    labels = new Set();
+    t.mock.timers.tick(40);
+    assert.ok(labels.has('Configuración'), 'returns to the channel browser');
+    assert.ok(!labels.has('Canales'));
+});
+
+test('the elevation fill interpolates vertex opacity from the trace to the transparent baseline', () => {
+    const cv = new Recorder(40, 40);
+    cv.fillUnder([[1, 5], [38, 5]], 35, [85, 217, 255, 153], 5);
+    const canvas = new Canvas(40, 40);
+    play(cv.words(), canvas);
+    const alpha = (x, y) => canvas.d[(y * canvas.w + x) * 4 + 3];
+    assert.ok(alpha(10, 7) > alpha(10, 20));
+    assert.ok(alpha(10, 20) > alpha(10, 32));
+    assert.equal(alpha(10, 36), 0);
 });
 
 test('the cockpit starts without a centre display and refreshes weather, power and consumption after exit', async (t) => {

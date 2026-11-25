@@ -13,6 +13,7 @@ function consume(receive) {
             const knob = bytes.readUInt16BE(i), press = bytes[i + 2], tilt = bytes[i + 3];
             if (knob === 0xffff && press === 0xfe) {
                 if (tilt === 1 || tilt === 2) receive({ skip: tilt === 1 ? -1 : 1 });
+                else if (tilt === 3) receive({ back: true });
             } else receive({ knob, press, tilt });
         }
         partial = bytes.slice(i);

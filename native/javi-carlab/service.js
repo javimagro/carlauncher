@@ -56,10 +56,13 @@ const installation = createInstallation(directory, launcherId);
 
 function releaseController() { lease(false); aaVisibleLease(false); }
 
+function controllerReason(now) {
+    return captureReason({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, now);
+}
+
 function aaRequirement() {
     if (!inspectGate.aaReady()) return 'aa-gate-restart-required';
-    return captureReason({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, Date.now()) === 'Captura activa'
-        ? null : 'aa-controls-unavailable';
+    return controllerReason(Date.now()) === 'Captura activa' ? null : 'aa-controls-unavailable';
 }
 
 function renewController() {
@@ -72,7 +75,7 @@ function renewController() {
             gatePending = false;
         });
     }
-    const reason = captureReason({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, now);
+    const reason = controllerReason(now);
     lease(reason === 'Captura activa', aaKnob && inspectGate.aaReady() && underlay.inputReady() ? 'aa' : 'all');
     aaVisibleLease(underlay.holding() && launcherVisible && screenConfirmed && now - contextAt < 800);
     session.setController(reason);
@@ -162,7 +165,8 @@ const session = createSession(gpu, {
     }
 });
 const input = listen('/run/javi-carlab/controller.sock', (event) => {
-    if (!event.skip) ccuReady = true;
+    if (event.back && controllerReason(Date.now()) !== 'Captura activa') return;
+    if (!event.skip && !event.back) ccuReady = true;
     session.controller(event);
 }, (err) => console.warn('BMWLauncher: entrada OAP: ' + err.code), undefined, () => {
     ccuReady = false;

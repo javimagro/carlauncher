@@ -188,16 +188,22 @@ class Recorder {
         this.u[i++] = pack(c);
         this.n = i; return this;
     }
-    /** Area under a trace down to baseY (two triangles per segment). */
-    fillUnder(pts, baseY, c) {
+    /** Area under a trace down to baseY, fading to transparent when topY is supplied. */
+    fillUnder(pts, baseY, c, topY) {
         if (pts.length < 2) return this;
         const col = pack(c), k = (pts.length - 1) * 2;
+        const base = topY === undefined ? col : col & 0xffffff00;
+        const colorAt = y => topY === undefined ? col : base | Math.round((col & 255) *
+            Math.max(0, Math.min(1, (baseY - y) / (baseY - topY))));
         this._grow(2 + k * 9); const f = this.f, u = this.u; let i = this.n;
         u[i++] = OP.TRIS; u[i++] = k;
+        let startColor = colorAt(pts[0][1]);
         for (let s = 1; s < pts.length; s++) {
             const xa = pts[s - 1][0], ya = pts[s - 1][1], xb = pts[s][0], yb = pts[s][1];
-            f[i++] = xa; f[i++] = ya; u[i++] = col; f[i++] = xb; f[i++] = yb; u[i++] = col; f[i++] = xb; f[i++] = baseY; u[i++] = col;
-            f[i++] = xa; f[i++] = ya; u[i++] = col; f[i++] = xb; f[i++] = baseY; u[i++] = col; f[i++] = xa; f[i++] = baseY; u[i++] = col;
+            const endColor = colorAt(yb);
+            f[i++] = xa; f[i++] = ya; u[i++] = startColor; f[i++] = xb; f[i++] = yb; u[i++] = endColor; f[i++] = xb; f[i++] = baseY; u[i++] = base;
+            f[i++] = xa; f[i++] = ya; u[i++] = startColor; f[i++] = xb; f[i++] = baseY; u[i++] = base; f[i++] = xa; f[i++] = baseY; u[i++] = base;
+            startColor = endColor;
         }
         this.n = i; return this;
     }
@@ -358,7 +364,10 @@ function play(words, real) {
             const k = u[i++];
             for (let t = 0; t < k; t++) {
                 const b = i + t * 9;
-                cv.triangle([[f[b], f[b + 1]], [f[b + 3], f[b + 4]], [f[b + 6], f[b + 7]]], col(u[b + 2]));
+                const points = [[f[b], f[b + 1]], [f[b + 3], f[b + 4]], [f[b + 6], f[b + 7]]];
+                const a = u[b + 2], second = u[b + 5], third = u[b + 8];
+                if (a === second && a === third) cv.triangle(points, col(a));
+                else cv.triangle(points, col(a), col(second), col(third));
             }
             i += k * 9; break;
         }

@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-26 · Gráfico de altura de Carlinkit y Back en TDTWorld
+
+- Comparado `TripAltitudeChartView` de DriveHub (`39688a2`). La versión anterior dibujaba un relleno de opacidad uniforme y una línea de 2 px. Ahora usa el cian de la referencia, degradado vertical hasta transparente y trazo de 3 px con uniones redondeadas. La primera lectura muestra el relleno centrado de la referencia. Se compararon perfil variable, una sola lectura y recorrido llano en 1960 × 520 y 1960 × 572.
+- El OAP solo observaba la rueda. El catálogo MGU21 036.010.004 y el desensamblado de Hmi8 con Capstone confirman que `statusPushButtonsState.frontOperationButton7` se traduce a `KEY_BACK` (2). El OAP envía una pulsación por flanco y TDTWorld usa el mismo cierre que «Volver», conserva el canal seleccionado y descarta respuestas tardías de la reproducción.
+- `node --test --test-concurrency=4 emulator/split/*.test.js` supera 513 pruebas. Sintaxis de los ocho módulos instalados con Node 8.16.2 y carga de los siete que se pueden ejecutar fuera de iDrive. La comparación de píxeles limita los cambios al gráfico en ambos tamaños. Pendiente comprobar la pulsación física y el acabado en el i4.
+
 ## 2026-11-20 · Publicación de BMWLauncher 0.2.24
 
 - Integrada la PR #24 en `main`. El commit de la versión es `d473f0d69edd6d08494cd5edb8251bc3bb6dc169`. App y motor 0.2.24, Captura del mando 1.1.0 y Formato de Android Auto 1.0.0. Los ensayos locales de mapa y audio siguen en el checkout antiguo.

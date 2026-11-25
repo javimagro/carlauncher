@@ -185,6 +185,8 @@ const web = http.createServer(async (req, res) => {
             const input = JSON.parse(body);
             if ([0, 1, 2, 3].includes(input.phase) && Number.isFinite(input.x) && Number.isFinite(input.y)) {
                 touch(input.phase, input.x, input.y);
+            } else if (home && input.back === true && homeSession?.connected) {
+                homeSession.send('back');
             } else if ([-1, 0, 1].includes(input.turn) && typeof input.press === 'boolean'
                 && [undefined, 0, 1, 2, 4, 5, 7, 8, 10, 11].includes(input.tilt)) {
                 wheel(input.turn, input.press, input.tilt || 0);

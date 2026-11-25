@@ -378,7 +378,7 @@ class Canvas {
      * Filled convex polygon (quad / triangle), anti-aliased: coverage is the product of each
      * edge's distance ramp (as the GPU renderer does it). pts = [[x,y],...] in either order.
      */
-    convex(pts, c) {
+    convex(pts, c, colorAt) {
         c = rgba(c);
         const n = pts.length;
         let area = 0;
@@ -395,14 +395,35 @@ class Canvas {
             for (let px = Math.max(0, Math.floor(x0) - 1); px < Math.min(this.w, Math.ceil(x1) + 1); px++) {
                 const qx = px + 0.5, qy = py + 0.5;
                 let cov = 1;
-                for (let k = 0; k < E.length && cov > 0; k++) cov *= clamp01(E[k][0] * qx + E[k][1] * qy + E[k][2] + 0.5);
-                if (cov > 0) this._blend(px, py, c, cov);
+                for (let k = 0; k < E.length && cov > 0; k++) {
+                    const [nx, ny, offset] = E[k];
+                    const distance = nx * qx + ny * qy + offset;
+                    if (colorAt) {
+                        // Shared mesh edges belong to just one triangle, as in the GPU rasterizer.
+                        if (distance < -1e-7 || (distance <= 1e-7 && (ny < 0 || (ny === 0 && nx < 0)))) cov = 0;
+                    } else cov *= clamp01(distance + 0.5);
+                }
+                if (cov > 0) this._blend(px, py, colorAt ? colorAt(qx, qy) : c, cov);
             }
         }
         return this;
     }
     quad(pts, c) { return this.convex(pts, c); }
-    triangle(pts, c) { return this.convex(pts, c); }
+    triangle(pts, c, second, third) {
+        if (second === undefined) return this.convex(pts, c);
+        const [[x, y], [xb, yb], [xc, yc]] = pts;
+        const bx = xb - x, by = yb - y, cx = xc - x, cy = yc - y;
+        const area = bx * cy - by * cx;
+        if (Math.abs(area) < 1e-6) return this;
+        const color = [0, 0, 0, 0];
+        return this.convex(pts, c, (px, py) => {
+            const dx = px - x, dy = py - y;
+            const b = (dx * cy - dy * cx) / area, d = (bx * dy - by * dx) / area;
+            for (let i = 0; i < 4; i++) color[i] = c[i] + (second[i] - c[i]) * b + (third[i] - c[i]) * d;
+            color[3] = Math.max(0, Math.min(255, color[3]));
+            return color;
+        });
+    }
 
     /** Polyline (e.g. a history trace). pts = [[x,y],...] */
     polyline(pts, width, c) {

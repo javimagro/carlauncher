@@ -15,6 +15,8 @@ Los botones anterior y siguiente del volante se leen de `SteeringWheelPushButton
 
 La suscripción del volante es de lectura. La copia original sigue llegando a iDrive. El efecto físico y la convivencia con la sintonización de BMW están pendientes de comprobación en el i4.
 
+El OAP también lee `statusPushButtonsState` para Back. En la revisión 036.010.004, `onFrontPushButtonsState` pasa el séptimo miembro a `pushbuttonsToKeycodeAction`, que usa el código 2. `uiKeyCodeToString` identifica ese código como `KEY_BACK`. El socket entrega un evento separado del giro al comenzar la pulsación. BMWLauncher lo usa con captura exclusiva activa para volver del canal o de Ajustes de TDTWorld a la lista. No cambia el filtro nativo.
+
 En `Hmi8`, `CHmiFwStateManager::performShiftLeftInternal` llama a `performBackInternal` en `0x425db77`, `0x425dda7` y `0x425e9f8`. La inclinación izquierda puede retroceder en el historial según el estado de la interfaz. BMW documenta que la inclinación hacia arriba abre el acceso rápido de iDrive 8. El binario contiene el servicio `CHmiToolbeltService` y el estado de los accesos directos. [Funcionamiento de iDrive 8 según BMW](https://www.press.bmwgroup.com/usa/article/detail/T0327734EN_US/the-all-new-bmw-idrive?showMedia=photo)
 
 ## Dónde interceptar los eventos
