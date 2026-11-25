@@ -7,8 +7,9 @@ MPL-2.0. [Código original de Cluster renderer 0.8.13](https://github.com/robert
 
 En la prueba física del 25-11-2026 el cuadro mostró el widget al recibir
 la solicitud y volvió a velocidad 533 ms después de retirarla. La variante
-actual conserva la petición mientras BMWLauncher está visible y tiene
-pendiente comprobar que la selección del volante prevalece en el i4. Véase la
+actual conserva la petición mientras BMWLauncher está visible. La prueba
+en el i4 confirmó que el volante puede cambiar de vista, que una reapertura
+vuelve a mostrar el widget y que salir de BMWLauncher libera la petición. Véase la
 [bitácora de la prueba](../../BITACORA.md#2026-11-25--seleccionar-el-widget-al-abrir-bmwlauncher).
 
 Desde un checkout de esa revisión, con Docker disponible y la ruta absoluta de BMWLauncher en `BMWLAUNCHER`:

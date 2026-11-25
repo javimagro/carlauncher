@@ -3,7 +3,8 @@
 ## 2026-11-25 · Mantener el widget durante la apertura de BMWLauncher
 
 - La variante experimental renueva el foco una vez por segundo durante la visibilidad confirmada de BMWLauncher. Un permiso tarda como máximo tres segundos en caducar al interrumpirse la renovación. Si el cuadro no confirma la petición, caduca a los cuatro segundos desde el inicio. Ocultación, cierre, pérdida de foco confirmada o retirada de la escena cancelan la petición. Renovar una petición vencida no vuelve a enfocar. El cliente requiere la capacidad `widget_focus: 2`.
-- Pasaron 511 pruebas del simulador. Falta comprobar físicamente que el volante cambia de vista con la petición activa y que el cuadro conserva la vista elegida por el conductor mientras BMWLauncher sigue abierto.
+- Pasaron 511 pruebas del simulador y la suite C++ de Cluster renderer 0.8.13. El binario Linux x86-64 verificó GLIBC y GLIBCXX y se instaló temporalmente junto al motor con copias de ambos originales y un reinicio autorizado. [Compilación y artefacto](https://github.com/javimagro/carlauncher/actions/runs/45636767859)
+- Prueba física con el i4 parado. Al iniciar en segundo plano, el destino siguió aparcado. En dos aperturas se mostró el widget y permaneció visible hasta que el usuario accionó el volante. El primer foco duró 15,7 segundos hasta el cambio manual. El registro marca pérdida de foco y retirada de la petición, sin reclamarla de nuevo durante esa apertura. En la prueba adicional, salir al menú de iDrive volvió a la vista de velocidad. El usuario aceptó este comportamiento y la variante quedó activa en el i4. Esta prueba acredita foco condicionado a la apertura central, no la persistencia de selección nativa entre arranques.
 
 ## 2026-11-25 · Comparar la selección del cuadro y el reloj de TDT
 
