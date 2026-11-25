@@ -1,14 +1,14 @@
 # Selección del widget al abrir BMWLauncher
 
-El parche GPL-3.0-or-later se aplica a Cluster renderer 0.5.9, revisión
-`d2f9e61ad6985fe2c9b46c94232df30f1cf2a037`. Incluye el cliente JavaScript
-de esa misma revisión. [Código original de Cluster renderer 0.5.9](https://github.com/robertnisipeanu/idrive-apps/tree/d2f9e61ad6985fe2c9b46c94232df30f1cf2a037/native/cluster-render)
+El parche GPL-3.0-or-later se aplica a Cluster renderer 0.8.13, revisión
+`9da968c8644ef4f6bcce174b0836f9f24d8db7fb`. Incluye el cliente JavaScript
+de esa misma revisión. [Código original de Cluster renderer 0.8.13](https://github.com/robertnisipeanu/idrive-apps/tree/9da968c8644ef4f6bcce174b0836f9f24d8db7fb/native/cluster-render)
 
 Desde un checkout de esa revisión, con Docker disponible y la ruta absoluta de BMWLauncher en `BMWLAUNCHER`:
 
 ```sh
-git apply --check "$BMWLAUNCHER/tools/cluster-render/widget-focus-0.5.9.patch"
-git apply "$BMWLAUNCHER/tools/cluster-render/widget-focus-0.5.9.patch"
+git apply --check "$BMWLAUNCHER/tools/cluster-render/widget-focus-0.8.13.patch"
+git apply "$BMWLAUNCHER/tools/cluster-render/widget-focus-0.8.13.patch"
 cd native/cluster-render
 make test-x86
 make target
@@ -41,4 +41,4 @@ presente. Los registros `temporary widget focus requested` y
 Cualquier prueba de instalación se hace con una copia de ambos archivos
 originales y con el coche estacionado. Para revertir se restaura esa pareja
 en la siguiente activación controlada. La unidad puede reiniciarse al parar
-Cluster renderer. [Notas de funcionamiento de ID8 del proyecto original](https://github.com/robertnisipeanu/idrive-apps/blob/d2f9e61ad6985fe2c9b46c94232df30f1cf2a037/native/cluster-render/README.md#idrive-8)
+Cluster renderer. [Notas de funcionamiento de ID8 del proyecto original](https://github.com/robertnisipeanu/idrive-apps/blob/9da968c8644ef4f6bcce174b0836f9f24d8db7fb/native/cluster-render/README.md#idrive-8)
