@@ -1,8 +1,14 @@
 # Selección del widget al abrir BMWLauncher
 
-El parche GPL-3.0-or-later se aplica a Cluster renderer 0.8.13, revisión
+El parche experimental se aplica a Cluster renderer 0.8.13, revisión
 `9da968c8644ef4f6bcce174b0836f9f24d8db7fb`. Incluye el cliente JavaScript
-de esa misma revisión. [Código original de Cluster renderer 0.8.13](https://github.com/robertnisipeanu/idrive-apps/tree/9da968c8644ef4f6bcce174b0836f9f24d8db7fb/native/cluster-render)
+de esa misma revisión. El servicio conserva GPL-3.0-or-later y el cliente
+MPL-2.0. [Código original de Cluster renderer 0.8.13](https://github.com/robertnisipeanu/idrive-apps/tree/9da968c8644ef4f6bcce174b0836f9f24d8db7fb/native/cluster-render)
+
+En la prueba física del 25-11-2026 el cuadro mostró el widget al recibir
+la solicitud y volvió a velocidad 533 ms después de retirarla. La prueba
+no superó el requisito de conservar la selección. Véase la
+[bitácora de la prueba](../../BITACORA.md#2026-11-25--seleccionar-el-widget-al-abrir-bmwlauncher).
 
 Desde un checkout de esa revisión, con Docker disponible y la ruta absoluta de BMWLauncher en `BMWLAUNCHER`:
 
