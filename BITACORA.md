@@ -1,5 +1,13 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-26 · Arranque y diagnóstico de Android Auto sin ENET
+
+- Revisadas las transiciones de visibilidad y mando, `hmictl` y el contexto MAIN, protocolo 3 del formato Cinemo, captura, decodificación, toque y retirada. El emparejamiento del teléfono sigue perteneciendo a iDrive. `aa-capture --check` verifica el perfil y la disponibilidad de la captura, antes del armado real.
+- Reproducidas pérdidas transitorias del permiso entre la precomprobación del capturador, su armado y la petición de contexto MAIN. Antes alguna ventana iniciaba captura con un permiso caducado o cancelaba el intento antes de recuperar el mando. Ahora cada transición comprueba sus requisitos vigentes. Si ya existe un intento, espera hasta cuatro segundos por la recuperación y cancela al ocultarse. El panel indica qué requisito falta, incluido el contexto anterior de iDrive, el mando OAP y la capa con toque. No cambia la caducidad del filtro ni se envían órdenes de foco mientras falta el permiso.
+- El padre espera el cierre del worker y la entrega de sus mensajes finales antes de clasificar la salida. La pantalla diferencia el primer error del bloqueo por retirada incierta. Se mantienen la restauración del formato, la salida cooperativa y la prohibición de rearmar una captura sin retirada confirmada.
+- Cinco casos de regresión fallaban en la base diagnóstica. `node --test --test-concurrency=4 emulator/split/*.test.js` pasa 514/514. Sintaxis de seis módulos instalados y carga de cinco con Node 8.16.2. Se repitieron las pruebas nativas portables ya compiladas, 342 de captura y 406 del puente. Las fuentes y binarios de producción nativos coinciden con `main`; las copias locales de Zig incompletas impidieron recompilar los tests en esta sesión.
+- Pendiente con ENET: leer el diagnóstico temporal del i4 tras repetir la apertura con el mando activo. Confirmar la primera etapa que falla y retirar los dos módulos temporales. Los fallos reproducidos en el PC son compatibles con el síntoma, pero el código `capture-stop-unconfirmed` previo por sí solo no identifica la causa física.
+
 ## 2026-11-25 · Diagnóstico de capture-stop-unconfirmed en Android Auto
 
 - En el i4 con la variante local 0.2.25, Android Auto integrado pasa de conectando a `capture-stop-unconfirmed`. Por ENET, en lectura, se confirmó `aapd` activo, el módulo de formato cargado y salida 0 al ejecutar `aa-capture --check`. El último registro propio indica 128 ventanas y no había sondas activas ni un dueño del bloqueo al consultar. El journal carecía del error que precedió al cierre.

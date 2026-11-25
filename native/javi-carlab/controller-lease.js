@@ -90,16 +90,28 @@ function createGateProbe(root = '/proc', options = {}) {
     return inspect;
 }
 
-function captureReason(state, now) {
-    if (!state.visible) return 'Fuera de BMWLauncher';
-    if (now - state.contextAt > 800) return 'Contexto de iDrive sin actualizar';
-    if (!state.gate) return 'Filtro no cargado en Hmi8';
-    if (!state.returnContext) return 'Esperando destino de retorno';
-    if (state.exitFailed) return 'Error al volver a iDrive';
-    if (!state.ccuReady) return 'Esperando mando del OAP';
-    if (!state.screenConfirmed) return 'Esperando capa visible y toque';
-    return 'Captura activa';
+const captureReasons = {
+    'launcher-hidden': 'Fuera de BMWLauncher',
+    'context-unavailable': 'Contexto de iDrive sin actualizar',
+    'aa-gate-restart-required': 'Filtro no cargado en Hmi8',
+    'return-context-unavailable': 'Esperando destino de retorno',
+    'launcher-exit-failed': 'Error al volver a iDrive',
+    'controller-sample-unavailable': 'Esperando mando del OAP',
+    'touch-layer-unavailable': 'Esperando capa visible y toque'
+};
+
+function captureBlocker(state, now) {
+    if (!state.visible) return 'launcher-hidden';
+    if (now - state.contextAt > 800) return 'context-unavailable';
+    if (!state.gate) return 'aa-gate-restart-required';
+    if (!state.returnContext) return 'return-context-unavailable';
+    if (state.exitFailed) return 'launcher-exit-failed';
+    if (!state.ccuReady) return 'controller-sample-unavailable';
+    if (!state.screenConfirmed) return 'touch-layer-unavailable';
+    return null;
 }
+
+function captureReason(state, now) { return captureReasons[captureBlocker(state, now)] || 'Captura activa'; }
 
 function createLease(file, failed) {
     let active = false;
@@ -133,4 +145,4 @@ function createLease(file, failed) {
     return update;
 }
 
-module.exports = { createLease, createGateProbe, captureReason };
+module.exports = { createLease, createGateProbe, captureReason, captureBlocker };

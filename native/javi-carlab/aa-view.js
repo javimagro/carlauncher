@@ -23,6 +23,14 @@ const layout = {
 };
 const menuActions = ['bmw', 'aa', 'focus-drivehub', 'focus-aa', 'diagnostics', 'precondition', 'home', 'close'];
 const centered = { align: 'center' };
+const waitingFor = {
+    'aa-gate-restart-required': 'Filtro del mando de iDrive no disponible',
+    'context-unavailable': 'Esperando a iDrive…',
+    'return-context-unavailable': 'Esperando la pantalla anterior de iDrive…',
+    'launcher-exit-failed': 'Fallo al volver a iDrive',
+    'controller-sample-unavailable': 'Esperando al mando del coche…',
+    'touch-layer-unavailable': 'Esperando la pantalla táctil…'
+};
 function button(cv, box, label, p, active, enabled) {
     cv.roundRect(box.x, box.y, box.w, box.h, 8, active ? p.selected : p.control);
     if (active) cv.strokeRoundRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2, 8, 2, p.accent);
@@ -77,8 +85,7 @@ function drawAA(cv, ui, night) {
     }
     const message = {
         unavailable: 'Conecta el teléfono a Android Auto',
-        waiting: status.detail === 'aa-gate-restart-required' ? 'Actualiza el control del mando y reinicia iDrive' :
-            status.detail === 'context-unavailable' ? 'Esperando a iDrive…' : 'Esperando los controles de BMWLauncher…',
+        waiting: waitingFor[status.detail] || 'Esperando los controles de BMWLauncher…',
         starting: 'Conectando Android Auto…', armed: 'Esperando la imagen de Android Auto…',
         'recovery-needed': 'Reconectando Android Auto…', error: 'No se ha podido abrir Android Auto'
     }[status.state];
@@ -87,9 +94,11 @@ function drawAA(cv, ui, night) {
         if (frame) cv.roundRect(box.x + 20, y - 24, box.w - 40, 36, 8, p.surface);
         cv.text(message, box.x + box.w / 2, y, 21, p.text, centered);
         if (!frame) {
-            const detail = status.state === 'error' && status.detail;
+            const detail = status.state === 'error' && (status.failure || status.detail);
             cv.text(detail ? 'Código: ' + detail : status.state === 'error' ? 'Selecciona BMW y vuelve a Android Auto para reintentar' :
                 'El mapa y los controles del teléfono aparecerán aquí', box.x + box.w / 2, y + 30, 17, p.secondary, centered);
+            if (status.state === 'error' && status.failure && status.detail !== status.failure)
+                cv.text('Cierre: ' + status.detail, box.x + box.w / 2, y + 54, 15, p.secondary, centered);
         }
     } else if (status.state === 'playing' && !status.inputReady) {
         cv.text('Controles de Android Auto no disponibles', box.x + box.w / 2, box.y + box.h - 9, 16, p.secondary, centered);

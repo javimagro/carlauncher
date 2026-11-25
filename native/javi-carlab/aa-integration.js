@@ -52,17 +52,22 @@ function createIntegration(gpu, options) {
     const player = (options.createPlayer || createAAPlayer)(gpu, options);
     let listeners = [], shown = false, capable = false, closed = false;
     let epoch = 0, initialProfileUsed = false;
-    let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, waiting = false, closing;
+    let current, context, applet, contextAt = -Infinity, serial = Promise.resolve(), blocked, firstFailure, waiting = false, closing;
     let state = { state: 'unavailable', inputReady: false };
-    function update(next, detail) {
+    function update(next, detail, failure) {
         state = { state: next, inputReady: false, detail: diagnosticCode(detail && detail.code) };
+        if (failure) state.failure = failure;
         listeners.slice().forEach(fn => fn());
     }
+    function reportBlocked() { update('error', { code: blocked }, firstFailure); }
     function requirement() {
         try { return options.requirement ? options.requirement() : null; }
         catch (_) { return 'aa-controls-unavailable'; }
     }
-    function validContext() { return now() - contextAt < 1600 && isLauncher(context, applet); }
+    function missingReadiness() {
+        const age = now() - contextAt;
+        return requirement() || (age >= 0 && age < 1600 && isLauncher(context, applet) ? null : 'context-unavailable');
+    }
     function active(job) { return !closed && shown && capable && current === job && !job.cancelled; }
     function releaseFailure(code, error) {
         const cause = diagnosticCode(error && error.message);
@@ -70,7 +75,7 @@ function createIntegration(gpu, options) {
         blocked = code;
         // Failed restoration ends recovery: do not retain an unusable surface.
         safely(() => player.stop()).catch(() => {});
-        update('error', { code });
+        reportBlocked();
     }
     function safely(work) { try { return Promise.resolve(work()); } catch (error) { return Promise.reject(error); } }
     function stopJob(preserveFrame) {
@@ -78,7 +83,7 @@ function createIntegration(gpu, options) {
         if (old) {
             old.cancelled = true;
             if (old.cancelGeometry) old.cancelGeometry();
-            if (old.cancelContext) old.cancelContext();
+            if (old.cancelReadiness) old.cancelReadiness();
         }
         const input = options.input ? safely(() => options.input.setVisible(false)).catch(() =>
             releaseFailure('input-stop-unconfirmed')) : Promise.resolve();
@@ -97,6 +102,7 @@ function createIntegration(gpu, options) {
     function fail(job, code, errno) {
         if (!active(job)) return;
         code = diagnosticCode(code) || 'playback';
+        firstFailure = code;
         const nativeError = Number.isInteger(errno) && errno > 0 && errno <= 4095 ? ' · errno ' + errno : '';
         log.warn('BMWLauncher AA: fallo ' + code + nativeError);
         stopJob(); update('error', { code });
@@ -170,32 +176,37 @@ function createIntegration(gpu, options) {
         } catch (error) { fail(job, error.code || error.message || 'format'); }
         finally { clearTimeout(deadline); job.cancelGeometry = undefined; }
     }
-    function waitContext(job) {
-        if (validContext()) return Promise.resolve(true);
-        if (job.contextWait) return job.contextWait;
-        update('waiting', { code: 'context-unavailable' });
-        job.contextWait = new Promise(resolve => {
+    function waitReady(job, missing = missingReadiness()) {
+        if (!active(job)) return Promise.resolve(false);
+        if (!missing) return Promise.resolve(true);
+        if (job.readinessWait) return job.readinessWait;
+        const limit = options.contextWaitMs || 4000, expires = now() + limit;
+        job.readinessWait = new Promise(resolve => {
             const finish = value => {
-                clearTimeout(timer); job.resumeContext = job.cancelContext = undefined;
+                clearTimeout(timer); job.resumeReadiness = job.cancelReadiness = undefined;
                 resolve(value);
             };
-            const timer = setTimeout(() => {
-                finish(false); fail(job, 'context-unavailable');
-            }, options.contextWaitMs || 4000);
-            job.resumeContext = () => { if (active(job) && validContext()) finish(true); };
-            job.cancelContext = () => finish(false);
-            if (!active(job)) finish(false);
-        }).then(value => { job.contextWait = undefined; return value; });
-        return job.contextWait;
+            const timeout = () => { finish(false); fail(job, missing); };
+            const timer = setTimeout(timeout, limit);
+            job.resumeReadiness = () => {
+                if (!active(job)) return;
+                if (now() >= expires) return timeout();
+                const next = missingReadiness();
+                if (!next) return finish(true);
+                if (next !== missing) { missing = next; update('waiting', { code: missing }); }
+            };
+            job.cancelReadiness = () => finish(false);
+        }).then(value => { job.readinessWait = undefined; return value; });
+        update('waiting', { code: missing });
+        return job.readinessWait;
     }
     function acquireFocus(job) {
         if (job.focus || job.focusStarting) return;
-        if (!validContext()) {
-            waitContext(job).then(ready => { if (ready && active(job)) acquireFocus(job); });
+        const missing = missingReadiness();
+        if (missing) {
+            waitReady(job, missing).then(ready => { if (ready && active(job)) acquireFocus(job); });
             return;
         }
-        const missing = requirement();
-        if (missing) return fail(job, missing);
         job.focusStarting = true;
         update('armed');
         if (!active(job)) return;
@@ -217,13 +228,14 @@ function createIntegration(gpu, options) {
     async function launch(job) {
         await serial;
         if (!active(job)) return;
-        if (blocked) { current = undefined; update('error', { code: blocked }); return; }
+        if (blocked) { current = undefined; reportBlocked(); return; }
+        firstFailure = undefined;
         try {
             const identity = await (options.inspect || inspect)(options.capture);
             if (!active(job)) return;
             const profile = createFormat ? undefined : await geometryProfile(job, identity);
             if (!active(job)) return;
-            if (!await waitContext(job) || !active(job)) return;
+            if (!await waitReady(job) || !active(job)) return;
             job.identity = Object.freeze(Object.assign({}, identity, { initialBytes: job.initialBytes }));
             const changed = (value, detail) => {
                 if (!active(job)) return;
@@ -258,8 +270,8 @@ function createIntegration(gpu, options) {
     }
     function start() {
         if (closed || !shown || !capable || current) return;
-        if (blocked) { update('error', { code: blocked }); return; }
-        const missing = requirement() || (!validContext() ? 'context-unavailable' : null);
+        if (blocked) { reportBlocked(); return; }
+        const missing = missingReadiness();
         waiting = !!missing;
         if (missing) {
             if (state.state !== 'waiting' || state.detail !== missing) update('waiting', { code: missing });
@@ -272,7 +284,7 @@ function createIntegration(gpu, options) {
         ready(info) { capable = !!(info && info.video); player.ready(info); if (!capable) stopJob(); else start(); },
         context(value, id) {
             context = value; applet = id; contextAt = now();
-            if (current && current.resumeContext) current.resumeContext();
+            if (current && current.resumeReadiness) current.resumeReadiness();
             else if (waiting) start();
         },
         setVisible(value) {

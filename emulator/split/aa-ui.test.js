@@ -21,6 +21,18 @@ function fixture() {
 }
 const tap = (ui, box) => { ui.touch('down', box.x + box.w / 2, box.y + box.h / 2); ui.touch('up', box.x + box.w / 2, box.y + box.h / 2); };
 const choose = (ui, action) => { if (!ui.state.menu) tap(ui, layout.settings); tap(ui, layout[action]); };
+test('AA shows which control is missing and preserves the first error when cleanup also fails', () => {
+    const f = fixture(); f.frame(undefined);
+    const labels = [], cv = { roundRect() {}, text(label) { labels.push(label); } };
+    f.state.state = 'waiting'; f.state.detail = 'return-context-unavailable';
+    drawAA(cv, f.ui, true);
+    assert(labels.includes('Esperando la pantalla anterior de iDrive…'));
+    labels.length = 0;
+    f.state.state = 'error'; f.state.detail = 'capture-stop-unconfirmed'; f.state.failure = 'capture-prepare';
+    drawAA(cv, f.ui, true);
+    assert(labels.includes('Código: capture-prepare'));
+    assert(labels.includes('Cierre: capture-stop-unconfirmed'));
+});
 test('AA uses the whole left panel without BMW controls and keeps actions below or beside the map', () => {
     const f = fixture(); f.ui.update(true, false, true);
     assert.equal(f.ui.state.source, 'aa'); assert.equal(f.ui.state.focus, 'drivehub');
