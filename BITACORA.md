@@ -5,6 +5,7 @@
 - En el i4 con la variante local 0.2.25, Android Auto integrado pasa de conectando a `capture-stop-unconfirmed`. Por ENET, en lectura, se confirmó `aapd` activo, el módulo de formato cargado y salida 0 al ejecutar `aa-capture --check`. El último registro propio indica 128 ventanas y no había sondas activas ni un dueño del bloqueo al consultar. El journal carecía del error que precedió al cierre.
 - El supervisor registra el primer fallo, incluido el errno nativo cuando existe, y registra por separado el cierre que no pudo confirmar. El worker conserva la causa de su cierre y la valida antes de usarla. También registra recuperaciones acotadas y su tamaño solicitado. El bloqueo al no poder verificar la retirada se conserva.
 - 508 pruebas del simulador superadas, incluida la regresión de fallo de captura seguido de error de cierre. La mejora es de diagnóstico. Falta obtener un intento con esos registros para localizar el fallo en el i4.
+- Tras reiniciar para la prueba del cuadro, el usuario vio «Esperando los controles» y después confirmó «Captura activa» en Datos del coche. Entrar en Datos suspende la proyección. Se activó un registro temporal del worker y el enlace ENET se perdió antes de poder leer un intento posterior. Quedan pendientes la reproducción desde la vista AA con el mando activo, la lectura del registro y la restauración de los dos módulos originales del motor de prueba.
 
 ## 2026-11-20 · Publicación de BMWLauncher 0.2.24
 
