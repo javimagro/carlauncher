@@ -97,6 +97,11 @@ module.exports = function createSession(gpu, options) {
         cockpitFocusUntil = 0;
     }
 
+    function releaseCockpitFocus() {
+        if (cockpitFocusSent) cockpit.cancelFocus();
+        cockpitFocusSent = false;
+    }
+
     function present() {
         if (!area) return;
         if (shown) frame(Date.now());
@@ -128,6 +133,7 @@ module.exports = function createSession(gpu, options) {
     }
 
     gpu.on('ready', (screen, info) => {
+        releaseCockpitFocus();
         const target = options.area(screen, info);
         if (!target) { area = undefined; hidden(); gpu.show(false); return; }
         area = target;
@@ -189,8 +195,7 @@ module.exports = function createSession(gpu, options) {
     gpu.on('ccu', (event) => { if (shown && onScreen && canGrab) controller(event); });
     function suspend(exiting) {
         if (exiting || confirmedOnScreen) cockpitFocusUntil = 0;
-        if (cockpitFocusSent) cockpit.cancelFocus();
-        cockpitFocusSent = false;
+        releaseCockpitFocus();
         data.toast = undefined;
         assistant.setVisible(false);
         provider.suspend(cockpit && cockpit.visible());
@@ -247,7 +252,8 @@ module.exports = function createSession(gpu, options) {
         const vehicle = currentVehicle(now);
         if (!shown || !onScreen || !area) provider.refresh(now, vehicle.location, false, !!(cockpit && cockpit.visible()));
         if (cockpit) cockpit.update(vehicle, now, provider.weatherSnapshot(now));
-        focusCockpit(now);
+        if (cockpitFocusSent && shown && area && confirmedOnScreen) cockpitFocusSent = cockpit.renewFocus();
+        else focusCockpit(now);
         if (options.onCockpitVisible) options.onCockpitVisible(!!(cockpit && cockpit.visible()));
     }
     const background = setInterval(updateBackground, 1000);

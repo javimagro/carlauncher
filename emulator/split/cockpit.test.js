@@ -38,6 +38,7 @@ test('cockpit focus requires a compatible renderer and its parked widget', () =>
         image() { return 7; }
         pixels() {}
         focusWidget(ref) { focus.push(['focus', ref]); return true; }
+        renewWidgetFocus(ref) { focus.push(['renew', ref]); return true; }
         cancelWidgetFocus(ref) { focus.push(['cancel', ref]); }
         close() {}
     }
@@ -45,17 +46,21 @@ test('cockpit focus requires a compatible renderer and its parked widget', () =>
     assert.equal(cockpit.requestFocus(), 'waiting');
     cockpit.update({ trip: {} }, 1000, undefined);
     assert.equal(cockpit.requestFocus(), 'skipped', 'older renderer');
-    client.widgetFocus = true;
+    client.widgetFocusLease = true;
     client.emit('target', 'widget', 'unavailable');
     assert.equal(cockpit.requestFocus(), 'waiting');
     client.emit('target', 'widget', 'parked');
     assert.equal(cockpit.requestFocus(), 'sent');
-    client.emit('refused', 'focus_widget', 7, 'expired');
+    assert.equal(cockpit.renewFocus(), true);
+    client.emit('refused', 'renew_widget_focus', 7, 'ended');
+    assert.equal(cockpit.renewFocus(), false);
     assert.equal(cockpit.status(1000), 'Selecciona Cluster renderer en el cuadro');
+    assert.equal(cockpit.requestFocus(), 'sent');
+    cockpit.cancelFocus();
     client.emit('target', 'widget', 'shown');
     assert.equal(cockpit.requestFocus(), 'skipped');
     cockpit.cancelFocus();
-    assert.deepEqual(focus, [['focus', 7], ['cancel', 7]]);
+    assert.deepEqual(focus, [['focus', 7], ['renew', 7], ['focus', 7], ['cancel', 7]]);
     cockpit.close();
 });
 

@@ -1,5 +1,10 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-25 · Mantener el widget durante la apertura de BMWLauncher
+
+- La variante experimental renueva el foco una vez por segundo durante la visibilidad confirmada de BMWLauncher. Un permiso tarda como máximo tres segundos en caducar al interrumpirse la renovación. Si el cuadro no confirma la petición, caduca a los cuatro segundos desde el inicio. Ocultación, cierre, pérdida de foco confirmada o retirada de la escena cancelan la petición. Renovar una petición vencida no vuelve a enfocar. El cliente requiere la capacidad `widget_focus: 2`.
+- Pasaron 511 pruebas del simulador. Falta comprobar físicamente que el volante cambia de vista con la petición activa y que el cuadro conserva la vista elegida por el conductor mientras BMWLauncher sigue abierto.
+
 ## 2026-11-25 · Comparar la selección del cuadro y el reloj de TDT
 
 - La lectura `KombiIF.statusKombiSelection` de BMW pasa por los getters y las suscripciones OAP existentes con permiso `rs`. El diagnóstico muestra el código bruto vigente junto al estado de Cluster renderer. Descarta el valor sin asignar `65535` y las muestras caducadas. Para interpretar el código, comparar velocidad → widget → velocidad desde el volante con el renderer original. Si el código no distingue esas vistas, la lectura no sirve para implementar la selección del widget. La prueba física sigue pendiente.

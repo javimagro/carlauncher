@@ -25,6 +25,7 @@ function createCockpit(Client, get, log = console) {
     let visible = false;
     let parked = false;
     let targetState;
+    let focusRequested = false;
     let connectingSince;
     let ownWeather, weatherTime;
     const art = loadArtwork('cockpit-weather.rgba.gz');
@@ -37,6 +38,7 @@ function createCockpit(Client, get, log = console) {
         connectingSince = now;
         client.on('ready', () => {
             if (renderer !== client) return;
+            focusRequested = false;
             supported = client.backend === 'id8' && typeof client.targets === 'string' &&
                 client.targets.split(',').includes('widget:2240x896');
             if (!supported) {
@@ -68,14 +70,16 @@ function createCockpit(Client, get, log = console) {
         });
         client.on('refused', (op, ref, reason) => {
             if (renderer !== client || ref !== layer) return;
+            if (op === 'renew_widget_focus') { focusRequested = false; return; }
             log.warn('BMWLauncher: cluster-render: ' + op + ' · ' + reason);
-            if (op === 'focus_widget' || op === 'cancel_widget_focus') return;
+            if (op === 'focus_widget' || op === 'cancel_widget_focus') { focusRequested = false; return; }
             visible = false;
             parked = true;
             status = layerStatus.error;
         });
         client.on('disconnected', () => {
             if (renderer !== client) return;
+            focusRequested = false;
             status = undefined;
             visible = false;
             connectingSince = Date.now();
@@ -94,12 +98,17 @@ function createCockpit(Client, get, log = console) {
         },
         requestFocus() {
             if (!renderer || !renderer.ready) return 'waiting';
-            if (!supported || !renderer.widgetFocus || visible || targetState === 'shown') return 'skipped';
+            if (!supported || !renderer.widgetFocusLease || visible || targetState === 'shown') return 'skipped';
             if (targetState !== 'parked' || !layer || !frameKeys) return 'waiting';
-            return renderer.focusWidget(layer) ? 'sent' : 'skipped';
+            focusRequested = renderer.focusWidget(layer);
+            return focusRequested ? 'sent' : 'skipped';
+        },
+        renewFocus() {
+            return focusRequested && renderer.renewWidgetFocus(layer);
         },
         cancelFocus() {
-            if (renderer && renderer.ready && renderer.widgetFocus) renderer.cancelWidgetFocus(layer);
+            if (focusRequested) renderer.cancelWidgetFocus(layer);
+            focusRequested = false;
         },
         update(readings, now, sharedWeather) {
             if (!renderer) open(now);
@@ -145,6 +154,7 @@ function createCockpit(Client, get, log = console) {
             visible = false;
             parked = false;
             targetState = undefined;
+            focusRequested = false;
             connectingSince = undefined;
         }
     };

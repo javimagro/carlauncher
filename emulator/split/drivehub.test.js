@@ -309,6 +309,7 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() {} });
     const calls = [];
     let focusReady = true;
+    let focusEnded = false;
     const session = createSession(gpu, {
         area: () => ({ scale: 1 }),
         get: async () => Buffer.from(''),
@@ -319,6 +320,7 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
                 calls.push('focus');
                 return 'sent';
             },
+            renewFocus() { calls.push('renew'); return !focusEnded; },
             cancelFocus() { calls.push('cancel'); }
         })
     });
@@ -333,15 +335,17 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     gpu.emit('state', { onScreen: true });
     gpu.emit('state', { onScreen: true });
     assert.deepEqual(calls, ['focus']);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew']);
     gpu.emit('state', { onScreen: false });
     gpu.emit('state', { onScreen: true });
     t.mock.timers.tick(1000);
-    assert.deepEqual(calls, ['focus', 'cancel']);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel']);
 
     session.show(false);
     session.show(true, false);
     gpu.emit('state', { onScreen: true });
-    assert.deepEqual(calls, ['focus', 'cancel'], 'recovering the renderer for the same context is not a new opening');
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel'], 'recovering the renderer for the same context is not a new opening');
 
     session.show(false);
     focusReady = false;
@@ -350,13 +354,17 @@ test('cockpit focus is requested once per confirmed opening and is cancelled whe
     t.mock.timers.tick(5000);
     focusReady = true;
     t.mock.timers.tick(1000);
-    assert.deepEqual(calls, ['focus', 'cancel']);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel']);
 
     session.show(false);
     session.show(true, true);
     gpu.emit('state', { onScreen: true });
+    focusEnded = true;
+    t.mock.timers.tick(1000);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel', 'focus', 'renew'], 'a lost lease is neither renewed nor requested again');
     session.show(false);
-    assert.deepEqual(calls, ['focus', 'cancel', 'focus', 'cancel']);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel', 'focus', 'renew']);
 });
 
 test('the whole content receives touch and the house exits only on a completed tap', (t) => {
