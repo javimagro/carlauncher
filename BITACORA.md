@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-25 · Comparar la selección del cuadro y el reloj de TDT
+
+- La lectura `KombiIF.statusKombiSelection` de BMW pasa por los getters y las suscripciones OAP existentes con permiso `rs`. El diagnóstico muestra el código bruto vigente junto al estado de Cluster renderer. Descarta el valor sin asignar `65535` y las muestras caducadas. Para interpretar el código, comparar velocidad → widget → velocidad desde el volante con el renderer original. Si el código no distingue esas vistas, la lectura no sirve para implementar la selección del widget. La prueba física sigue pendiente.
+- Verificación local: 511 pruebas con `node --test --test-concurrency=4 emulator/split/*.test.js`, catálogo MGU21 y permisos con `Verificar-Telemetria-MGU.js`, carga de ambos módulos con Node 8.16.2 y revisión de una captura del diagnóstico con código sintético. El lector del cuadro no necesita el renderer experimental y no ejecuta una orden de selección.
+- RideTube hace que el vídeo siga el reloj del audio del reproductor BMW. En este i4 no estaba disponible `OapGenericMedia` en la prueba. La comparación física anterior con SmartX sí midió unas 47.400 muestras/s aceptadas al separar la decodificación, frente a unas 36.000 muestras/s con el reproductor de entonces. La siguiente comparación debe usar el mismo canal y la versión vigente, midiendo el avance PCM, vaciados y sincronía con el reloj de audio. [Evidencia de audio](TDT-AUDIO-MGU21.md#actualización-física-del-14-11-2026--0214)
+
 ## 2026-11-25 · Seleccionar el widget al abrir BMWLauncher
 
 - Tras perder la selección en el cierre real del i4, el usuario eligió recuperar el widget al abrir BMWLauncher. El arranque automático del motor sigue ofreciendo y actualizando el widget. La orden de foco se arma al entrar, exige confirmación de la superficie central y se consume una vez por apertura. Si el cliente aún no tiene una oferta aparcada, puede esperar dentro de una ventana de cinco segundos.

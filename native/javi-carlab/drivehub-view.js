@@ -183,10 +183,17 @@ function diagnostics(cv, records, vehicle, now, system) {
         const record = records && records.get(signal);
         const fields = record && record.fields;
         const stale = record && record.status === 'sample' && staleSample(record, now);
+        let title = label;
         let value = !signal ? (system[keys[0]] || 'No disponible') : !records ? 'Esperando conexión…' : 'Sin muestra';
         if (!signal && keys[0] === 'playbackStats') {
             const stats = system.playbackStats;
             value = stats ? stats.presented + ' / ' + stats.queued + ' / ' + stats.underruns + ' · máx. ' + stats.maxGapMs + ' ms' : 'Sin reproducción';
+        }
+        if (!signal && keys[0] === 'cockpitStatus') {
+            const selection = records && records.get('statusKombiSelection');
+            const content = selection && selection.status === 'sample' && !staleSample(selection, now) &&
+                selection.fields && selection.fields.statusActivationInstrumentPackContent;
+            if (Number.isInteger(content) && content >= 0 && content < 65535) title += ' · BMW ' + content;
         }
         let color = secondary;
         if (!signal) {
@@ -202,7 +209,7 @@ function diagnostics(cv, records, vehicle, now, system) {
             color = amber;
         }
         cv.roundRect(x, y, column, rowHeight, 5, '#192734');
-        cv.text(label, x + 10, y + 10, 10, secondary);
+        cv.text(title, x + 10, y + 10, 10, secondary);
         if (fields && record.status === 'sample' && Number.isFinite(record.sampledAt)) {
             const seconds = Math.max(0, Math.floor((now - record.sampledAt) / 1000));
             const age = seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min';

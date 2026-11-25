@@ -65,6 +65,51 @@ test('the probe reads named fields only and unsubscribes when closed', async () 
     assert.equal(records.length, new Set(records.map(({ signal }) => signal)).size);
 });
 
+test('the cockpit diagnostic reads selection changes and displays the raw BMW code separately from visibility', async (t) => {
+    const signal = 'statusKombiSelection';
+    const field = 'statusActivationInstrumentPackContent';
+    const manifest = require('../../apps/javi_carlauncher/package/manifest.json');
+    assert.equal(manifest.proxies['de.bmw.infotainment.KombiIF'].attributes[signal], 'rs');
+    let notify;
+    const removed = [];
+    const probe = start({
+        buildTypedProxy(service, instance) {
+            if (service !== 'de.bmw.infotainment.KombiIF') throw new Error('proxy unavailable');
+            assert.equal(instance, '1');
+            return {
+                init() {}, waitUntilAvailable() {},
+                statusKombiSelection: {
+                    getValue() { return { [field]: 0 }; },
+                    subscribe(listener) { notify = listener; return 34; },
+                    unsubscribe(id) { removed.push(id); }
+                }
+            };
+        }
+    });
+    t.after(() => probe.stop());
+    await turn();
+    const record = () => probe.snapshot().find(row => row.signal === signal);
+    function diagnosticLabel(now = record().sampledAt) {
+        const labels = [];
+        const canvas = new Proxy({ text: text => labels.push(text), textWidth: () => 10 },
+            { get: (target, key) => target[key] || (() => {}) });
+        drawHome(canvas, { selected: 0, article: 0 }, 0, {
+            diagnostics: true, energy: [], telemetry: [record()], cockpitStatus: 'Widget visible'
+        }, () => 1, now);
+        assert(labels.includes('Widget visible'));
+        return labels.find(text => text.startsWith('Cockpit · Cluster renderer'));
+    }
+    assert.equal(diagnosticLabel(), 'Cockpit · Cluster renderer · BMW 0');
+    notify({ [field]: 321, statusBrightnessOffsetInstrumentPack: 31 });
+    assert.deepEqual(record().fields, { [field]: 321 });
+    assert.equal(diagnosticLabel(), 'Cockpit · Cluster renderer · BMW 321');
+    assert.equal(diagnosticLabel(record().sampledAt + record().freshForMs + 1), 'Cockpit · Cluster renderer');
+    notify({ [field]: 65535 });
+    assert.equal(diagnosticLabel(), 'Cockpit · Cluster renderer');
+    await probe.stop();
+    assert.deepEqual(removed, [34]);
+});
+
 test('a subscription resolved after closing is still removed', async () => {
     const removed = [];
     let complete;
