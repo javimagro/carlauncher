@@ -1,4 +1,11 @@
-# Estado de BMWLauncher · 20-11-2026
+# Estado de BMWLauncher · 26-11-2026
+
+## Versión 0.2.26
+
+- App y motor **0.2.26**. La numeración supera la 0.2.25 usada en las pruebas del i4. Captura del mando **1.1.0** y Formato de Android Auto **1.0.0**.
+- Integra apertura del widget condicionado a BMWLauncher (#25), recuperación y diagnóstico de Android Auto (#26), última lectura válida (#27), y degradado de altura y Back en TDTWorld (#28).
+- El foco del widget se probó físicamente con la variante de Cluster renderer 0.8.13. Android Auto, la captura física de Back y las lecturas retenidas quedan pendientes de verificación en el i4 con el paquete integrado.
+- Los ensayos locales de mapa y audio siguen en el checkout de investigación. [Descargas](https://github.com/javimagro/carlauncher/releases/tag/v0.2.26).
 
 ## Versión 0.2.24
 

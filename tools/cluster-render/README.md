@@ -24,8 +24,10 @@ make target
 
 El binario ID8 queda en `build/target/cluster-render-idrive8`. El cliente
 actualizado está en `js/cluster_render_client.js`. El artefacto de CI incluye
-ambos, su SHA-256 y la información ELF. El ZIP de BMWLauncher sigue usando
-el Cluster renderer que esté instalado.
+ambos, su SHA-256 y la información ELF. El ZIP de BMWLauncher usa
+el Cluster renderer instalado. La release 0.2.26 ofrece también un ZIP de
+USB independiente para ID8 con la variante ensayada y su código fuente.
+Si la variante ya está instalada, actualiza solo la app y su motor.
 
 ## Protocolo
 

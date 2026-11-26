@@ -1,5 +1,14 @@
 # BMWLauncher para iDrive 8
 
+## 0.2.26 · Android Auto, lecturas y cuadro
+
+- **Android Auto.** Recupera el arranque si vuelven los permisos del mando y conserva el primer error junto con el estado del cierre. Pendiente de prueba en el i4.
+- **Lecturas.** El cuadro, Trayecto y la franja de energía mantienen la última medida válida. El gráfico de altura recupera el degradado y el trazo redondeado de Carlinkit.
+- **TDTWorld.** Back detiene el canal y vuelve a la lista con ese canal seleccionado.
+- **Cuadro.** Con la variante de Cluster renderer 0.8.13 probada en el i4, el widget aparece al abrir BMWLauncher. El volante puede cambiar de vista y al salir de la app se libera la selección.
+
+En MGU Store → `javimagro/carlauncher` → **Tags** → **Comprobar ahora**, actualiza **BMWLauncher** y **Motor gráfico** a **0.2.26**. Por USB, extrae el ZIP de BMWLauncher en la raíz de la unidad. El renderer opcional tiene su propio ZIP de USB. Si ya instalaste la variante de la prueba del cuadro, basta con actualizar BMWLauncher y su motor. Para volver atrás, reinstala ambos componentes de la 0.2.24. [Descargas e instrucciones de instalación](https://github.com/javimagro/carlauncher/releases/tag/v0.2.26).
+
 ## 0.2.24 · Cuadro, trayecto y guiado en segundo plano
 
 - **Cuadro.** El widget se ofrece desde el arranque de iDrive. Mientras esté seleccionado, el tiempo meteorológico, la temperatura HV, la potencia y el consumo se actualizan al salir de BMWLauncher.
