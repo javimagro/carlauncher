@@ -29,7 +29,7 @@ function createUnderlay(options) {
         const finished = new Promise((yes, no) => { resolve = yes; reject = no; });
         // The caller attaches its release handler later when capture stops.
         finished.catch(() => {});
-        const current = { applet, origin: context, phase: 'pending', changed, resolve, reject, finished };
+        const current = { applet, origin: context, phase: 'pending', until: now() + 4000, changed, resolve, reject, finished };
         job = current;
         return { stop() {
             if (current.abandoned || job !== current) return finished;
@@ -72,9 +72,15 @@ function createUnderlay(options) {
             return;
         }
         if (current.phase === 'pending') {
-            if (!isLauncher(value, current.applet) || !options.allowed()) {
+            if (!isLauncher(value, current.applet)) {
+                settle(current);
                 current.changed({ state: 'error', code: 'aa-context-changed' }); return;
             }
+            if (now() >= current.until) {
+                settle(current);
+                current.changed({ state: 'error', code: 'aa-context-permission-timeout' }); return;
+            }
+            if (!options.allowed()) return;
             busy = true; current.phase = 'opening'; current.until = now() + 3500;
             // Refresh the OAP lease before Hmi8 hides the launcher's RHMI page.
             if (options.beforeOpen) options.beforeOpen();

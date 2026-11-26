@@ -486,6 +486,20 @@ test('unconfirmed worker exit rejects cleanup and forbids a replacement capture'
     assert(states.some(value => value[1].code === 'worker-close-unconfirmed'));
 });
 
+test('worker exit drains the final capture error before classifying the shutdown', async () => {
+    const worker = child(), states = [];
+    const player = createAAPlayer({ video() {} }, { forkProcess: () => worker });
+    player.ready({ video: true });
+    player.arm({ pid: 77 }, (state, detail) => states.push([state, detail]));
+    worker.connected = false;
+    worker.emit('exit', 1);
+    worker.emit('message', { type: 'status', status: 'error', detail: { code: 'capture-prepare', errno: 22 } });
+    worker.emit('message', { type: 'closed', ok: false, error: 'capture-close-unconfirmed' });
+    worker.emit('close', 1);
+    await assert.rejects(player.stop(), /capture-close-unconfirmed/);
+    assert.deepEqual(states.filter(([state]) => state === 'error'), [['error', { code: 'capture-prepare', errno: 22 }]]);
+});
+
 test('native cleanup errors received during stop reject withdrawal confirmation', async () => {
     const c = child(), player = createPlayer({ capture: 'capture', spawnProcess: () => c }, () => {});
     player.arm({ pid: 77, starttime: '123456' });
@@ -522,7 +536,7 @@ test('real worker reports unavailable capture closure as uncertain without alloc
         forkProcess(file, args, options) { worker = require('node:child_process').fork(file, args, options); return worker; } });
     t.after(() => { if (worker && worker.exitCode === null) worker.kill('SIGKILL'); });
     p.ready({ video: true }); p.arm({ pid: 77, starttime: '123456' });
-    await assert.rejects(p.stop(), /worker-close-unconfirmed/);
+    await assert.rejects(p.stop(), /capture-close-unconfirmed/);
     assert.equal(worker.exitCode, 1); assert.equal(p.frame(), undefined);
 });
 

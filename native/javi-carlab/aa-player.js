@@ -95,9 +95,11 @@ function createPlayer(options, send) {
         if (ring) { try { ring.close(preserveFrame === true); } catch (_) {} ring = undefined; }
         return closing;
     }
-    function fail(code) {
+    function fail(code, errno) {
         if (stopped) return;
-        send({ type: 'status', status: 'error', detail: { code } }); stop();
+        const detail = { code };
+        if (Number.isInteger(errno) && errno > 0 && errno <= 4095) detail.errno = errno;
+        send({ type: 'status', status: 'error', detail }); stop();
     }
     function recovery(detail) {
         if (stopped) return;
@@ -211,7 +213,7 @@ function createPlayer(options, send) {
             const required = message.requiredBytes;
             recovery({ code: typeof message.code === 'string' ? message.code.slice(0, 80) : 'capture-gap',
                 requiredBytes: Number.isInteger(required) && required > 0 && required <= maxFrame ? required : undefined, maxFrame });
-        } else if (message.type === 'error') fail(typeof message.code === 'string' ? message.code.slice(0, 80) : 'capture');
+        } else if (message.type === 'error') fail(typeof message.code === 'string' ? message.code.slice(0, 80) : 'capture', message.errno);
         else if (message.type === 'stats') {
             const value = {};
             Object.keys(message).slice(0, 32).forEach(key => { if (/^[a-zA-Z0-9_]{1,40}$/.test(key) && Number.isFinite(message[key])) value[key] = message[key]; });

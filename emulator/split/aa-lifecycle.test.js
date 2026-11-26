@@ -143,8 +143,42 @@ test('AA waits for loaded input support and starts only when its requirements be
     f.callbacks[0]('armed'); await tick();
     assert.equal(f.calls.includes('focus'), false);
     assert.equal(f.api.status().detail, missing);
+    assert.equal(f.api.status().state, 'waiting');
+    missing = null;
     f.api.context({ state: 1, applet: 1000 }, 1000); await tick();
-    assert.equal(f.callbacks.length, 1, 'a failed acquisition does not retry indefinitely');
+    assert.equal(f.callbacks.length, 1, 'a transient loss of controls does not restart capture');
+    assert.equal(f.calls.filter(value => value === 'focus').length, 1);
+    await f.api.close();
+});
+
+test('AA rechecks the controls after checking the capturer and cancels the wait on hide', async () => {
+    let missing = null;
+    const check = deferred();
+    const f = fixture({ requirement: () => missing, inspect: () => check.promise });
+    f.api.setVisible(true); await tick();
+    missing = 'aa-controls-unavailable';
+    check.resolve({ pid: 2, starttime: '10' }); await tick();
+    assert.equal(f.api.status().state, 'waiting');
+    assert.equal(f.callbacks.length, 0);
+    f.api.setVisible(false);
+    missing = null;
+    f.api.context({ state: 1, applet: 1000 }, 1000); await tick();
+    assert.equal(f.callbacks.length, 0);
+    await f.api.close();
+});
+
+test('AA rejects controls recovered after the readiness deadline even before its timer runs', async () => {
+    let missing = null;
+    const f = fixture({ requirement: () => missing });
+    f.api.setVisible(true); await tick();
+    missing = 'aa-controls-unavailable';
+    f.callbacks[0]('armed'); await tick();
+    f.clock(4100);
+    missing = null;
+    f.api.context({ state: 1, applet: 1000 }, 1000); await tick();
+    assert.equal(f.api.status().state, 'error');
+    assert.equal(f.api.status().detail, 'aa-controls-unavailable');
+    assert.equal(f.calls.includes('focus'), false);
     await f.api.close();
 });
 
@@ -166,6 +200,7 @@ function formatFixture(extra) {
         stop() { calls.push('video-stop'); return extra.videoStop && extra.videoStop.promise; }
     };
     const api = createIntegration({}, {
+        log: extra.log,
         now: () => time, createPlayer: () => player,
         inspect: async () => ({ pid: 2, starttime: '10', profile: 'mgu21-aa-20261115' }),
         createFocus(applet, changed) {
@@ -274,11 +309,18 @@ test('format loss disables input and an unconfirmed restoration blocks further a
 });
 
 test('failed capture removal still restores format and releases underlay but blocks a new generation', async () => {
-    const videoStop = deferred(), f = formatFixture({ videoStop }); await f.ready(); f.api.setVisible(false);
-    videoStop.reject(Error('worker-stop-timeout')); await tick();
+    const warnings = [], videoStop = deferred();
+    const f = formatFixture({ videoStop, log: { warn: message => warnings.push(message) } });
+    await f.ready();
+    f.callbacks[0]('error', { code: 'capture-prepare', errno: 22 });
+    videoStop.reject(Error('capture-cleanup-pending')); await tick();
+    assert.deepEqual(warnings, ['BMWLauncher AA: fallo capture-prepare · errno 22',
+        'BMWLauncher AA: cierre capture-stop-unconfirmed · capture-cleanup-pending']);
     assert(f.calls.includes('format-close')); assert(f.calls.includes('focus-stop'));
+    f.api.setVisible(false);
     f.api.setVisible(true); await tick();
     assert.equal(f.api.status().detail, 'capture-stop-unconfirmed');
+    assert.equal(f.api.status().failure, 'capture-prepare');
     assert.equal(f.calls.filter(value => value === 'arm').length, 1);
     await assert.rejects(f.api.close(), /capture-stop-unconfirmed/);
 });

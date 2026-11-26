@@ -8,12 +8,12 @@ function close(preserveFrame) {
     if (closing) return;
     closing = true; clearInterval(watch);
     const closed = player ? player.stop(preserveFrame === true) : Promise.resolve();
-    function finish(ok) {
+    function finish(ok, error) {
         const exit = () => process.exit(ok ? 0 : 1);
-        if (process.connected) process.send({ type: 'closed', ok }, exit);
+        if (process.connected) process.send({ type: 'closed', ok, error: error && error.message }, exit);
         else exit();
     }
-    closed.then(() => finish(true), () => finish(false));
+    closed.then(() => finish(true), error => finish(false, error));
 }
 const watch = setInterval(() => { if (now() - parentLease > 1500) close(); }, 250);
 process.on('message', message => {

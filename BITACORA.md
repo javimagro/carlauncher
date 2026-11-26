@@ -1,5 +1,20 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-26 · Arranque y diagnóstico de Android Auto sin ENET
+
+- Revisadas las transiciones de visibilidad y mando, `hmictl` y el contexto MAIN, protocolo 3 del formato Cinemo, captura, decodificación, toque y retirada. El emparejamiento del teléfono sigue perteneciendo a iDrive. `aa-capture --check` verifica el perfil y la disponibilidad de la captura, antes del armado real.
+- Reproducidas pérdidas transitorias del permiso entre la precomprobación del capturador, su armado y la petición de contexto MAIN. Antes alguna ventana iniciaba captura con un permiso caducado o cancelaba el intento antes de recuperar el mando. Ahora cada transición comprueba sus requisitos vigentes. Si ya existe un intento, espera hasta cuatro segundos por la recuperación y cancela al ocultarse. El panel indica qué requisito falta, incluido el contexto anterior de iDrive, el mando OAP y la capa con toque. No cambia la caducidad del filtro ni se envían órdenes de foco mientras falta el permiso.
+- El padre espera el cierre del worker y la entrega de sus mensajes finales antes de clasificar la salida. La pantalla diferencia el primer error del bloqueo por retirada incierta. Se mantienen la restauración del formato, la salida cooperativa y la prohibición de rearmar una captura sin retirada confirmada.
+- Cinco casos de regresión fallaban en la base diagnóstica. `node --test --test-concurrency=4 emulator/split/*.test.js` pasa 514/514. Sintaxis de seis módulos instalados y carga de cinco con Node 8.16.2. Se repitieron las pruebas nativas portables ya compiladas, 342 de captura y 406 del puente. Las fuentes y binarios de producción nativos coinciden con `main`; las copias locales de Zig incompletas impidieron recompilar los tests en esta sesión.
+- Pendiente con ENET: leer el diagnóstico temporal del i4 tras repetir la apertura con el mando activo. Confirmar la primera etapa que falla y retirar los dos módulos temporales. Los fallos reproducidos en el PC son compatibles con el síntoma, pero el código `capture-stop-unconfirmed` previo por sí solo no identifica la causa física.
+
+## 2026-11-25 · Diagnóstico de capture-stop-unconfirmed en Android Auto
+
+- En el i4 con la variante local 0.2.25, Android Auto integrado pasa de conectando a `capture-stop-unconfirmed`. Por ENET, en lectura, se confirmó `aapd` activo, el módulo de formato cargado y salida 0 al ejecutar `aa-capture --check`. El último registro propio indica 128 ventanas y no había sondas activas ni un dueño del bloqueo al consultar. El journal carecía del error que precedió al cierre.
+- El supervisor registra el primer fallo, incluido el errno nativo cuando existe, y registra por separado el cierre que no pudo confirmar. El worker conserva la causa de su cierre y la valida antes de usarla. También registra recuperaciones acotadas y su tamaño solicitado. El bloqueo al no poder verificar la retirada se conserva.
+- 508 pruebas del simulador superadas, incluida la regresión de fallo de captura seguido de error de cierre. La mejora es de diagnóstico. Falta obtener un intento con esos registros para localizar el fallo en el i4.
+- Tras reiniciar para la prueba del cuadro, el usuario vio «Esperando los controles» y después confirmó «Captura activa» en Datos del coche. Entrar en Datos suspende la proyección. Se activó un registro temporal del worker y el enlace ENET se perdió antes de poder leer un intento posterior. Quedan pendientes la reproducción desde la vista AA con el mando activo, la lectura del registro y la restauración de los dos módulos originales del motor de prueba.
+
 ## 2026-11-25 · Mantener el widget durante la apertura de BMWLauncher
 
 - La variante experimental renueva el foco una vez por segundo durante la visibilidad confirmada de BMWLauncher. Un permiso tarda como máximo tres segundos en caducar al interrumpirse la renovación. Si el cuadro no confirma la petición, caduca a los cuatro segundos desde el inicio. Ocultación, cierre, pérdida de foco confirmada o retirada de la escena cancelan la petición. Renovar una petición vencida no vuelve a enfocar. El cliente requiere la capacidad `widget_focus: 2`.

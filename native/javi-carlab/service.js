@@ -10,7 +10,7 @@ if (process.env.JAVI_DRIVEHUB_TALL === '1' && !displayProfile.selectEnvironment(
 const record = require('./vendor/kit_record.js');
 const createSession = require('./drivehub-session.js');
 const { listen } = require('./controller-input.js');
-const { createLease, createGateProbe, captureReason } = require('./controller-lease.js');
+const { createLease, createGateProbe, captureReason, captureBlocker } = require('./controller-lease.js');
 const { createInstallation } = require('./installation.js');
 const { parseContext, isLauncher, openContext } = require('./home-context.js');
 const { consume: consumeTelemetry } = require('./telemetry-input.js');
@@ -59,8 +59,7 @@ function releaseController() { lease(false); aaVisibleLease(false); }
 
 function aaRequirement() {
     if (!inspectGate.aaReady()) return 'aa-gate-restart-required';
-    return captureReason({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, Date.now()) === 'Captura activa'
-        ? null : 'aa-controls-unavailable';
+    return captureBlocker({ visible: launcherVisible, contextAt, gate, returnContext, exitFailed, ccuReady, screenConfirmed }, Date.now());
 }
 
 function renewController() {

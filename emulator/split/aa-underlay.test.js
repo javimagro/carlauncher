@@ -28,6 +28,36 @@ test('cancelling before AA context activation writes nothing', async () => {
     await f.control.poll(origin, 1000); assert.deepEqual(f.commands, []);
 });
 
+test('AA underlay waits for a recovered permission before asking Hmi8 to open MAIN', async () => {
+    let allowed = false;
+    const f = fixture({ allowed: () => allowed });
+    await f.control.poll(origin, 1000);
+    const owner = f.acquire();
+    await f.control.poll(origin, 1000);
+    assert.deepEqual(f.commands, []);
+    assert.deepEqual(f.messages, []);
+    allowed = true;
+    f.clock(400); await f.control.poll(origin, 1000);
+    await f.control.poll(aa, 1000);
+    assert.deepEqual(f.commands, ['open 1 50']);
+    assert.deepEqual(f.messages, [{ state: 'ready' }]);
+    f.control.abandon(); await owner.stop();
+});
+
+test('AA underlay discards a permission that only returns after the startup deadline', async () => {
+    let allowed = false;
+    const f = fixture({ allowed: () => allowed });
+    await f.control.poll(origin, 1000);
+    const owner = f.acquire();
+    await f.control.poll(origin, 1000);
+    f.clock(4000); allowed = true;
+    await f.control.poll(origin, 1000);
+    assert.deepEqual(f.commands, []);
+    assert.deepEqual(f.messages, [{ state: 'error', code: 'aa-context-permission-timeout' }]);
+    assert.equal(f.control.holding(), false);
+    await owner.stop();
+});
+
 test('AA shutdown polls may restore a departing owner but never open a pending one', async () => {
     const f = fixture(); await f.control.poll(origin, 1000);
     const pending = f.acquire();
