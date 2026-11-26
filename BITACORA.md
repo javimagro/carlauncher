@@ -1,5 +1,11 @@
 # Bitácora técnica de BMWLauncher
 
+## 2026-11-26 · Publicación de BMWLauncher 0.2.26
+
+- GitHub confirma integradas las PR #25 a #28. Se conservan el foco validado del cuadro, la espera de controles de AA, la última lectura válida y el regreso a la lista de TDTWorld con Back. Se empaqueta desde `d43f6d91b30441035780d083d780ffbd758dff5f`, commit de `main` y de `v0.2.26`. La versión 0.2.25 se reservó para pruebas instaladas en el i4.
+- 523 pruebas correctas y sintaxis de 125 módulos bajo Node 8.16.2. El lector de MGU Store valida los cuatro componentes del ZIP de BMWLauncher y enlaza el OAP con un donante sintético. El ZIP separado del cuadro emplea el ejecutable ID8 y el cliente del ensayo físico. El lector empaqueta el componente y la verificación del artefacto lo reconoce como apto para ID8.
+- Descargados de nuevo los dos ZIP y `SHA256SUMS.txt`. Coinciden los bytes, el CRC de los archivos y los hashes de publicación. Android Auto y el mando físico de TDTWorld se probarán con la versión instalada. Los ensayos de cartografía y audio del otro checkout quedan fuera de la versión. [Release y ZIP USB](https://github.com/javimagro/carlauncher/releases/tag/v0.2.26).
+
 ## 2026-11-26 · Gráfico de altura de Carlinkit y Back en TDTWorld
 
 - Comparado `TripAltitudeChartView` de DriveHub (`39688a2`). La versión anterior dibujaba un relleno de opacidad uniforme y una línea de 2 px. Ahora usa el cian de la referencia, degradado vertical hasta transparente y trazo de 3 px con uniones redondeadas. La primera lectura muestra el relleno centrado de la referencia. Se compararon perfil variable, una sola lectura y recorrido llano en 1960 × 520 y 1960 × 572.

@@ -2,6 +2,7 @@
 
 ## Versión 0.2.26
 
+- **Publicada y verificada.** `v0.2.26` apunta a `d43f6d91b30441035780d083d780ffbd758dff5f`. Se descargaron de nuevo los dos ZIP y sus sumas. El ZIP principal contiene 169 archivos y tiene SHA-256 `9f002d6223a28a53ef8a597f4b8c3e2bc49d1f94403ec5ab9205d9cd98aa5f4a`. El ZIP opcional del cuadro contiene 15 archivos y tiene SHA-256 `836c5d5a5a5b723dad2be2b0db6353438b818f3e2f899e9611a0bebdf3581530`.
 - App y motor **0.2.26**. La numeración supera la 0.2.25 usada en las pruebas del i4. Captura del mando **1.1.0** y Formato de Android Auto **1.0.0**.
 - Integra apertura del widget condicionado a BMWLauncher (#25), recuperación y diagnóstico de Android Auto (#26), última lectura válida (#27), y degradado de altura y Back en TDTWorld (#28).
 - El foco del widget se probó físicamente con la variante de Cluster renderer 0.8.13. Android Auto, la captura física de Back y las lecturas retenidas quedan pendientes de verificación en el i4 con el paquete integrado.
