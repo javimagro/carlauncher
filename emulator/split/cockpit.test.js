@@ -24,6 +24,46 @@ test('the cockpit consumes the shared forecast without a second network request'
 });
 const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
 
+test('cockpit focus requires a compatible renderer and its parked widget', () => {
+    const focus = [];
+    let client;
+    class Renderer extends EventEmitter {
+        connect() {
+            client = this;
+            this.ready = true;
+            this.backend = 'id8';
+            this.targets = 'widget:2240x896';
+            this.emit('ready');
+        }
+        image() { return 7; }
+        pixels() {}
+        focusWidget(ref) { focus.push(['focus', ref]); return true; }
+        renewWidgetFocus(ref) { focus.push(['renew', ref]); return true; }
+        cancelWidgetFocus(ref) { focus.push(['cancel', ref]); }
+        close() {}
+    }
+    const cockpit = createCockpit(Renderer, undefined, { warn() {} });
+    assert.equal(cockpit.requestFocus(), 'waiting');
+    cockpit.update({ trip: {} }, 1000, undefined);
+    assert.equal(cockpit.requestFocus(), 'skipped', 'older renderer');
+    client.widgetFocusLease = true;
+    client.emit('target', 'widget', 'unavailable');
+    assert.equal(cockpit.requestFocus(), 'waiting');
+    client.emit('target', 'widget', 'parked');
+    assert.equal(cockpit.requestFocus(), 'sent');
+    assert.equal(cockpit.renewFocus(), true);
+    client.emit('refused', 'renew_widget_focus', 7, 'ended');
+    assert.equal(cockpit.renewFocus(), false);
+    assert.equal(cockpit.status(1000), 'Selecciona Cluster renderer en el cuadro');
+    assert.equal(cockpit.requestFocus(), 'sent');
+    cockpit.cancelFocus();
+    client.emit('target', 'widget', 'shown');
+    assert.equal(cockpit.requestFocus(), 'skipped');
+    cockpit.cancelFocus();
+    assert.deepEqual(focus, [['focus', 7], ['renew', 7], ['focus', 7], ['cancel', 7]]);
+    cockpit.close();
+});
+
 test('the cockpit publishes a selectable ID8 widget and updates telemetry and local weather by band', async () => {
     const calls = [];
     const frames = [];

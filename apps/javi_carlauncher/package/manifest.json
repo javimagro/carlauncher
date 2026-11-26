@@ -116,7 +116,8 @@
       "attributes": {
         "displayRangeElectricVehicle": "rs",
         "statusConsumptionAverageElectricVehicle": "r",
-        "statusHUDSelection": "rs"
+        "statusHUDSelection": "rs",
+        "statusKombiSelection": "rs"
       }
     },
     "de.bmw.infotainment.navigation.positioning.Positioning": {

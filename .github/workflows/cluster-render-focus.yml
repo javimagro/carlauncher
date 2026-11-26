@@ -1,0 +1,49 @@
+name: Build Cluster renderer with widget focus
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/cluster-render-focus.yml'
+      - 'tools/cluster-render/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply the patch to Cluster renderer 0.8.13
+        run: |
+          git clone --depth 1 --branch cluster-render@0.8.13 https://github.com/robertnisipeanu/idrive-apps.git "$RUNNER_TEMP/idrive-apps"
+          test "$(git -C "$RUNNER_TEMP/idrive-apps" rev-parse HEAD)" = 9da968c8644ef4f6bcce174b0836f9f24d8db7fb
+          git -C "$RUNNER_TEMP/idrive-apps" apply --check "$PWD/tools/cluster-render/widget-focus-0.8.13.patch"
+          git -C "$RUNNER_TEMP/idrive-apps" apply "$PWD/tools/cluster-render/widget-focus-0.8.13.patch"
+      - name: Run the Cluster renderer C++ tests and build for iDrive
+        run: |
+          cd "$RUNNER_TEMP/idrive-apps/native/cluster-render"
+          make JOBS=3 test-x86
+          make JOBS=3 target
+      - name: Check the iDrive 8 executable and record its ABI and hashes
+        run: |
+          cd "$RUNNER_TEMP/idrive-apps/native/cluster-render"
+          mkdir -p "$GITHUB_WORKSPACE/cluster-render-build"
+          cp build/target/cluster-render-idrive8 js/cluster_render_client.js "$GITHUB_WORKSPACE/cluster-render-build/"
+          cd "$GITHUB_WORKSPACE/cluster-render-build"
+          binary=cluster-render-idrive8
+          readelf -h -lW -d -V "$binary" > elf.txt
+          grep 'Advanced Micro Devices X86-64' elf.txt
+          grep '/lib/ld-linux-x86-64.so.2' elf.txt
+          latest_c="$(grep -oE 'GLIBC_[0-9.]+' elf.txt | sort -Vu | tail -1)"
+          test "$(printf '%s\n' "$latest_c" GLIBC_2.27 | sort -V | tail -1)" = GLIBC_2.27
+          latest_cpp="$(grep -oE 'GLIBCXX_[0-9.]+' elf.txt | sort -Vu | tail -1)"
+          test "$(printf '%s\n' "$latest_cpp" GLIBCXX_3.4.24 | sort -V | tail -1)" = GLIBCXX_3.4.24
+          sha256sum "$binary" cluster_render_client.js > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cluster-render-idrive8-focus-0.8.13
+          path: cluster-render-build/
+          if-no-files-found: error

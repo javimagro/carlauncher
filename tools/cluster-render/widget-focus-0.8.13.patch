@@ -1,0 +1,444 @@
+diff --git a/native/cluster-render/js/cluster_render_client.js b/native/cluster-render/js/cluster_render_client.js
+index 1cb6c52..076232f 100644
+--- a/native/cluster-render/js/cluster_render_client.js
++++ b/native/cluster-render/js/cluster_render_client.js
+@@ -332,6 +332,7 @@ class ClusterRender extends EventEmitter {
+             this.sceneAnim = ev.scene_anim === 1;   /* takes --play and --skip edit lines */
+             this.texts = ev.text === 1;   /* takes fonts and text layers (font(), text()) */
+             this.overOrder = ev.over_order === 1;   /* takes a scene's over_order */
++            this.widgetFocusLease = ev.widget_focus === 2;
+             this.ready = true;
+             this.backoff = 0;
+             /* after the layers, which went at connect */
+@@ -381,6 +382,23 @@ class ClusterRender extends EventEmitter {
+         this._write(jsonMessage(obj));
+     }
+ 
++    focusWidget(ref) {
++        if (!this.ready || !this.widgetFocusLease || !this.layers.has(ref)) return false;
++        this._send({ op: 'focus_widget', ref: ref });
++        return true;
++    }
++
++    renewWidgetFocus(ref) {
++        if (!this.ready || !this.widgetFocusLease || !this.layers.has(ref)) return false;
++        this._send({ op: 'renew_widget_focus', ref: ref });
++        return true;
++    }
++
++    cancelWidgetFocus(ref) {
++        if (this.ready && this.widgetFocusLease && this.layers.has(ref))
++            this._send({ op: 'cancel_widget_focus', ref: ref });
++    }
++
+     _write(m) {
+         if (!this.sock || !this.connected) return;
+         if (!this.sock.write(m)) this.blocked = true;
+diff --git a/native/cluster-render/src/dcsm27_port.cpp b/native/cluster-render/src/dcsm27_port.cpp
+index f24d23a..61d2470 100644
+--- a/native/cluster-render/src/dcsm27_port.cpp
++++ b/native/cluster-render/src/dcsm27_port.cpp
+@@ -9,6 +9,9 @@ namespace crs {
+ namespace {
+ 
+ unsigned long long u(uint64_t v) { return (unsigned long long)v; }
++constexpr uint64_t kBmwLauncherWidget = 43204001;
++constexpr int64_t kWidgetFocusMs = 3000;
++constexpr int64_t kWidgetConfirmMs = 4000;
+ 
+ }  // namespace
+ 
+@@ -34,6 +37,67 @@ Dcsm27Port::Content *Dcsm27Port::offered(uint64_t content)
+     return it == contents_.end() || it->second.phase == Phase::Stopping ? nullptr : &it->second;
+ }
+ 
++bool Dcsm27Port::request_widget_focus(uint64_t owner, uint64_t content, int64_t now_ms, std::string *why)
++{
++    if (focus_owner_) {
++        *why = "focus request already active";
++        return false;
++    }
++    const Content *c = offered(content);
++    if (!up_ || content != kBmwLauncherWidget || !c || c->spec.name != "widget" || c->phase != Phase::Offered) {
++        *why = "BMWLauncher widget is not parked";
++        return false;
++    }
++    if (!wire_->focus_widget(content, true, why))
++        return false;
++    focus_owner_ = owner;
++    focus_content_ = content;
++    focus_until_ = now_ms + kWidgetFocusMs;
++    focus_confirm_until_ = now_ms + kWidgetConfirmMs;
++    log_info("dcsm: content %llu: temporary widget focus requested", u(content));
++    return true;
++}
++
++void Dcsm27Port::end_widget_focus()
++{
++    std::string why;
++    if (wire_->focus_widget(focus_content_, false, &why))
++        log_info("dcsm: content %llu: temporary widget focus released", u(focus_content_));
++    else
++        log_error("dcsm: content %llu: widget focus release refused: %s", u(focus_content_), why.c_str());
++    focus_owner_ = 0;
++}
++
++void Dcsm27Port::cancel_widget_focus(uint64_t owner)
++{
++    if (focus_owner_ && focus_owner_ == owner)
++        end_widget_focus();
++}
++
++bool Dcsm27Port::renew_widget_focus(uint64_t owner, int64_t now_ms)
++{
++    if (!focus_owner_ || focus_owner_ != owner || now_ms >= focus_until_ ||
++        (focus_confirm_until_ && now_ms >= focus_confirm_until_))
++        return false;
++    focus_until_ = now_ms + kWidgetFocusMs;
++    return true;
++}
++
++void Dcsm27Port::on_widget_focus(uint64_t content, bool focused, int64_t now_ms)
++{
++    if (!focus_owner_ || content != focus_content_ || now_ms >= focus_until_)
++        return;
++    if (focused) {
++        if (focus_confirm_until_ && now_ms < focus_confirm_until_) {
++            focus_confirm_until_ = 0;
++            log_info("dcsm: content %llu: temporary widget focus confirmed", u(content));
++        }
++    } else if (!focus_confirm_until_) {
++        // Acknowledge the loss outside the RAMSES callback.
++        focus_until_ = now_ms;
++    }
++}
++
+ void Dcsm27Port::request(const TargetSpec &t)
+ {
+     auto it = contents_.find(t.content);
+@@ -52,6 +116,8 @@ void Dcsm27Port::request(const TargetSpec &t)
+ 
+ void Dcsm27Port::release(const TargetSpec &t)
+ {
++    if (focus_owner_ && focus_content_ == t.content)
++        end_widget_focus();
+     auto it = contents_.find(t.content);
+     if (it == contents_.end()) {
+         stopped_.push_back(t.scene_id);   /* never offered, or refused: nothing to wait for */
+@@ -81,6 +147,7 @@ void Dcsm27Port::on_availability(bool up, int64_t now_ms)
+ {
+     log_info("dcsm: DCSM provider %s", up ? "available" : "not available");
+     up_ = up;
++    focus_owner_ = 0;    /* went away with the offer */
+     for (const auto &kv : contents_)
+         stopped_.push_back(kv.second.spec.scene_id);
+     contents_.clear();   /* gone with the framework; nothing to stop */
+@@ -91,6 +158,8 @@ void Dcsm27Port::on_availability(bool up, int64_t now_ms)
+ 
+ void Dcsm27Port::dispatch(int64_t now_ms)
+ {
++    if (focus_owner_ && (now_ms >= focus_until_ || (focus_confirm_until_ && now_ms >= focus_confirm_until_)))
++        end_widget_focus();
+     std::vector<uint64_t> stopped;
+     stopped.swap(stopped_);
+     if (on_stopped)
+@@ -199,6 +268,8 @@ void Dcsm27Port::on_hide(uint64_t content, int64_t now_ms)
+     if (!c)
+         return;
+     log_info("dcsm: content %llu hidden", u(content));
++    if (focus_owner_ && focus_content_ == content && c->phase == Phase::Shown)
++        focus_until_ = now_ms;
+     c->phase = Phase::Offered;
+     if (manager_)
+         manager_->on_parked(c->spec.scene_id, now_ms);
+@@ -210,6 +281,8 @@ void Dcsm27Port::on_release(uint64_t content, int64_t now_ms)
+     if (!c)
+         return;
+     log_info("dcsm: content %llu released by the cluster, still offered", u(content));
++    if (focus_owner_ && focus_content_ == content && c->phase == Phase::Shown)
++        focus_until_ = now_ms;
+     c->phase = Phase::Offered;
+     if (manager_)
+         manager_->on_parked(c->spec.scene_id, now_ms);
+diff --git a/native/cluster-render/src/dcsm27_port.h b/native/cluster-render/src/dcsm27_port.h
+index 4ee4eb0..a756d11 100644
+--- a/native/cluster-render/src/dcsm27_port.h
++++ b/native/cluster-render/src/dcsm27_port.h
+@@ -56,6 +56,7 @@ public:
+     virtual bool offer(const TargetSpec &t, std::string *why) = 0;
+     virtual bool stop_offer(uint64_t content, std::string *why) = 0;
+     virtual bool ready(uint64_t content, std::string *why) = 0;
++    virtual bool focus_widget(uint64_t content, bool enable, std::string *why) = 0;
+ };
+ 
+ /* The cluster's area for a content (contentSizeChange): its canvas, the
+@@ -88,6 +89,7 @@ public:
+     void on_show(uint64_t content, int64_t now_ms);
+     void on_hide(uint64_t content, int64_t now_ms);
+     void on_release(uint64_t content, int64_t now_ms);
++    void on_widget_focus(uint64_t content, bool focused, int64_t now_ms);
+     void on_stop_accepted(uint64_t content, int64_t now_ms);
+     /* Delivers the answers to this pass's requests (after the slot
+      * manager's tick, before the next one). */
+@@ -99,6 +101,9 @@ public:
+     /* No content offered or stopping and no answer or stop to deliver:
+      * the provider has no event of ours to dispatch. */
+     bool idle() const { return contents_.empty() && answers_.empty() && stopped_.empty(); }
++    bool request_widget_focus(uint64_t owner, uint64_t content, int64_t now_ms, std::string *why);
++    bool renew_widget_focus(uint64_t owner, int64_t now_ms);
++    void cancel_widget_focus(uint64_t owner);
+ 
+     /* A released target's offer is gone (its stop accepted, or none to
+      * stop): its scene may go now (Ramses27Gpu::drop_retired). Called from
+@@ -122,10 +127,15 @@ private:
+     bool offer(Content &c);
+     /* The content's target while its offer stands; null otherwise. */
+     Content *offered(uint64_t content);
++    void end_widget_focus();
+ 
+     Dcsm27Wire *wire_;
+     SlotManager *manager_ = nullptr;
+     bool up_ = false;
++    uint64_t focus_owner_ = 0;
++    uint64_t focus_content_ = 0;
++    int64_t focus_until_ = 0;
++    int64_t focus_confirm_until_ = 0;
+     std::map<uint64_t, Content> contents_;   /* by content id */
+     std::vector<Answer> answers_;
+     std::vector<uint64_t> stopped_;          /* scene ids, for on_stopped */
+diff --git a/native/cluster-render/src/server.cpp b/native/cluster-render/src/server.cpp
+index 98f6b50..dd11d7f 100644
+--- a/native/cluster-render/src/server.cpp
++++ b/native/cluster-render/src/server.cpp
+@@ -582,6 +582,11 @@ void Server::accept_client(int64_t)
+         Client c;
+         c.fd = fd;
+         c.id = next_client_++;
++#ifdef SO_PEERCRED
++        struct ucred peer{};
++        socklen_t size = sizeof peer;
++        c.root = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &size) == 0 && peer.uid == 0;
++#endif
+         clients_.push_back(std::move(c));
+     }
+ }
+@@ -589,6 +594,8 @@ void Server::accept_client(int64_t)
+ void Server::drop_client(size_t i)
+ {
+     Client &c = clients_[i];
++    if (cancel_widget_focus)
++        cancel_widget_focus(c.id);
+     if (!c.app.empty() || !c.refs.empty())   /* not a status request */
+         log_info("client %llu (%s) gone, %zu layers and %zu assets removed", (unsigned long long)c.id,
+                  c.app.empty() ? "?" : c.app.c_str(), c.refs.size(), c.assets.size());
+@@ -915,6 +922,7 @@ void Server::on_json(Client &c, const std::string &body, int64_t now_ms)
+                                  {"backend", cr::json_quote(backend_)},
+                                  {"targets", cr::json_quote(targets)},
+                                  {"repeat", "1"},
++                                 {"widget_focus", request_widget_focus && c.root && c.app == "javi_bmwlauncher" ? "2" : "0"},
+                                  {"always_packed", "1"},
+                                  {"host_edge", "1"},
+                                  {"preload", "1"},
+@@ -1019,6 +1027,30 @@ void Server::on_json(Client &c, const std::string &body, int64_t now_ms)
+         }
+         return;
+     }
++    if (op == "focus_widget" || op == "renew_widget_focus" || op == "cancel_widget_focus") {
++        const int target = l ? l->target() : -1;
++        const auto &targets = slots_->targets();
++        if (!request_widget_focus || !c.root || c.app != "javi_bmwlauncher" || !l ||
++            std::string(l->kind()) != "image" || target < 0 ||
++            (size_t)target >= targets.size() || targets[target].name != "widget") {
++            error(c, op, ref, "BMWLauncher widget required");
++        } else if (op == "cancel_widget_focus") {
++            if (c.widget_focus_ref == ref) {
++                cancel_widget_focus(c.id);
++                c.widget_focus_ref = 0;
++            }
++        } else if (!l->params.visible) {
++            error(c, op, ref, "widget layer hidden");
++        } else if (op == "renew_widget_focus") {
++            if (c.widget_focus_ref != ref || !renew_widget_focus(c.id, now_ms))
++                error(c, op, ref, "widget focus ended");
++        } else if (request_widget_focus(c.id, targets[target].content, now_ms, &err)) {
++            c.widget_focus_ref = ref;
++        } else {
++            error(c, op, ref, err);
++        }
++        return;
++    }
+     if (op == "repeat") {
+         const bool video = l && std::string(l->kind()) == "video";
+         if (video)
+@@ -1054,6 +1086,10 @@ void Server::on_json(Client &c, const std::string &body, int64_t now_ms)
+         return;
+     }
+     if (op == "drop") {
++        if (cancel_widget_focus && c.widget_focus_ref == ref) {
++            cancel_widget_focus(c.id);
++            c.widget_focus_ref = 0;
++        }
+         comp_->remove(c.id, it->second);
+         c.refs.erase(it);
+         c.layer_sent.erase(ref);
+diff --git a/native/cluster-render/src/server.h b/native/cluster-render/src/server.h
+index c529034..25a4438 100644
+--- a/native/cluster-render/src/server.h
++++ b/native/cluster-render/src/server.h
+@@ -54,11 +54,17 @@ public:
+     /* The remembered ceiling's line for the status (CeilingMemory). */
+     std::function<std::string()> ceiling_text;
+ 
++    std::function<bool(uint64_t owner, uint64_t content, int64_t now_ms, std::string *why)> request_widget_focus;
++    std::function<bool(uint64_t owner, int64_t now_ms)> renew_widget_focus;
++    std::function<void(uint64_t owner)> cancel_widget_focus;
++
+ private:
+     struct Client {
+         int fd = -1;
+         uint64_t id = 0;
+         std::string app;
++        bool root = false;
++        uint32_t widget_focus_ref = 0;
+         RecvBuffer in;
+         std::string out;
+         std::map<uint32_t, uint32_t> refs;            /* the client's ref -> layer or scene content id */
+diff --git a/native/cluster-render/src/unit_idrive8.cpp b/native/cluster-render/src/unit_idrive8.cpp
+index f9bd987..fbb17e2 100644
+--- a/native/cluster-render/src/unit_idrive8.cpp
++++ b/native/cluster-render/src/unit_idrive8.cpp
+@@ -119,6 +119,17 @@ public:
+         return s == ramses::StatusOK;
+     }
+ 
++    bool focus_widget(uint64_t content, bool enable, std::string *why) override
++    {
++        // Keep this separate from the request ID used for focus on offer.
++        constexpr int32_t request = 1;
++        const auto id = content_id(content);
++        const auto s = enable ? p_.enableFocusRequest(id, request) : p_.disableFocusRequest(id, request);
++        if (s != ramses::StatusOK)
++            *why = p_.getStatusMessage(s);
++        return s == ramses::StatusOK;
++    }
++
+ private:
+     void menu_entry(const TargetSpec &t, const std::string &k, const std::string &desc, ramses::DcsmMetadataCreator *md)
+     {
+@@ -185,8 +196,13 @@ public:
+             log_info("dcsm: content %llu: stream status %u", id, (unsigned)s->getStreamStatus());
+         else if (const ramses::ActiveLayoutMessage *l = m.getAsActiveLayout())
+             log_info("dcsm: content %llu: layout %u", id, (unsigned)l->getLayout());
+-        else if (const ramses::WidgetFocusStatusMessage *f = m.getAsWidgetFocusStatus())
++        else if (const ramses::WidgetFocusStatusMessage *f = m.getAsWidgetFocusStatus()) {
+             log_info("dcsm: content %llu: focus %u", id, (unsigned)f->getWidgetFocusStatus());
++            using Focus = ramses::WidgetFocusStatusMessage::Status;
++            const auto focus = f->getWidgetFocusStatus();
++            if (focus == Focus::Focused || focus == Focus::NotFocused)
++                port_.on_widget_focus(id, focus == Focus::Focused, now);
++        }
+     }
+ 
+ private:
+@@ -262,6 +278,15 @@ int start(const cld::Config &cfg, char **)
+     Dcsm27Port port(&wire);
+     Service service(&gpu, &port, sc);
+     port.set_manager(&service.slots());
++    if (cfg.num("id8_widget_focus") == 0) {
++        service.server().request_widget_focus = [&port](uint64_t owner, uint64_t content, int64_t now, std::string *why) {
++            return port.request_widget_focus(owner, content, now, why);
++        };
++        service.server().renew_widget_focus = [&port](uint64_t owner, int64_t now) {
++            return port.renew_widget_focus(owner, now);
++        };
++        service.server().cancel_widget_focus = [&port](uint64_t owner) { port.cancel_widget_focus(owner); };
++    }
+     port.on_stopped = [&gpu](uint64_t scene) { gpu.drop_retired(scene); };
+     gpu.offered = [&port](uint64_t scene) { return port.holds(scene); };
+     Events events(port);
+diff --git a/native/cluster-render/test/dcsm27_port_test.cpp b/native/cluster-render/test/dcsm27_port_test.cpp
+index ced4b35..790a674 100644
+--- a/native/cluster-render/test/dcsm27_port_test.cpp
++++ b/native/cluster-render/test/dcsm27_port_test.cpp
+@@ -58,6 +58,11 @@ struct Wire : Dcsm27Wire {
+         calls.push_back("ready " + std::to_string(c));
+         return true;
+     }
++    bool focus_widget(uint64_t c, bool enable, std::string *) override
++    {
++        calls.push_back(std::string(enable ? "focus " : "unfocus ") + std::to_string(c));
++        return true;
++    }
+ };
+ 
+ /* As Ramses27Gpu: a scene taken down while its content is offered or
+@@ -304,6 +309,61 @@ static void gone()
+     ok("later events are ignored", r.m.status(0).state == TargetState::Unavailable && calls_are(""));
+ }
+ 
++static void widget_focus()
++{
++    Rig r;
++    std::string why;
++    ok("no focus before the offer", !r.port.request_widget_focus(1, kWidget, r.now, &why) && calls_are(""));
++    r.m.want(0, true, false);
++    r.m.want(1, true, false);
++    r.tick();
++    ok("map and widget offered", calls_are("offer 43204041 in 43100201; offer 43204001 in 43100301"));
++    ok("map cannot be focused", !r.port.request_widget_focus(1, kCentre, r.now, &why) && calls_are(""));
++    ok("parked widget can be focused", r.port.request_widget_focus(1, kWidget, r.now, &why) &&
++                                      calls_are("focus 43204001"));
++    ok("a repeated request cannot extend the lease", !r.port.request_widget_focus(1, kWidget, r.now, &why));
++    r.port.cancel_widget_focus(2);
++    r.port.on_widget_focus(kCentre, true, r.now);
++    r.port.dispatch(r.now + 2999);
++    ok("another client or content cannot cancel it", calls_are(""));
++    r.port.dispatch(r.now + 3000);
++    ok("focus expires without a heartbeat", calls_are("unfocus 43204001"));
++    ok("a late heartbeat cannot acquire focus", !r.port.renew_widget_focus(1, r.now + 3000));
++    r.now += 3000;
++    ok("a new opening can ask again", r.port.request_widget_focus(1, kWidget, r.now, &why) &&
++                                     calls_are("focus 43204001"));
++    r.port.on_widget_focus(kWidget, false, r.now + 250);
++    ok("a not-focused notice before acquisition is harmless", r.port.renew_widget_focus(1, r.now + 1000));
++    ok("other clients cannot renew", !r.port.renew_widget_focus(2, r.now + 1000));
++    ok("the renewal keeps waiting for confirmation", r.port.renew_widget_focus(1, r.now + 2500));
++    r.port.dispatch(r.now + 4000);
++    ok("renewal cannot prolong an unconfirmed request", calls_are("unfocus 43204001"));
++    r.now += 4000;
++    ok("the widget can be requested on another opening", r.port.request_widget_focus(1, kWidget, r.now, &why));
++    r.port.on_show(kWidget, r.now + 500);
++    r.port.on_widget_focus(kWidget, true, r.now + 550);
++    r.port.dispatch(r.now + 550);
++    ok("focus confirmation leaves the request active", calls_are("focus 43204001"));
++    ok("the owner can maintain the confirmed focus", r.port.renew_widget_focus(1, r.now + 2000) &&
++                                                     r.port.renew_widget_focus(1, r.now + 4000));
++    r.port.on_widget_focus(kWidget, false, r.now + 4500);
++    ok("a heartbeat after focus loss cannot renew", !r.port.renew_widget_focus(1, r.now + 4500));
++    r.port.dispatch(r.now + 4500);
++    ok("the request is removed as soon as the cluster loses focus", calls_are("unfocus 43204001"));
++    r.now += 4500;
++    ok("a shown widget needs no focus request", !r.port.request_widget_focus(1, kWidget, r.now, &why) && calls_are(""));
++    r.port.on_hide(kWidget, r.now);
++    ok("a hidden widget can be requested on the next opening", r.port.request_widget_focus(1, kWidget, r.now, &why));
++    r.port.on_show(kWidget, r.now);
++    r.port.on_release(kWidget, r.now + 500);
++    r.port.dispatch(r.now + 500);
++    ok("the consumer taking back a shown widget cancels the request", calls_are("focus 43204001; unfocus 43204001"));
++    r.now += 500;
++    ok("a parked widget can be focused again", r.port.request_widget_focus(1, kWidget, r.now, &why));
++    r.port.cancel_widget_focus(1);
++    ok("the owning client can cancel", calls_are("focus 43204001; unfocus 43204001"));
++}
++
+ int main()
+ {
+     basics();
+@@ -311,6 +371,7 @@ int main()
+     refused();
+     two_targets();
+     gone();
++    widget_focus();
+     std::printf(failures ? "%d FAILED\n" : "all ok\n", failures);
+     return failures ? 1 : 0;
+ }

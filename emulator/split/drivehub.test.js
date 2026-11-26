@@ -303,6 +303,70 @@ test('the cockpit starts without a centre display and refreshes weather, power a
     assert.equal(closed, 1);
 });
 
+test('cockpit focus is requested once per confirmed opening and is cancelled when covered', async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 1000 });
+    const gpu = new EventEmitter();
+    Object.assign(gpu, { place() {}, claim() {}, show() {}, close() {}, frame() {} });
+    const calls = [];
+    let focusReady = true;
+    let focusEnded = false;
+    const session = createSession(gpu, {
+        area: () => ({ scale: 1 }),
+        get: async () => Buffer.from(''),
+        loadCockpit: async () => ({
+            visible: () => false, status: () => '', update() {}, close() {},
+            requestFocus() {
+                if (!focusReady) return 'waiting';
+                calls.push('focus');
+                return 'sent';
+            },
+            renewFocus() { calls.push('renew'); return !focusEnded; },
+            cancelFocus() { calls.push('cancel'); }
+        })
+    });
+    t.after(() => session.close());
+    await new Promise(setImmediate);
+    gpu.emit('ready', {}, { touch: true });
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, []);
+    session.show(true, true);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, []);
+    gpu.emit('state', { onScreen: true });
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, ['focus']);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew']);
+    gpu.emit('state', { onScreen: false });
+    gpu.emit('state', { onScreen: true });
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel']);
+
+    session.show(false);
+    session.show(true, false);
+    gpu.emit('state', { onScreen: true });
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel'], 'recovering the renderer for the same context is not a new opening');
+
+    session.show(false);
+    focusReady = false;
+    session.show(true, true);
+    gpu.emit('state', { onScreen: true });
+    t.mock.timers.tick(5000);
+    focusReady = true;
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel']);
+
+    session.show(false);
+    session.show(true, true);
+    gpu.emit('state', { onScreen: true });
+    focusEnded = true;
+    t.mock.timers.tick(1000);
+    t.mock.timers.tick(1000);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel', 'focus', 'renew'], 'a lost lease is neither renewed nor requested again');
+    session.show(false);
+    assert.deepEqual(calls, ['focus', 'renew', 'cancel', 'focus', 'renew']);
+});
+
 test('the whole content receives touch and the house exits only on a completed tap', (t) => {
     const gpu = new EventEmitter();
     let exits = 0;

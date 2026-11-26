@@ -24,6 +24,8 @@ function createCockpit(Client, get, log = console) {
     let status;
     let visible = false;
     let parked = false;
+    let targetState;
+    let focusRequested = false;
     let connectingSince;
     let ownWeather, weatherTime;
     const art = loadArtwork('cockpit-weather.rgba.gz');
@@ -36,6 +38,7 @@ function createCockpit(Client, get, log = console) {
         connectingSince = now;
         client.on('ready', () => {
             if (renderer !== client) return;
+            focusRequested = false;
             supported = client.backend === 'id8' && typeof client.targets === 'string' &&
                 client.targets.split(',').includes('widget:2240x896');
             if (!supported) {
@@ -44,6 +47,7 @@ function createCockpit(Client, get, log = console) {
             }
             status = layerStatus.waiting;
             parked = false;
+            targetState = undefined;
             if (layer) return;
             layer = client.image({ target: 'widget', klass: 'overlay', contend: false,
                 x, y, w: width, h: height, iw: width, ih: height, fps: 2, sampling: 'bilinear' });
@@ -56,6 +60,7 @@ function createCockpit(Client, get, log = console) {
         });
         client.on('target', (target, state) => {
             if (renderer !== client || target !== 'widget') return;
+            targetState = state;
             if (state === 'shown') parked = false;
             if (state === 'parked' || state === 'unavailable') {
                 parked = true;
@@ -65,13 +70,16 @@ function createCockpit(Client, get, log = console) {
         });
         client.on('refused', (op, ref, reason) => {
             if (renderer !== client || ref !== layer) return;
+            if (op === 'renew_widget_focus') { focusRequested = false; return; }
+            log.warn('BMWLauncher: cluster-render: ' + op + ' · ' + reason);
+            if (op === 'focus_widget' || op === 'cancel_widget_focus') { focusRequested = false; return; }
             visible = false;
             parked = true;
             status = layerStatus.error;
-            log.warn('BMWLauncher: cluster-render: ' + op + ' · ' + reason);
         });
         client.on('disconnected', () => {
             if (renderer !== client) return;
+            focusRequested = false;
             status = undefined;
             visible = false;
             connectingSince = Date.now();
@@ -87,6 +95,20 @@ function createCockpit(Client, get, log = console) {
         status(now) {
             if (status) return status;
             return now - connectingSince >= 5000 ? 'Cluster renderer no responde' : 'Conectando al cuadro…';
+        },
+        requestFocus() {
+            if (!renderer || !renderer.ready) return 'waiting';
+            if (!supported || !renderer.widgetFocusLease || visible || targetState === 'shown') return 'skipped';
+            if (targetState !== 'parked' || !layer || !frameKeys) return 'waiting';
+            focusRequested = renderer.focusWidget(layer);
+            return focusRequested ? 'sent' : 'skipped';
+        },
+        renewFocus() {
+            return focusRequested && renderer.renewWidgetFocus(layer);
+        },
+        cancelFocus() {
+            if (focusRequested) renderer.cancelWidgetFocus(layer);
+            focusRequested = false;
         },
         update(readings, now, sharedWeather) {
             if (!renderer) open(now);
@@ -131,6 +153,8 @@ function createCockpit(Client, get, log = console) {
             status = undefined;
             visible = false;
             parked = false;
+            targetState = undefined;
+            focusRequested = false;
             connectingSince = undefined;
         }
     };

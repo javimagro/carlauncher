@@ -23,7 +23,8 @@ const signals = [
     ['de.bmw.infotainment.KombiIF', '1', {
         displayRangeElectricVehicle: ['rs', 'displayRangeElectricVehicle'],
         statusConsumptionAverageElectricVehicle: ['r', 'consumptionAverageElectricVehicleBC1',
-            'consumptionAverageElectricVehicleBC2', 'unitOfMeasurementConsumptionElectricVehicleBC']
+            'consumptionAverageElectricVehicleBC2', 'unitOfMeasurementConsumptionElectricVehicleBC'],
+        statusKombiSelection: ['rs', 'statusActivationInstrumentPackContent']
     }],
     ['de.bmw.infotainment.navigation.positioning.Positioning', 'Main_Instance', {
         rawPositionData: ['rs', 'fixType', 'position.heightValid', 'position.height.rawLengthMeter',

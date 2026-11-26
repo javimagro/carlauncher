@@ -41,6 +41,7 @@ let aaKnob = false;
 let screenConfirmed = false;
 let ccuReady = false;
 let launcherVisible = false;
+let launcherContextVisible = false;
 let lastContext;
 let returnContext;
 let homeRequest = false;
@@ -300,8 +301,10 @@ async function poll() {
             exitFailed = false;
             releaseController();
         }
+        const enteringLauncher = visible && !launcherContextVisible;
+        launcherContextVisible = visible;
         launcherVisible = visible;
-        session.show(visible);
+        session.show(visible, enteringLauncher);
         renewController();
     } catch (err) {
         if (stopping) return;
