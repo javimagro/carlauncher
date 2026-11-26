@@ -89,11 +89,84 @@ function tripSummary(vehicle) {
     const compatible = (trip.distanceUnit === 'km' && trip.averageUnit === 'kWh/100 km') ||
         (trip.distanceUnit === 'mi' && trip.averageUnit === 'kWh/100 mi');
     return { distance: trip.distance, distanceUnit: trip.distanceUnit, duration: trip.duration,
-        speed: trip.speed, average: trip.average, averageUnit: trip.averageUnit,
+        speed: trip.speed, speedUnit: trip.speedUnit || trip.distanceUnit, average: trip.average, averageUnit: trip.averageUnit,
         historicalAverage: factory && factory.average, historicalUnit: factory && factory.averageUnit,
         altitude: vehicle.altitude, outside: vehicle.outside, batteryTemperature: vehicle.batteryTemperature,
         energy: compatible && Number.isFinite(trip.distance) && Number.isFinite(trip.average) ?
             Math.max(0, trip.average * trip.distance / 100) : undefined };
 }
 
-module.exports = { vehicleReadings, journeyReading, staleSample, thermalStatus, tripSummary };
+function distanceReset(previous, current) {
+    return previous && previous.distanceUnit === current.distanceUnit &&
+        Number.isFinite(previous.distance) && Number.isFinite(current.distance) && current.distance < previous.distance;
+}
+
+const displaySignals = {
+    soc: 'statusChargeOfBatteryHybrid', range: 'displayRangeElectricVehicle', outside: 'ExteriorTemperature',
+    batteryTemperature: 'statusBatteryTemperature', power: 'batteryPowerHv', altitude: 'rawPositionData'
+};
+const tripValues = ['distance', 'duration', 'speed', 'average', 'historicalAverage', 'energy', 'altitude', 'outside', 'batteryTemperature'];
+
+function createVehicleDisplay() {
+    const last = {};
+    const lastSample = new Map();
+    let trip = {}, factory, energy;
+
+    function accept(records, signal, now) {
+        const record = records && records.get(signal);
+        if (!record || record.status !== 'sample' || staleSample(record, now)) return false;
+        const at = Number.isFinite(record.sampledAt) ? record.sampledAt : now;
+        if (at > now || at < lastSample.get(signal)) return false;
+        lastSample.set(signal, at);
+        return true;
+    }
+
+    function rememberTrip(current) {
+        if (distanceReset(trip, current) || (Number.isFinite(current.duration) && current.duration < trip.duration)) {
+            trip = {};
+            energy = undefined;
+        }
+        const next = Object.assign({}, trip);
+        if (Number.isFinite(current.duration)) next.duration = current.duration;
+        if (Number.isFinite(current.distance)) {
+            next.distance = current.distance;
+            next.distanceUnit = current.distanceUnit;
+        }
+        if (Number.isFinite(current.speed)) {
+            next.speed = current.speed;
+            next.speedUnit = current.distanceUnit;
+        }
+        if (Number.isFinite(current.average)) {
+            next.average = current.average;
+            next.averageUnit = current.averageUnit;
+        }
+        trip = next;
+    }
+
+    function readings(vehicle) {
+        return Object.assign({}, vehicle, last, { trip, factory });
+    }
+
+    return {
+        update(vehicle, records, now) {
+            for (const key of Object.keys(displaySignals)) {
+                if (accept(records, displaySignals[key], now) && Number.isFinite(vehicle[key])) last[key] = vehicle[key];
+            }
+            if (!accept(records, 'bcDataAll', now)) return;
+            rememberTrip(vehicle.trip);
+            if (Number.isFinite(vehicle.factory.average)) factory = vehicle.factory;
+            const currentEnergy = tripSummary(vehicle).energy;
+            if (Number.isFinite(currentEnergy)) energy = currentEnergy;
+        },
+        readings,
+        summary(vehicle) {
+            const retained = tripSummary(readings(vehicle));
+            retained.energy = energy;
+            const live = tripSummary(vehicle);
+            retained.stale = tripValues.some(key => Number.isFinite(retained[key]) && retained[key] !== live[key]);
+            return retained;
+        }
+    };
+}
+
+module.exports = { vehicleReadings, journeyReading, staleSample, thermalStatus, tripSummary, distanceReset, createVehicleDisplay };

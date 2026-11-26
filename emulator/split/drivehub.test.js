@@ -298,6 +298,18 @@ test('the cockpit starts without a centre display and refreshes weather, power a
     assert.equal(updates.at(-1)?.power, -4);
     assert.equal(updates.at(-1)?.weather.temp, 21);
     assert.equal(centralFrames, before);
+    session.telemetry([{ signal: 'batteryPowerHv', status: 'error' }]);
+    t.mock.timers.tick(32000);
+    assert.equal(updates.at(-1)?.power, -4, 'temporary errors retain the last valid power');
+    assert.equal(updates.at(-1)?.trip.average, 24, 'missing trip data retains the last valid consumption');
+    assert.equal(updates.at(-1)?.location, undefined, 'an old GPS fix is never reused');
+    session.telemetry(null);
+    t.mock.timers.tick(1000);
+    assert.equal(updates.at(-1)?.power, -4, 'reconnecting the telemetry socket preserves the display');
+    session.telemetry(samples(0, 0, 40.45, 0));
+    t.mock.timers.tick(1000);
+    assert.equal(updates.at(-1)?.power, 0, 'real zero replaces the last value');
+    assert.equal(updates.at(-1)?.trip.average, 0);
     assert.equal(closed, 0);
     await session.close();
     assert.equal(closed, 1);

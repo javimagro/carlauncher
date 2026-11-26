@@ -72,7 +72,7 @@ test('height history resumes after a service restart only for the same boot and 
     await reboot.close();
 });
 
-test('all six trip readings continue as one snapshot with bounded last-reading fallback', () => {
+test('the elevation history keeps sampling valid fixes and clears when the distance resets', () => {
     const history = createTripHistory();
     const previous = { journeySampledAt: 1000, trip: { duration: 240, distance: 5, speed: 75, average: 20,
         distanceUnit: 'km', averageUnit: 'kWh/100 km' }, factory: { average: 18, averageUnit: 'kWh/100 km' },
@@ -81,17 +81,9 @@ test('all six trip readings continue as one snapshot with bounded last-reading f
     const later = { ...previous, journeySampledAt: 61000, trip: { ...previous.trip, duration: 300, distance: 7, speed: 84, average: 22 },
         altitude: 470, outside: 13, batteryTemperature: 26 };
     history.sample(later, 61000);
-    const summary = history.snapshot(later, 61000);
-    assert.deepEqual([summary.duration, summary.distance, summary.speed, summary.average, summary.historicalAverage, summary.energy],
-        [300, 7, 84, 22, 18, 1.54]);
-    assert.deepEqual([summary.altitude, summary.outside, summary.batteryTemperature], [470, 13, 26]);
     assert.deepEqual(history.values, [450, 470]);
     history.sample(later, 90000);
-    const last = history.snapshot({ trip: {} }, 90999);
-    assert.equal(last.stale, true);
-    assert.equal(last.energy, 1.54);
-    assert.equal(last.batteryTemperature, undefined);
-    assert.equal(history.snapshot({ trip: {} }, 91000).energy, undefined);
+    assert.deepEqual(history.values, [450, 470]);
     history.sample({ ...later, trip: { ...later.trip, distance: 0 } }, 92000);
     assert.deepEqual(history.values, [470], 'a reset of BMW distance replaces the previous elevation series');
 });

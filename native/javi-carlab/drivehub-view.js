@@ -231,7 +231,7 @@ function trip(cv, x, y, w, h, current, heights) {
         ['Consumo medio', liveValue(current.average, current.averageUnit, 1)],
         ['Consumo medio total', liveValue(current.historicalAverage, current.historicalUnit, 1)],
         ['Distancia recorrida', liveValue(current.distance, current.distanceUnit, 1)],
-        ['Velocidad media', liveValue(current.speed, current.distanceUnit + '/h')],
+        ['Velocidad media', liveValue(current.speed, current.speedUnit + '/h')],
         ['Energía consumida', Number.isFinite(current.energy) ? liveValue(current.energy, 'kWh', 1) + ' aprox.' : '–'],
         ['Duración', tripDuration(current.duration)]
     ];
@@ -735,7 +735,8 @@ function drawHome(cv, state, scroll, data, art, now) {
     }
     cards.forEach((card, index) => drawCard(cv, card, viewport.x + card.x - scroll,
         state.selected === index, data, state, art, now, vehicle));
-    energy(cv, data.energy, art, data.diagnostics || records || data.navigationUi ? vehicle : undefined, data.navigation,
+    const currentEnergy = data.diagnostics || records || data.navigationUi ? data.vehicleDisplay || vehicle : undefined;
+    energy(cv, data.energy, art, currentEnergy, data.navigation,
         aaVisible ? aaLayout.energyInset : 0);
     drawSettings(cv, data.aaUi);
     if (data.toast && now < data.toast.until) drawToast(cv, data.toast.message, night);

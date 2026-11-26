@@ -1,11 +1,10 @@
 'use strict';
 
 const fs = require('fs');
-const { tripSummary } = require('./vehicle-readings');
+const { tripSummary, distanceReset } = require('./vehicle-readings');
 
 const sampleInterval = 60000;
 const maxSamples = 360;
-const lastReadingMs = 30000;
 const bootFile = '/proc/sys/kernel/random/boot_id';
 
 function read(file) {
@@ -48,14 +47,6 @@ function createTripHistory(file, boot = () => read(bootFile)) {
     return {
         ready,
         values,
-        snapshot(vehicle, now) {
-            const live = tripSummary(vehicle);
-            if (Number.isFinite(live.duration) || Number.isFinite(live.distance) ||
-                !latest || now < latest.at || now - latest.at >= lastReadingMs) return live;
-            return Object.assign({}, latest.summary, {
-                altitude: live.altitude, outside: live.outside, batteryTemperature: live.batteryTemperature, stale: true
-            });
-        },
         sample(vehicle, now) {
             if (closed || restoring) return;
             const summary = tripSummary(vehicle);
@@ -97,11 +88,6 @@ function createTripHistory(file, boot = () => read(bootFile)) {
             return writing || Promise.resolve();
         }
     };
-}
-
-function distanceReset(previous, current) {
-    return previous && previous.distanceUnit === current.distanceUnit &&
-        Number.isFinite(previous.distance) && Number.isFinite(current.distance) && current.distance < previous.distance;
 }
 
 module.exports = { createTripHistory };

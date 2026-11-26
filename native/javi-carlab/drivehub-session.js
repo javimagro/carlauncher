@@ -12,7 +12,7 @@ const { createRadioUI } = require('./radio-ui.js');
 const { createNavigation } = require('./navigation-model.js');
 const { actionAt } = require('./navigation-view.js');
 const { createNavigationUI } = require('./navigation-ui');
-const { vehicleReadings } = require('./vehicle-readings');
+const { vehicleReadings, createVehicleDisplay } = require('./vehicle-readings');
 const { createTripHistory } = require('./trip-history');
 const { createPreconditioningUI } = require('./preconditioning-ui');
 const { createAssistant } = require('./assistant');
@@ -73,6 +73,7 @@ module.exports = function createSession(gpu, options) {
     data.aaUi = aa;
     let telemetryRecords;
     const currentVehicle = (now = Date.now()) => vehicleReadings(telemetryRecords, now);
+    const vehicleDisplay = createVehicleDisplay();
     const assistant = createAssistant(options, createCommands({ panel, radio, tdt, navigation: navigationUi, data,
         vehicle: currentVehicle, weather: () => provider.weatherSnapshot(Date.now()) }), () => { dirty = true; });
     navigationUi.assistant = assistant;
@@ -118,7 +119,8 @@ module.exports = function createSession(gpu, options) {
         cv.reset();
         data.navigation = navigation.snapshot(now);
         const vehicle = currentVehicle(now);
-        data.tripSummary = tripHistory.snapshot(vehicle, now);
+        data.tripSummary = vehicleDisplay.summary(vehicle);
+        data.vehicleDisplay = vehicleDisplay.readings(vehicle);
         if (shown && onScreen) provider.refresh(now, vehicle.location);
         assistant.setVisible(shown && onScreen);
         if (aa) aa.update(shown && onScreen && confirmedOnScreen && touchAvailable && !!area,
@@ -251,7 +253,7 @@ module.exports = function createSession(gpu, options) {
         }
         const vehicle = currentVehicle(now);
         if (!shown || !onScreen || !area) provider.refresh(now, vehicle.location, false, !!(cockpit && cockpit.visible()));
-        if (cockpit) cockpit.update(vehicle, now, provider.weatherSnapshot(now));
+        if (cockpit) cockpit.update(vehicleDisplay.readings(vehicle), now, provider.weatherSnapshot(now));
         if (cockpitFocusSent && shown && area && confirmedOnScreen) cockpitFocusSent = cockpit.renewFocus();
         else focusCockpit(now);
         if (options.onCockpitVisible) options.onCockpitVisible(!!(cockpit && cockpit.visible()));
@@ -275,7 +277,9 @@ module.exports = function createSession(gpu, options) {
             data.telemetry = records;
             telemetryRecords = records && new Map(records.map(row => [row.signal, row]));
             const now = Date.now();
-            tripHistory.sample(currentVehicle(now), now);
+            const vehicle = currentVehicle(now);
+            vehicleDisplay.update(vehicle, telemetryRecords, now);
+            tripHistory.sample(vehicle, now);
             if (shown && onScreen) preconditioning.receive(thermal, now);
             dirty = true;
         },

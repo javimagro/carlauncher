@@ -7,7 +7,7 @@ const { start, report } = require('../../apps/javi_carlauncher/telemetria-mgu.js
 const { createPowerProbe, service: tasu, instance: tasuInstance } = require('../../apps/javi_carlauncher/potencia-hv.js');
 const { consume } = require('../../native/javi-carlab/telemetry-input.js');
 const { drawHome } = require('../../native/javi-carlab/drivehub-view.js');
-const { vehicleReadings } = require('../../native/javi-carlab/vehicle-readings.js');
+const { vehicleReadings, createVehicleDisplay } = require('../../native/javi-carlab/vehicle-readings.js');
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 
 test('the probe reads named fields only and unsubscribes when closed', async () => {
@@ -343,6 +343,15 @@ test('the dashboard converts validated readings and never substitutes demo value
     for (const label of ['91%', '431 km', '16 °C', '19 °C', '64%', '248 km']) assert(!labels.includes(label), label);
     assert(labels.includes('Sin actualizar'));
 
+    const records = new Map(telemetry.map(row => [row.signal, row]));
+    const display = createVehicleDisplay();
+    display.update(vehicleReadings(records, 1000), records, 1000);
+    labels.length = 0;
+    drawHome(canvas, state, 0, { ...data, vehicleDisplay: display.readings(vehicleReadings(records, 30000)) }, () => 1, 30000);
+    assert(labels.includes('91%'));
+    assert.equal(labels.filter(label => label === '431 km').length, 1, 'only the energy strip keeps the range');
+    assert(labels.includes('Sin actualizar'), 'diagnostics still reports the missing refresh');
+
     samples.statusBatteryTemperature.actualValueTemperatureHighVoltageStorage = 255;
     samples.statusChargeOfBatteryHybrid.displayChargingConditionHighVoltageStorage = 255;
     samples.displayRangeElectricVehicle.displayRangeElectricVehicle = 4095;
@@ -350,6 +359,41 @@ test('the dashboard converts validated readings and never substitutes demo value
     drawHome(canvas, state, 0, data, () => 1, 1000);
     assert.equal(labels.filter((label) => label === 'Sin dato válido').length, 3);
     assert(!labels.includes('205 °C'));
+});
+
+test('display keeps valid trip metrics through partial samples with their own units and clears at a real reset', () => {
+    const display = createVehicleDisplay();
+    function update(sampledAt, now, fields) {
+        const records = new Map([
+            ['bcDataAll', { status: 'sample', sampledAt, freshForMs: 8000, fields }]
+        ]);
+        const current = vehicleReadings(records, now);
+        display.update(current, records, now);
+        return display.summary(current);
+    }
+    const first = update(1000, 1000, {
+        'bcUnits.tachoDigital': 1, 'bcUnits.averageConsumptionElectric': 1,
+        'trip.counterDistance': 70, 'trip.speedAverage': 840, 'trip.consumptionElectricAverageDigit': 65755,
+        'trip.dateTimeTrip.day': 0, 'trip.dateTimeTrip.hour': 0, 'trip.dateTimeTrip.minute': 5, 'trip.dateTimeTrip.second': 0,
+        'factory.consumptionElectricAverageDigit': 65715
+    });
+    assert.deepEqual([first.duration, first.distance, first.speed, first.average, first.historicalAverage, first.energy],
+        [300, 7, 84, 22, 18, 1.54]);
+    assert.equal(first.stale, false);
+    const partial = update(2000, 2000, {
+        'bcUnits.tachoDigital': 2, 'bcUnits.averageConsumptionElectric': 5,
+        'trip.counterDistance': 45, 'trip.speedAverage': 0xffff, 'trip.consumptionElectricAverageDigit': 0xffffffff
+    });
+    assert.deepEqual([partial.distance, partial.distanceUnit, partial.speed, partial.speedUnit, partial.average, partial.averageUnit],
+        [4.5, 'mi', 84, 'km', 22, 'kWh/100 km']);
+    assert.equal(partial.energy, 1.54, 'display does not compute energy from measurements received separately');
+    assert.equal(partial.stale, true);
+    assert.equal(update(1500, 2400, { 'bcUnits.tachoDigital': 2, 'trip.counterDistance': 99 }).distance, 4.5);
+    assert.equal(update(3000, 11000, { 'bcUnits.tachoDigital': 2, 'trip.counterDistance': 99 }).distance, 4.5);
+    const reset = update(11001, 11001, { 'bcUnits.tachoDigital': 2, 'trip.counterDistance': 0 });
+    assert.deepEqual([reset.distance, reset.duration, reset.speed, reset.average, reset.energy],
+        [0, undefined, undefined, undefined, undefined]);
+    assert.equal(reset.historicalAverage, 18);
 });
 
 test('the dashboard distinguishes zero speed, missing speed and an expired reading', () => {
