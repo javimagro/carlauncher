@@ -362,6 +362,10 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtMedias
         play();
     }
 
+    function back() {
+        if (state.mode !== 'browse') setMode('browse');
+    }
+
     function showOverlay() {
         if (state.overlayUntil !== Infinity) state.overlayUntil = now() + Math.max(prefs.seconds, 3) * 1000;
         change();
@@ -393,7 +397,7 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtMedias
     let countryLoaded = false;
     if (fixture) { readCountry(); countryLoaded = true; }
     return {
-        state, selected, program, playerStart, overlayVisible,
+        state, selected, program, playerStart, overlayVisible, back,
         prepareChannels(alive) {
             if (closed || !alive()) return Promise.resolve('cancelled');
             if (!countryLoaded) { readCountry(); countryLoaded = true; }
@@ -485,7 +489,8 @@ function createTdt({ fixture, tdtDirectory, get = download, tdtPlayer, tdtMedias
                 return;
             }
             if (y >= 3 && y < 38 && x >= l.actionX && x < l.actionX + l.actionWidth) {
-                setMode(state.mode === 'browse' ? 'settings' : 'browse');
+                if (state.mode === 'browse') setMode('settings');
+                else back();
                 return;
             }
             if (state.mode === 'settings') {

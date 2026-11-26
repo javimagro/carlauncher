@@ -124,6 +124,9 @@ if (telemetry === 'telemetry') {
     const sampledAt = Date.now();
     session.telemetry(Object.entries(samples).map(([signal, fields]) => ({ signal, status: 'sample', sampledAt, fields })));
 }
-process.on('message', (message) => { if (message === 'open') session.show(true); });
+process.on('message', (message) => {
+    if (message === 'open') session.show(true);
+    else if (message === 'back') session.controller({ back: true });
+});
 process.on('disconnect', () => { clearInterval(navigationTimer); guidance.stop(); session.close(); });
 gpu.connect();

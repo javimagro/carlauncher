@@ -180,6 +180,10 @@ module.exports = function createSession(gpu, options) {
         }
     });
     function controller(event) {
+        if (event.back) {
+            if (cards[panel.state.selected].id === 'tdtworld') tdt.back();
+            return;
+        }
         if (!data.diagnostics && aa && aa.controller(event)) {
             panel.trackInput(event); navigationUi.trackInput(event); return;
         }

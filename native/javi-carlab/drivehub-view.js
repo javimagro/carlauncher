@@ -253,14 +253,18 @@ function trip(cv, x, y, w, h, current, heights) {
     box(left, y + 277, w - 60, h - 363, [21, 38, 52, 142]);
     cv.text('Altura', x + w / 2, y + 299, 16, secondary, centered);
     cv.text(liveValue(current.altitude, 'm'), x + w - 39, y + 299, 21, primary, right);
-    if (heights.length > 1) {
+    if (heights.length) {
         const low = Math.min(...heights);
         const high = Math.max(...heights);
         const padding = Math.max(10, high - low) * 0.15;
-        const points = heights.map((value, i) => [left + 8 + i * (w - 76) / (heights.length - 1),
-            graphBottom - (value - low + padding) / (high - low + 2 * padding) * (graphBottom - y - 315)]);
-        cv.fillUnder(points, graphBottom, [61, 196, 232, 58]);
-        cv.polyline(points, 2, '#52d9f8');
+        const graphTop = y + 315;
+        const graphLeft = left + 8;
+        const graphWidth = w - 76;
+        const points = heights.map((value, index) => [graphLeft + graphWidth * (heights.length === 1 ? 0.5 : index / (heights.length - 1)),
+            graphBottom - (value - low + padding) / (high - low + 2 * padding) * (graphBottom - graphTop)]);
+        const fill = heights.length === 1 ? [[graphLeft, graphBottom], points[0], [graphLeft + graphWidth, graphBottom]] : points;
+        cv.fillUnder(fill, graphBottom, [85, 217, 255, 153], graphTop);
+        cv.polyline(points, 3, '#55d9ff');
     }
     for (const [index, label, value, max] of [[0, 'Exterior', current.outside, 50], [1, 'Batería HV', current.batteryTemperature, 70]]) {
         const center = left + col * (index + 0.5) + index * 5;

@@ -91,7 +91,10 @@ stage.addEventListener('wheel', (event) => {
 }, { passive: false });
 stage.addEventListener('keydown', (event) => {
     const tilts = { ArrowUp: 1, ArrowRight: 4, ArrowDown: 7, ArrowLeft: 10 };
-    if (event.key === 'Enter') {
+    if (home && (event.key === 'Escape' || event.key === 'Backspace')) {
+        event.preventDefault();
+        if (!event.repeat) send({ back: true });
+    } else if (event.key === 'Enter') {
         event.preventDefault();
         if (pressed) return;
         pressed = true;

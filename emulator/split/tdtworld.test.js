@@ -457,6 +457,31 @@ test('touching a different row starts playback immediately and leaving the card 
     assert.deepEqual(tuned, second.sources);
 });
 
+test('Back stops playback, discards delayed statuses and keeps the playing channel selected', async (t) => {
+    let status;
+    let stops = 0;
+    const tdt = createTdt({ fixture: { tdtChannels: [first, second] }, tdtPlayer: {
+        start(sources, change) { status = change; change('playing'); }, stop() { stops++; }
+    } }, () => {});
+    t.after(() => tdt.close());
+    tdt.update(Date.now(), true);
+    tdt.rotate(1);
+    tdt.press(false);
+    await eventually(() => tdt.state.playback === 'playing');
+    tdt.press(true);
+    tdt.rotate(-1);
+    const before = stops;
+    tdt.back();
+    assert.equal(stops, before + 1);
+    assert.equal(tdt.state.mode, 'browse');
+    assert.equal(tdt.selected().id, second.id);
+    assert.equal(tdt.state.playerChoice, undefined);
+    status('playing');
+    tdt.back();
+    assert.equal(tdt.state.playback, 'idle');
+    assert.equal(stops, before + 1);
+});
+
 test('shared video rotates slots and records the renderer video operation', (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tdt-ring-'));
     const ring = createRing(dir, 16, 16);

@@ -134,7 +134,7 @@ Ejecuta desde la raíz del proyecto en PowerShell y abre [BMWLauncher en el nave
 node emulator/split/server.js --drivehub
 ```
 
-El simulador arranca con contenido reproducible. Añade `--tall` para probar la vista de 1960 × 572, `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro y las flechas simulan las inclinaciones del mando. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Si pulsas la casita, vuelve con **Abrir BMWLauncher** o recarga la página.
+El simulador arranca con contenido reproducible. Añade `--tall` para probar la vista de 1960 × 572, `--telemetry` para ver la pantalla de diagnóstico con lecturas simuladas o `--live` para consultar Tiempo, Noticias y TDTWorld reales. Haz clic en la pantalla para darle foco. La rueda del ratón simula el giro, las flechas simulan las inclinaciones y Escape o Retroceso simula Back para volver a la lista de canales. Desliza en horizontal para cambiar de tarjeta o en vertical para alternar Tiempo y lluvia o recorrer Noticias. En lluvia, toca un día para ver su previsión por horas. Si pulsas la casita, vuelve con **Abrir BMWLauncher** o recarga la página.
 
 ### Vista alta de prueba en iDrive 8
 

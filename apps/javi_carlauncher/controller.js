@@ -42,6 +42,18 @@ function steeringInput(write) {
     };
 }
 
+function backInput(write) {
+    let down;
+    return (value, initial) => {
+        // Hmi8 maps the seventh FrontCCU field to KEY_BACK.
+        const button = value && value.frontOperationButton7;
+        const pressed = [1, 2, 'TASTE_KURZ_GEDRUECKT', 'TASTE_LANG_GEDRUECKT'].includes(button);
+        if (!pressed && ![0, 4, 'KEINE_BETAETIGUNG', 'TASTE_BERUEHRT__S__ANGENAEHERT__VORHALT'].includes(button)) return;
+        if (!initial && pressed && down === false) write(Buffer.from([0xff, 0xff, 0xfe, 3]));
+        down = pressed;
+    };
+}
+
 function observe(builders) {
     let socket;
     let visible = false;
@@ -74,14 +86,33 @@ function observe(builders) {
         send(frame);
     }
 
-    let proxy;
-    Promise.resolve().then(() => builders.buildTypedProxy(input, '1'))
-        .then((value) => { proxy = value; return proxy.init(); })
-        .then(() => proxy.waitUntilAvailable())
-        .then(() => proxy.statusRotaryEncoderState.subscribe(receive))
-        .then(() => proxy.statusRotaryEncoderState.getValue())
-        .then(receive)
-        .catch(() => console.warn('BMWLauncher: FrontCCU no disponible'));
+    let front, closing;
+    const subscriptions = [];
+    async function watch(attribute, report) {
+        let notified = false;
+        const token = await attribute.subscribe(value => {
+            notified = true;
+            if (!stopped) report(value, false);
+        });
+        subscriptions.push([attribute, token]);
+        if (notified || stopped) return;
+        Promise.resolve().then(() => attribute.getValue()).then(value => {
+            if (!stopped && !notified) report(value, true);
+        }).catch(() => {});
+    }
+
+    const frontReady = Promise.resolve().then(async () => {
+        front = await builders.buildTypedProxy(input, '1');
+        if (stopped) return;
+        await front.init();
+        if (stopped) return;
+        await front.waitUntilAvailable();
+        if (stopped) return;
+        await Promise.all([
+            watch(front.statusRotaryEncoderState, receive).catch(() => console.warn('BMWLauncher: rueda FrontCCU no disponible')),
+            watch(front.statusPushButtonsState, backInput(send)).catch(() => console.warn('BMWLauncher: Back FrontCCU no disponible'))
+        ]);
+    }).catch(() => console.warn('BMWLauncher: FrontCCU no disponible'));
 
     async function connectWheel(job) {
         if (job !== wheel) return;
@@ -132,11 +163,21 @@ function observe(builders) {
             else if (socket) { socket.destroy(); socket = undefined; }
         },
         close() {
-            if (stopped) return;
+            if (closing) return closing;
             stopped = true;
             this.show(false);
+            const frontClosing = frontReady.then(async () => {
+                for (const [attribute, token] of subscriptions) {
+                    await Promise.resolve().then(() => attribute.unsubscribe(token)).catch(() => {});
+                }
+                if (!front) return;
+                if (typeof front.shutdown === 'function') await front.shutdown();
+                else if (typeof front.dispose === 'function') await front.dispose();
+            }).catch(() => {});
+            closing = Promise.all([frontClosing, wheelClosing]);
+            return closing;
         }
     };
 }
 
-module.exports = { observe, sample, steeringInput };
+module.exports = { observe, sample, steeringInput, backInput };
